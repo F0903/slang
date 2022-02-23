@@ -1,15 +1,10 @@
 use crate::defs::{Function, Variable};
 use crate::identifiable::Identifiable;
-use crate::operators::{Operation, Operator, OPERATORS};
+use crate::operators::{Operation, OPERATORS};
 use crate::value::Value;
 use crate::vm::VmContext;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
-enum ExpressionToken {
-    Dynamic(String),  // To be evaluated.
-    Constant(String), // Like 20 or "hello"
-}
 
 pub struct ExpressionContext {
     pub vars: Vec<Variable>,
@@ -52,8 +47,6 @@ impl Expression {
         };
         Ok(value)
     }
-
-    fn perform_static_op(op: &Operator, left_token: &str, right_token: &str) {}
 
     fn is_char_operator<'a>(ch: char) -> Option<&'a Operation> {
         for op in OPERATORS {
@@ -99,29 +92,24 @@ impl Expression {
         }
 
         let mut ops_iter = ops.iter();
-
         let mut token_iter = token_values.iter();
 
-        let first_item = token_iter.by_ref().next().unwrap();
-        let first_op = ops_iter.by_ref().next().unwrap();
-        let second_item = token_iter
-            .by_ref()
-            .next()
-            .ok_or("Need a second token to perform an operation!")?;
+        let first_token = token_iter.next().unwrap();
+        let first_op = ops_iter.next().unwrap();
+        let second_token = token_iter.next().unwrap();
 
-        let token_op_iter = token_iter.zip(ops_iter);
+        let token_ops = token_iter.zip(ops_iter);
 
-        let mut sum: Value = first_item.perform_op(first_op, second_item)?;
-        for (value, op) in token_op_iter {
-            sum = sum.perform_op(*op, value)?;
+        //TODO: Respect math order of operations.
+        let mut sum: Value = first_token.perform_op(first_op, second_token)?;
+        for (value, op) in token_ops {
+            sum = sum.perform_op(op, value)?;
         }
 
         Ok(sum)
     }
 
-    pub fn evaluate_statically(self, ctx: ExpressionContext) -> Result<Value> {
+    pub fn evaluate(self, ctx: ExpressionContext) -> Result<Value> {
         self.parse_expr(ctx)
     }
-
-    pub fn evaluate(self, context: &dyn VmContext) {}
 }

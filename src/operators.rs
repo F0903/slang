@@ -1,5 +1,6 @@
 use crate::identifiable::Identifiable;
 
+#[derive(Debug)]
 pub enum Operation {
     Plus(Operator),
     Multiply(Operator),
@@ -16,6 +17,7 @@ impl Identifiable for Operation {
     }
 }
 
+#[derive(Debug)]
 pub struct Operator {
     identifier: &'static str,
 }

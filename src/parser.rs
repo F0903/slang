@@ -66,7 +66,7 @@ impl Parser {
 
         match expression_text {
             None => Ok(Value::None),
-            Some(expr) => Expression::from_str(expr).evaluate_statically(ExpressionContext {
+            Some(expr) => Expression::from_str(expr).evaluate(ExpressionContext {
                 vars: self.vars.clone(),
                 funcs: self.funcs.clone(),
             }),

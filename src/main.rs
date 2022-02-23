@@ -4,6 +4,7 @@ mod identifiable;
 mod operators;
 mod parser;
 mod token;
+mod util;
 mod value;
 mod vm;
 

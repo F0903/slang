@@ -1,16 +1,21 @@
 ? comment
 
 
+offering var_empty
+
 offering var_num_1 = 20
 offering var_num_2 = 15
 
-offering var_test_a = 20 + 12 + 40 + 2
+offering var_test_a = 20 + 10 / 2
+offering var_test_b = 20 + var_num_1 + 5 + var_num_2
+
 offering var_num_total = var_num_1 + var_num_2
 
 offering text_1 = "hello "
 offering text_2 = "world!"
 offering text_test = text_1 + text_2
 
+? Note: functions do not work yet, but will be registered by the interpreter.
 ritual do_something_func(arg1, arg2)
 
 end

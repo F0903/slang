@@ -1,5 +1,4 @@
 use crate::defs::{Function, Variable};
-use crate::operators::Operation;
 use crate::parser::{ParseResult, Parser};
 use std::fs::File;
 
@@ -17,8 +16,6 @@ pub trait VmContext {
 
     fn contains_var(&self, var_name: &str);
     fn contains_func(&self, func_name: &str);
-
-    fn perform_op(&mut self, op: Operation) -> Result<()>;
 }
 
 pub struct VmGlobalContext {
@@ -41,11 +38,6 @@ impl VmContext for VmGlobalContext {
 
     fn contains_func(&self, func_name: &str) {
         self.global_funcs.iter().any(|x| func_name == x.name);
-    }
-
-    fn perform_op(&mut self, op: Operation) -> Result<()> {
-        //match op {}
-        Ok(())
     }
 }
 
