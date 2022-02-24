@@ -1,6 +1,7 @@
 # Cahlang
 
 An extremely basic interpreter for the custom joke programming language "cahlang".
+Made purely for fun and learning. Don't expect this to work.
 
 Syntax:
 **ritual** - Declares a function. End with the **end** keyword.
