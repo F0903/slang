@@ -176,6 +176,7 @@ impl Parser {
     }
 
     pub fn parse(&mut self, input: impl BufRead) -> Result<ParseResult> {
+        //TODO: Instead of one function parsing a single line, make functions that "search" for defs over mutliple lines.
         for line_result in input.lines() {
             let line = match line_result {
                 Ok(x) => x,

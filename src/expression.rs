@@ -1,10 +1,70 @@
 use crate::defs::{Function, Variable};
 use crate::identifiable::Identifiable;
-use crate::operators::{Operation, OPERATORS};
+use crate::operators::{self, OpPriority, Operation};
 use crate::value::Value;
 use crate::vm::VmContext;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+#[derive(Clone, Debug)]
+struct SubExpression {
+    value: Value,
+    op: Operation,
+    next: Option<Box<Self>>,
+}
+
+impl SubExpression {
+    fn remove_next_from_chain(&mut self) {
+        let next: SubExpression;
+        {
+            let next_temp = match &self.next {
+                None => return,
+                Some(x) => x,
+            };
+            next = (**next_temp).clone();
+        }
+
+        let new_next = match next.next {
+            None => {
+                self.next = None;
+                return;
+            }
+            Some(x) => x,
+        };
+        self.next = Some(new_next);
+    }
+
+    pub fn evaluate(&mut self) -> Result<Value> {
+        let next = match &mut self.next {
+            None => return Ok(self.value.clone()),
+            Some(x) => x,
+        };
+
+        let my_priority = self.op.get_op_priority();
+        let next_priority = next.op.get_op_priority();
+
+        let mut set_plus_op = false;
+        let next_value;
+        if my_priority < next_priority {
+            next_value = next.evaluate()?;
+        } else {
+            next_value = next.value.clone();
+            if matches!(next.op, Operation::Minus(_)) && matches!(self.op, Operation::Plus(_)) {
+                self.op = operators::MINUS;
+            }
+            set_plus_op = true;
+        }
+
+        self.value = self.value.perform_op(&self.op, &next_value)?;
+        self.remove_next_from_chain();
+
+        if set_plus_op {
+            self.op = operators::PLUS
+        }
+
+        self.evaluate()
+    }
+}
 
 pub struct ExpressionContext {
     pub vars: Vec<Variable>,
@@ -49,7 +109,7 @@ impl Expression {
     }
 
     fn is_char_operator<'a>(ch: char) -> Option<&'a Operation> {
-        for op in OPERATORS {
+        for op in operators::OPERATORS {
             if op.get_identifier().chars().all(|x| x == ch) {
                 return Some(op);
             }
@@ -69,7 +129,7 @@ impl Expression {
                 let value = Self::get_value_from_expr_token(&ctx, &token_buf)?;
                 token_values.push(value);
                 token_buf.clear();
-                ops.push(op);
+                ops.push(Some(op));
                 continue;
             }
             token_buf.push(ch);
@@ -91,22 +151,36 @@ impl Expression {
             return Ok(token_values[0].clone());
         }
 
-        let mut ops_iter = ops.iter();
-        let mut token_iter = token_values.iter();
+        ops.push(None);
+        ops.reverse();
+        let ops_iter = ops.iter();
 
-        let first_token = token_iter.next().unwrap();
-        let first_op = ops_iter.next().unwrap();
-        let second_token = token_iter.next().unwrap();
+        token_values.reverse();
+        let value_iter = token_values.iter();
 
-        let token_ops = token_iter.zip(ops_iter);
+        let value_op_iter = value_iter.zip(ops_iter);
 
-        //TODO: Respect math order of operations.
-        let mut sum: Value = first_token.perform_op(first_op, second_token)?;
-        for (value, op) in token_ops {
-            sum = sum.perform_op(op, value)?;
+        let mut current_sub_expr;
+        let mut next_sub_expr: Option<SubExpression> = None;
+        for (value, op) in value_op_iter {
+            current_sub_expr = SubExpression {
+                value: value.clone(),
+                op: match op {
+                    None => operators::NOOP,
+                    Some(x) => (*x).clone(),
+                },
+                next: next_sub_expr.map(Box::new),
+            };
+            next_sub_expr = Some(current_sub_expr);
         }
 
-        Ok(sum)
+        let mut start_node = match next_sub_expr {
+            None => return Err("No start node found!".into()),
+            Some(x) => x,
+        };
+        let val = start_node.evaluate()?;
+
+        Ok(val)
     }
 
     pub fn evaluate(self, ctx: ExpressionContext) -> Result<Value> {

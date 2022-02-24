@@ -56,6 +56,20 @@ impl Value {
         Ok(new_val)
     }
 
+    fn minus(&self, other: &Value) -> Result<Self> {
+        let new_val = match self {
+            Value::Number(x) => {
+                let other = match other {
+                    Value::Number(y) => y,
+                    _ => return Err("Cannot subtract this value to a number.".into()),
+                };
+                Value::Number(x - other)
+            }
+            _ => return Err("Cannot perform subtract on this value.".into()),
+        };
+        Ok(new_val)
+    }
+
     fn multiply(&self, other: &Value) -> Result<Self> {
         let new_val = match self {
             Value::Number(x) => {
@@ -87,8 +101,10 @@ impl Value {
     pub fn perform_op(&self, op: &Operation, other: &Value) -> Result<Self> {
         match op {
             Operation::Plus(_) => self.add(other),
+            Operation::Minus(_) => self.minus(other),
             Operation::Multiply(_) => self.multiply(other),
             Operation::Divide(_) => self.divide(other),
+            Operation::NoOp(_) => Err("Cannot perform operation on a noop.".into()),
         }
     }
 }

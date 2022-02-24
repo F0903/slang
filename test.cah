@@ -6,8 +6,11 @@ offering var_empty
 offering var_num_1 = 20
 offering var_num_2 = 15
 
+offering var_test = 20 * 50 - 5 + 10 / 2 * 5
+offering var_test_c = 10 / 2 + 5 * 20
 offering var_test_a = 20 + 10 / 2
 offering var_test_b = 20 + var_num_1 + 5 + var_num_2
+offering var_a = 5 + 2
 
 offering var_num_total = var_num_1 + var_num_2
 
