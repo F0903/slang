@@ -1,12 +1,18 @@
-use crate::identifiable::Identifiable;
+use crate::util::LINE_ENDING;
 
 pub struct VariableInfo {
-    indentifier: &'static str,
+    start_token: &'static str,
+    end_token: &'static str,
 }
 
 pub struct FunctionInfo {
-    start_ident: &'static str,
-    end_ident: &'static str,
+    start_token: &'static str,
+    end_token: &'static str,
+}
+
+pub trait TokenInfo {
+    fn get_start_token(&self) -> &'static str;
+    fn get_end_token(&self) -> &'static str;
 }
 
 pub enum Token {
@@ -14,39 +20,35 @@ pub enum Token {
     Function(FunctionInfo),
 }
 
-const TOKENS: &[Token] = &[
+pub const TOKENS: &[Token] = &[
     Token::Variable(VariableInfo {
-        indentifier: "offering",
+        start_token: "offering",
+        end_token: LINE_ENDING,
     }),
     Token::Function(FunctionInfo {
-        start_ident: "ritual",
-        end_ident: "end",
+        start_token: "ritual",
+        end_token: "end",
     }),
 ];
 
-impl Identifiable for Token {
-    fn get_identifier(&self) -> &'static str {
+impl TokenInfo for Token {
+    fn get_start_token(&self) -> &'static str {
         match self {
-            Token::Variable(x) => x.indentifier,
-            Token::Function(x) => x.start_ident,
+            Token::Variable(x) => x.start_token,
+            Token::Function(x) => x.start_token,
+        }
+    }
+
+    fn get_end_token(&self) -> &'static str {
+        match self {
+            Token::Variable(x) => x.end_token,
+            Token::Function(x) => x.end_token,
         }
     }
 }
 
 pub struct TokenInstance<'a> {
-    pub index: usize,
+    pub start_index: usize,
+    pub end_index: usize,
     pub token: &'a Token,
-}
-
-pub fn get_tokens(line: &str) -> Vec<TokenInstance> {
-    let mut token_buf = vec![];
-    for token in TOKENS {
-        let indent: &dyn Identifiable = token;
-
-        match line.find(indent.get_identifier()) {
-            Some(i) => token_buf.push(TokenInstance { token, index: i }),
-            None => continue,
-        };
-    }
-    token_buf
 }

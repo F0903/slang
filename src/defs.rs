@@ -13,8 +13,14 @@ pub struct Argument {
 }
 
 #[derive(Debug, Clone)]
+pub struct FunctionBody {
+    pub vars: Vec<Variable>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
     pub args: Vec<Argument>,
+    pub body: FunctionBody,
     pub ret_val: Value,
 }

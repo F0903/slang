@@ -1,14 +1,10 @@
-use crate::defs::{Argument, Function, Variable};
+use crate::defs::{Argument, Function, FunctionBody, Variable};
 use crate::expression::{Expression, ExpressionContext};
-use crate::token::{get_tokens, Token};
+use crate::token::{Token, TokenInfo, TokenInstance, TOKENS};
 use crate::value::Value;
 use std::io::BufRead;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
-pub fn is_char_var_delimiter(ch: char) -> bool {
-    ch == ' ' || ch == '='
-}
 
 pub struct ParseResult {
     pub vars: Vec<Variable>,
@@ -28,53 +24,81 @@ impl Parser {
         }
     }
 
-    fn parse_var_name(line_iter: &mut dyn Iterator<Item = char>) -> String {
+    fn parse_var_name(line_iter: &mut dyn Iterator<Item = char>) -> Result<String> {
         let mut name_buf = String::default();
+        let mut encountered_name = false;
         for ch in line_iter {
-            if is_char_var_delimiter(ch) {
+            println!("{}", ch);
+
+            if ch == ' ' {
+                if encountered_name {
+                    break;
+                }
+                continue;
+            }
+
+            if ch == '=' {
                 break;
             }
 
-            // Remove extra spaces at the start.
-            if ch == ' ' {
-                continue;
+            if ch == '?' {
+                break;
             }
 
+            encountered_name = true;
             name_buf.push(ch);
         }
-        name_buf
+
+        if crate::token::TOKENS.iter().any(|t| {
+            let beg = t.get_start_token();
+            let end = t.get_end_token();
+            beg.contains(&name_buf) || end.contains(&name_buf)
+        }) {
+            return Err(format!(
+                "Variable identifier '{}' is illegal. Identifiers cannot contain keywords!",
+                name_buf
+            )
+            .into());
+        }
+
+        if !Self::is_legal_identifier(name_buf.chars()) {
+            return Err(format!("Variable identifier '{}' is illegal.", name_buf).into());
+        }
+        Ok(name_buf)
     }
 
     fn parse_var_value(&self, line_iter: &mut dyn Iterator<Item = char>) -> Result<Value> {
-        let mut expression_text = None;
+        let mut expression_text = String::default();
         for ch in line_iter {
-            if ch != '=' && expression_text.is_none() {
-                continue;
-            } else if ch == '=' {
-                expression_text = Some(String::default());
+            println!("{}", ch);
+            if ch == ' ' || ch == '=' {
                 continue;
             }
 
-            if ch == ' ' {
-                continue;
+            if ch == '?' {
+                break;
             }
 
-            if let Some(expr) = &mut expression_text {
-                expr.push(ch);
-            }
+            expression_text.push(ch);
         }
 
-        match expression_text {
-            None => Ok(Value::None),
-            Some(expr) => Expression::from_str(expr).evaluate(ExpressionContext {
-                vars: self.vars.clone(),
-                funcs: self.funcs.clone(),
-            }),
-        }
+        let val = if !expression_text.is_empty() {
+            Expression::from_str(
+                expression_text,
+                ExpressionContext {
+                    vars: self.vars.clone(),
+                    funcs: self.funcs.clone(),
+                },
+            )
+            .evaluate()?
+        } else {
+            Value::None
+        };
+        Ok(val)
     }
 
     fn parse_var(&self, line_iter: &mut dyn Iterator<Item = char>) -> Result<Variable> {
-        let name = Self::parse_var_name(line_iter);
+        let name = Self::parse_var_name(line_iter)?;
         let value = self.parse_var_value(line_iter)?;
         Ok(Variable { name, value })
     }
@@ -127,67 +151,115 @@ impl Parser {
         Ok(args)
     }
 
-    fn parse_func(line_iter: &mut dyn Iterator<Item = char>) -> Result<Function> {
+    fn parse_func_signature(
+        line_iter: &mut impl Iterator<Item = char>,
+    ) -> Result<(String, Vec<Argument>)> {
         let name = Self::parse_func_name(line_iter);
         let args = Self::parse_func_args(line_iter)?;
+        Ok((name, args))
+    }
+
+    fn parse_local_scope(line_iter: &mut impl Iterator<Item = char>) -> Result<Vec<Variable>> {
+        let vars = vec![];
+        Ok(vars)
+    }
+
+    fn parse_func_body(line_iter: &mut impl Iterator<Item = char>) -> Result<FunctionBody> {
+        let local_vars = Self::parse_local_scope(line_iter)?;
+        Ok(FunctionBody { vars: local_vars })
+    }
+
+    fn parse_func(line_iter: &mut impl Iterator<Item = char>) -> Result<Function> {
+        let (name, args) = Self::parse_func_signature(line_iter)?;
+        let body = Self::parse_func_body(line_iter)?;
         Ok(Function {
             name,
             args,
+            body,
             ret_val: Value::Any,
         })
     }
 
-    fn parse_line(&mut self, line: &str) -> Result<()> {
-        // Exit early if line is just space.
-        if line == "\r\n" || line == "\n" {
-            return Ok(());
-        }
+    fn is_legal_identifier(
+        chars: impl IntoIterator<Item = impl std::borrow::Borrow<char>>,
+    ) -> bool {
+        chars.into_iter().all(|ch| {
+            let ch = ch.borrow();
+            ch.is_alphabetic() || ch.is_numeric() || *ch == '_' || *ch == '-'
+        })
+    }
 
-        let tokens = get_tokens(line);
+    fn parse_tokens(line: &str) -> Vec<TokenInstance> {
+        let mut token_buf = vec![];
+        'token_loop: for token in TOKENS {
+            let beg = token.get_start_token();
+            let mut first_match_index = 0;
+            let mut match_count = 0;
+            for (i, (ch, beg_ch)) in line.chars().zip(beg.chars()).enumerate() {
+                if ch == '?' {
+                    break 'token_loop;
+                }
 
-        for token in tokens {
-            let mut line_enumerator = line.chars().skip(token.index);
-            // Forward enumerator if chars are spaces.
-            for ch in line_enumerator.by_ref() {
-                if ch != ' ' {
+                if ch == ' ' {
                     continue;
                 }
-                // If comment, return.
-                if ch == '?' {
-                    return Ok(());
-                }
-                break;
-            }
 
-            match token.token {
-                Token::Variable(_) => {
-                    let var = self.parse_var(&mut line_enumerator)?;
-                    println!("{:?}", var);
-                    self.vars.push(var);
+                if ch != beg_ch {
+                    break;
                 }
-                Token::Function(_) => {
-                    let func = Self::parse_func(&mut line_enumerator)?;
-                    println!("{:?}", func);
-                    self.funcs.push(func);
+
+                if match_count == 0 {
+                    first_match_index = i;
                 }
+                match_count += 1;
+
+                if match_count == beg.len() {
+                    token_buf.push(TokenInstance {
+                        start_index: first_match_index,
+                        end_index: i + 1,
+                        token,
+                    });
+                    break 'token_loop;
+                }
+            }
+        }
+        token_buf
+    }
+
+    fn parse_global_space(&mut self, input: impl BufRead) -> Result<()> {
+        for line in input.lines() {
+            let line = match line {
+                Ok(x) => x,
+                Err(x) => return Err(x.into()),
             };
+            let tokens = Self::parse_tokens(&line);
+
+            for token in tokens {
+                let TokenInstance {
+                    token,
+                    start_index,
+                    end_index,
+                } = token;
+
+                let line_chars = &mut line.chars().skip(start_index + end_index);
+
+                match token {
+                    Token::Variable(_) => self.vars.push(self.parse_var(line_chars)?),
+                    Token::Function(_) => self.funcs.push(Self::parse_func(line_chars)?),
+                };
+            }
         }
         Ok(())
     }
 
     pub fn parse(&mut self, input: impl BufRead) -> Result<ParseResult> {
-        //TODO: Instead of one function parsing a single line, make functions that "search" for defs over mutliple lines.
-        for line_result in input.lines() {
-            let line = match line_result {
-                Ok(x) => x,
-                Err(_) => continue,
-            };
-            self.parse_line(&line)?;
-        }
+        self.parse_global_space(input)?;
+
         let vars = self.vars.clone();
         self.vars.clear();
         let funcs = self.funcs.clone();
         self.funcs.clear();
+
         Ok(ParseResult { vars, funcs })
     }
 }

@@ -82,17 +82,19 @@ impl From<&dyn VmContext> for ExpressionContext {
 
 pub struct Expression {
     expr_string: String,
+    context: ExpressionContext,
 }
 
 impl Expression {
-    pub fn from_str(expr: impl ToString) -> Expression {
+    pub fn from_str(expr: impl ToString, context: ExpressionContext) -> Expression {
         Expression {
             expr_string: expr.to_string(),
+            context,
         }
     }
 
-    fn get_value_from_expr_token(ctx: &ExpressionContext, expr_token: &str) -> Result<Value> {
-        let vars = &ctx.vars;
+    fn get_value_from_expr_token(&self, expr_token: &str) -> Result<Value> {
+        let vars = &self.context.vars;
         let mut token_chars = expr_token.chars();
         let value = if token_chars.all(|ch| ch.is_numeric()) || token_chars.any(|ch| ch == '"') {
             // If here then first token is a constant.
@@ -118,15 +120,15 @@ impl Expression {
     }
 
     /// NOTE: Expects no spacing in input
-    fn parse_expr(self, ctx: ExpressionContext) -> Result<Value> {
-        let expression_str = self.expr_string;
+    fn parse_expr(self) -> Result<Value> {
+        let expression_str = &self.expr_string;
         let mut token_values = vec![];
         let mut ops = vec![];
         let mut token_buf = String::default();
 
         for ch in expression_str.chars() {
             if let Some(op) = Self::is_char_operator(ch) {
-                let value = Self::get_value_from_expr_token(&ctx, &token_buf)?;
+                let value = self.get_value_from_expr_token(&token_buf)?;
                 token_values.push(value);
                 token_buf.clear();
                 ops.push(Some(op));
@@ -136,7 +138,7 @@ impl Expression {
         }
 
         if !token_buf.is_empty() {
-            let value = Self::get_value_from_expr_token(&ctx, &token_buf)?;
+            let value = self.get_value_from_expr_token(&token_buf)?;
             token_values.push(value);
             token_buf.clear();
         }
@@ -183,7 +185,7 @@ impl Expression {
         Ok(val)
     }
 
-    pub fn evaluate(self, ctx: ExpressionContext) -> Result<Value> {
-        self.parse_expr(ctx)
+    pub fn evaluate(self) -> Result<Value> {
+        self.parse_expr()
     }
 }
