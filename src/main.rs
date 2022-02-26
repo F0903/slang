@@ -1,11 +1,12 @@
 mod defs;
 mod expression;
 mod identifiable;
+mod keyword;
 mod operators;
-mod parser;
-mod token;
 mod util;
 mod value;
+
+mod parser;
 mod vm;
 
 use parser::Parser;
@@ -13,18 +14,34 @@ use vm::VirtualMachine;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+#[cfg(debug_assertions)]
 const DEBUG_FILE: &str = include_str!("../test.cah");
 
-fn main() -> Result<()> {
-    /*
-    std::env::args()
-        .nth(1)
-        .ok_or("Could not get input argument. Please specify the file to interpret.")?;
-     */
+///DEBUG
+#[cfg(debug_assertions)]
+fn run() -> Result<()> {
     let source = DEBUG_FILE;
-    let parser = Parser::new();
-    let mut vm = VirtualMachine::new(parser);
+
+    let mut vm = VirtualMachine::new();
     vm.execute_text(source)?;
 
     Ok(())
+}
+
+///RELEASE
+#[cfg(not(debug_assertions))]
+fn run() -> Result<()> {
+    let input_arg = std::env::args()
+        .nth(1)
+        .ok_or("Could not get input argument. Please specify the file to interpret.")?;
+
+    let parser = Parser::new();
+    let mut vm = VirtualMachine::new(parser);
+    vm.execute_file(&input_arg)?;
+
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    run()
 }

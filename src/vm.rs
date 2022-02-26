@@ -6,8 +6,10 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub trait Vm {
     fn register_vars(&mut self, vars: Vec<Variable>);
-
+    fn register_var(&mut self, var: Variable);
     fn register_funcs(&mut self, funcs: Vec<Function>);
+    fn register_func(&mut self, func: Function);
+    fn get_context(&self) -> &dyn VmContext;
 }
 
 pub trait VmContext {
@@ -42,39 +44,44 @@ impl VmContext for VmGlobalContext {
 }
 
 pub struct VirtualMachine {
-    parser: Parser,
     context: VmGlobalContext,
 }
 
 impl Vm for VirtualMachine {
     fn register_vars(&mut self, vars: Vec<Variable>) {
-        self.context.global_vars = vars;
+        self.context.global_vars.extend(vars);
+    }
+
+    fn register_var(&mut self, var: Variable) {
+        self.context.global_vars.push(var);
     }
 
     fn register_funcs(&mut self, funcs: Vec<Function>) {
-        self.context.global_funcs = funcs;
+        self.context.global_funcs.extend(funcs);
+    }
+
+    fn register_func(&mut self, func: Function) {
+        self.context.global_funcs.push(func);
+    }
+
+    fn get_context(&self) -> &dyn VmContext {
+        &self.context
     }
 }
 
 impl VirtualMachine {
-    pub fn new(parser: Parser) -> Self {
+    pub fn new() -> Self {
         VirtualMachine {
             context: VmGlobalContext {
                 global_vars: vec![],
                 global_funcs: vec![],
             },
-            parser,
         }
     }
 
-    fn register_parse_result(&mut self, parse: ParseResult) {
-        self.register_vars(parse.vars);
-        self.register_funcs(parse.funcs);
-    }
-
     fn execute(&mut self, reader: impl std::io::BufRead) -> Result<()> {
-        let parse = self.parser.parse(reader)?;
-        self.register_parse_result(parse);
+        let mut parser = Parser::new(reader);
+        parser.parse(self)?;
         Ok(())
     }
 

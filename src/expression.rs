@@ -2,7 +2,6 @@ use crate::defs::{Function, Variable};
 use crate::identifiable::Identifiable;
 use crate::operators::{self, OpPriority, Operation};
 use crate::value::Value;
-use crate::vm::VmContext;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -71,11 +70,11 @@ pub struct ExpressionContext {
     pub funcs: Vec<Function>,
 }
 
-impl From<&dyn VmContext> for ExpressionContext {
-    fn from(ctx: &dyn VmContext) -> Self {
+impl From<&dyn crate::vm::VmContext> for ExpressionContext {
+    fn from(from: &dyn crate::vm::VmContext) -> Self {
         ExpressionContext {
-            vars: ctx.get_vars(),
-            funcs: ctx.get_funcs(),
+            vars: from.get_vars(),
+            funcs: from.get_funcs(),
         }
     }
 }
@@ -86,10 +85,10 @@ pub struct Expression {
 }
 
 impl Expression {
-    pub fn from_str(expr: impl ToString, context: ExpressionContext) -> Expression {
+    pub fn from_str(expr: impl ToString, context: impl Into<ExpressionContext>) -> Expression {
         Expression {
             expr_string: expr.to_string(),
-            context,
+            context: context.into(),
         }
     }
 

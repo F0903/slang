@@ -6,11 +6,8 @@ offering var_empty ?another comment
 offering var_num_1=20
 offering var_num_2 = 15
 
-offering var_test_b = 20 + var_num_1 + 5 + var_num_2
-offering var_test = 20 * 50 - 5 + 10 / 2 * 5
-offering var_test_c = 10 / 2 + 5 * 20
-offering var_test_a = 20 + 10 / 2
-offering var_a = 5 + 2
+offering var_test_a = 20 + var_num_1 + 5 + var_num_2
+offering var_test_b = 20 * 50 - 5 + 10 / 2 * 5
 
 offering var_num_total = var_num_1 + var_num_2
 
@@ -20,5 +17,19 @@ offering text_test = text_1 + text_2
 
 ? Note: functions do not work yet, but will be registered by the interpreter.
 ritual do_something_func(arg1, arg2)
+    offering f_var_a = 20
+    offering f_var_b = 15
+
+    offering f_var_c = f_var_a + f_var_b
+end
+
+ritual more_fancy_style(
+    arg1,
+    arg2
+)
+
+end
+
+if true
 
 end
