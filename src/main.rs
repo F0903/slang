@@ -3,13 +3,11 @@ mod expression;
 mod identifiable;
 mod keyword;
 mod operators;
+mod parser;
 mod util;
 mod value;
-
-mod parser;
 mod vm;
 
-use parser::Parser;
 use vm::VirtualMachine;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;

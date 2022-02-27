@@ -17,7 +17,8 @@ impl Value {
         let first_char = chars.next().ok_or("Could not get first char of value.")?;
 
         if first_char == '"' && chars.last().ok_or("Could not get last char of value.")? == '"' {
-            return Ok(Value::String(string.to_string()));
+            // Don't include the '"', so exlude the first and last char.
+            return Ok(Value::String(string[1..string.len() - 1].to_string()));
         }
 
         if chars.all(|ch| ch.is_numeric()) {
@@ -104,7 +105,7 @@ impl Value {
             Operation::Minus(_) => self.minus(other),
             Operation::Multiply(_) => self.multiply(other),
             Operation::Divide(_) => self.divide(other),
-            Operation::NoOp(_) => Err("Cannot perform operation on a noop.".into()),
+            Operation::NoOp(_) => Ok(self.clone()),
         }
     }
 }

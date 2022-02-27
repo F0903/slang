@@ -14,7 +14,7 @@ pub struct Argument {
 
 #[derive(Debug, Clone)]
 pub struct FunctionBody {
-    pub vars: Vec<Variable>,
+    pub code: String,
 }
 
 #[derive(Debug, Clone)]

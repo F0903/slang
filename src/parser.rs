@@ -5,23 +5,17 @@ use crate::keyword::{Keyword, KeywordInfo, KEYWORDS};
 use crate::operators::OPERATORS;
 use crate::util::LINE_ENDING;
 use crate::value::Value;
-use crate::vm::Vm;
+use crate::vm::{VirtualMachine, VmContext};
 use std::io::BufRead;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-pub struct ParseResult {
-    pub vars: Vec<Variable>,
-    pub funcs: Vec<Function>,
-}
+pub struct Parser {}
 
-pub struct Parser<R: BufRead> {
-    input: R,
-}
-
-impl<'a, R: BufRead> Parser<R> {
-    pub fn new(input: R) -> Self {
-        Self { input }
+impl Parser {
+    fn is_char_legal_literal(ch: impl std::borrow::Borrow<char>) -> bool {
+        let ch = ch.borrow();
+        ch.is_alphabetic() || ch.is_numeric() || *ch == '"'
     }
 
     fn is_char_legal_identifier(ch: impl std::borrow::Borrow<char>) -> bool {
@@ -60,10 +54,13 @@ impl<'a, R: BufRead> Parser<R> {
         name_buf
     }
 
-    fn parse_func_args(&mut self, keyword_line: impl ToString) -> Result<Vec<Argument>> {
+    fn parse_func_args(
+        mut input: impl BufRead,
+        keyword_line: impl ToString,
+    ) -> Result<Vec<Argument>> {
         let line_iter = [Ok(keyword_line.to_string())]
             .into_iter()
-            .chain(self.input.by_ref().lines());
+            .chain(input.by_ref().lines());
 
         let mut args = vec![];
         let mut arg_name_buf = String::default();
@@ -107,45 +104,61 @@ impl<'a, R: BufRead> Parser<R> {
         Ok(args)
     }
 
-    fn parse_func_signature(&mut self, keyword_line: &str) -> Result<(String, Vec<Argument>)> {
-        let mut keyword_line = keyword_line.chars();
+    fn parse_func_signature(
+        input: impl BufRead,
+        keyword_line: impl AsRef<str>,
+    ) -> Result<(String, Vec<Argument>)> {
+        let mut keyword_line = keyword_line.as_ref().chars();
         let name = Self::parse_func_name(&mut keyword_line);
         let keyword_line = keyword_line.collect::<String>();
 
-        let args = self.parse_func_args(keyword_line)?;
+        let args = Self::parse_func_args(input, keyword_line)?;
         Ok((name, args))
     }
 
-    fn parse_local_scope(&mut self) -> Result<Vec<Variable>> {
-        let vars = vec![];
-        Ok(vars)
-    }
+    fn parse_func_body(mut input: impl BufRead) -> Result<FunctionBody> {
+        // Assume that the function signature is not included
+        let mut code = String::default();
+        'line_loop: loop {
+            let mut line = String::default();
+            input.read_line(&mut line)?;
+            let mut encountered_letter = false;
+            for ch in line.chars() {
+                if !encountered_letter && ch == ' ' {
+                    continue;
+                } else if ch.is_alphabetic() {
+                    encountered_letter = true;
+                }
 
-    fn parse_func_body(&mut self) -> Result<FunctionBody> {
-        let local_vars = self.parse_local_scope()?;
-        Ok(FunctionBody { vars: local_vars })
+                code.push(ch);
+                if code.len() >= 3 && &code[code.len() - 3..code.len()] == "end" {
+                    code.pop();
+                    code.pop();
+                    code.pop();
+                    break 'line_loop;
+                }
+            }
+        }
+        Ok(FunctionBody { code })
     }
 
     // Find alternative instead of the keyword line arg?
-    fn parse_func(&mut self, keyword_line: &str, vm: &'a mut dyn Vm) -> Result<()> {
-        let (name, args) = self.parse_func_signature(keyword_line)?;
-        let body = self.parse_func_body()?;
+    fn parse_func(mut input: impl BufRead, keyword_line: impl AsRef<str>) -> Result<Function> {
+        let (name, args) = Self::parse_func_signature(input.by_ref(), keyword_line)?;
+        let body = Self::parse_func_body(input)?;
         let func = Function {
             name,
             args,
             body,
             ret_val: Value::Any,
         };
-        vm.register_func(func);
-        Ok(())
+        Ok(func)
     }
 
     fn parse_var_name(line: impl IntoIterator<Item = char>) -> Result<String> {
         let mut name_buf = String::default();
         let mut encountered_name = false;
         for ch in line {
-            println!("{}", ch);
-
             if ch == ' ' {
                 if encountered_name {
                     break;
@@ -180,10 +193,12 @@ impl<'a, R: BufRead> Parser<R> {
         Ok(name_buf)
     }
 
-    fn parse_var_value(line: impl IntoIterator<Item = char>, vm: &'a dyn Vm) -> Result<Value> {
+    fn parse_var_value(
+        line: impl IntoIterator<Item = char>,
+        expr_context: impl Into<ExpressionContext>,
+    ) -> Result<Value> {
         let mut expression_text = String::default();
         for ch in line {
-            println!("{}", ch);
             if ch == '?' {
                 break;
             }
@@ -211,15 +226,18 @@ impl<'a, R: BufRead> Parser<R> {
         }
 
         let val = if !expression_text.is_empty() {
-            Expression::from_str(expression_text, vm.get_context()).evaluate()?
+            Expression::from_str(expression_text, expr_context).evaluate()?
         } else {
             Value::None
         };
         Ok(val)
     }
 
-    fn parse_var(line: &str, vm: &'a mut dyn Vm) -> Result<()> {
-        let mut chars = line.chars();
+    fn parse_var(
+        line: impl AsRef<str>,
+        expr_context: impl Into<ExpressionContext>,
+    ) -> Result<Variable> {
+        let mut chars = line.as_ref().chars();
 
         // Skip the included keyword.
         for ch in chars.by_ref() {
@@ -229,17 +247,16 @@ impl<'a, R: BufRead> Parser<R> {
         }
 
         let name = Self::parse_var_name(&mut chars)?;
-        let value = Self::parse_var_value(&mut chars, vm)?;
+        let value = Self::parse_var_value(&mut chars, expr_context)?;
 
         let var = Variable { name, value };
-        vm.register_var(var);
-        Ok(())
+        Ok(var)
     }
 
-    fn get_keyword(line: &str) -> Option<&Keyword> {
+    fn get_keyword(line: impl AsRef<str>) -> Option<&'static Keyword> {
         for keyword in KEYWORDS {
             let keyword_str = keyword.get_keyword();
-            let keyword_line_iter = line.chars().zip(keyword_str.chars());
+            let keyword_line_iter = line.as_ref().chars().zip(keyword_str.chars());
             let mut match_count = 0;
             for (ch, keyword_ch) in keyword_line_iter {
                 if ch == ' ' {
@@ -263,10 +280,80 @@ impl<'a, R: BufRead> Parser<R> {
         None
     }
 
-    pub fn parse(&mut self, vm: &'a mut dyn Vm) -> Result<()> {
+    fn check_line_statement(line: impl AsRef<str>, vm: &mut VirtualMachine) -> Result<()> {
+        let line = line.as_ref();
+        if line.is_empty()
+            || (!line.is_empty() && &line[0..1] == "\n")
+            || (line.len() >= 2 && &line[0..2] == "\r\n")
+        {
+            return Ok(());
+        }
+
+        let ctx = vm.get_context();
+        let mut name_buf = String::default();
+        let mut vals_str_buf = vec![];
+        let mut val_buf = String::default();
+        let mut value_encountered = false;
+        for ch in line.chars() {
+            if value_encountered {
+                if ch == ')' {
+                    vals_str_buf.push(val_buf.clone());
+                    break;
+                }
+                if ch == ',' {
+                    vals_str_buf.push(val_buf.clone());
+                    val_buf.clear();
+                    continue;
+                }
+                if !Self::is_char_legal_literal(ch) {
+                    continue;
+                }
+                val_buf.push(ch);
+                continue;
+            }
+
+            if ch == '?' || ch == '\n' || ch == '\r' {
+                break;
+            }
+
+            if ch == '=' || ch == '(' {
+                value_encountered = true;
+                continue;
+            }
+
+            if !Self::is_char_legal_identifier(ch) {
+                continue;
+            }
+            name_buf.push(ch);
+        }
+
+        if ctx.contains_var(&name_buf) {
+            let expr_ctx: ExpressionContext = ctx.into();
+            let expr = Expression::from_str(val_buf, expr_ctx);
+            ctx.set_var(&name_buf, expr.evaluate()?)?;
+        } else if ctx.contains_func(&name_buf) {
+            let mut vals_buf = vec![];
+            for val_str in vals_str_buf {
+                let expr_ctx: ExpressionContext = ctx.into();
+                let expr = Expression::from_str(val_str, expr_ctx);
+                let result = expr.evaluate()?;
+                vals_buf.push(result);
+            }
+            vm.call_func(name_buf, &vals_buf)?;
+            println!("Gaming");
+        }
+        Ok(())
+    }
+
+    pub fn parse_func_code(code: impl AsRef<str>, args: &[Value]) -> Result<()> {
+        //TODO: Implement funcs.
+        Ok(())
+    }
+
+    pub fn parse(mut input: impl BufRead, vm: &mut VirtualMachine) -> Result<()> {
         loop {
             let mut line = String::default();
-            let count = self.input.read_line(&mut line)?;
+            let count = input.by_ref().read_line(&mut line)?;
             if count == 0 {
                 break;
             }
@@ -276,12 +363,17 @@ impl<'a, R: BufRead> Parser<R> {
 
             let keyword = match Self::get_keyword(&line) {
                 Some(x) => x,
-                None => continue,
+                None => {
+                    Self::check_line_statement(line, vm)?;
+                    continue;
+                }
             };
 
+            let ctx = vm.get_context();
+            let expr_ctx: ExpressionContext = ctx.into();
             match keyword {
-                Keyword::Variable(_) => Self::parse_var(&line, vm)?,
-                Keyword::Function(_) => self.parse_func(&line, vm)?,
+                Keyword::Variable(_) => ctx.register_var(Self::parse_var(line, expr_ctx)?),
+                Keyword::Function(_) => ctx.register_func(Self::parse_func(input.by_ref(), line)?),
                 Keyword::ScopeEnd(_) => return Err("Invalid structured program! Cannot encounter a scope end before a scope is declared.".into()),
             }
         }

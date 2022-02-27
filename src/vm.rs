@@ -1,97 +1,96 @@
 use crate::defs::{Function, Variable};
-use crate::parser::{ParseResult, Parser};
+use crate::parser::Parser;
+use crate::value::Value;
 use std::fs::File;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-pub trait Vm {
-    fn register_vars(&mut self, vars: Vec<Variable>);
-    fn register_var(&mut self, var: Variable);
-    fn register_funcs(&mut self, funcs: Vec<Function>);
-    fn register_func(&mut self, func: Function);
-    fn get_context(&self) -> &dyn VmContext;
-}
-
-pub trait VmContext {
-    fn get_vars(&self) -> Vec<Variable>;
-    fn get_funcs(&self) -> Vec<Function>;
-
-    fn contains_var(&self, var_name: &str);
-    fn contains_func(&self, func_name: &str);
-}
-
-pub struct VmGlobalContext {
-    global_vars: Vec<Variable>,
-    global_funcs: Vec<Function>,
-}
-
-impl VmContext for VmGlobalContext {
-    fn get_vars(&self) -> Vec<Variable> {
-        self.global_vars.clone()
-    }
-
-    fn get_funcs(&self) -> Vec<Function> {
-        self.global_funcs.clone()
-    }
-
-    fn contains_var(&self, var_name: &str) {
-        self.global_vars.iter().any(|x| var_name == x.name);
-    }
-
-    fn contains_func(&self, func_name: &str) {
-        self.global_funcs.iter().any(|x| func_name == x.name);
-    }
+pub struct VmContext {
+    vars: Vec<Variable>, // Use hashmap instead?
+    funcs: Vec<Function>,
 }
 
 pub struct VirtualMachine {
-    context: VmGlobalContext,
+    context: VmContext,
 }
 
-impl Vm for VirtualMachine {
-    fn register_vars(&mut self, vars: Vec<Variable>) {
-        self.context.global_vars.extend(vars);
+impl VmContext {
+    pub fn contains_var(&self, var_name: impl AsRef<str>) -> bool {
+        self.vars.iter().any(|x| var_name.as_ref() == x.name)
     }
 
-    fn register_var(&mut self, var: Variable) {
-        self.context.global_vars.push(var);
+    pub fn contains_func(&self, func_name: impl AsRef<str>) -> bool {
+        self.funcs.iter().any(|x| func_name.as_ref() == x.name)
     }
 
-    fn register_funcs(&mut self, funcs: Vec<Function>) {
-        self.context.global_funcs.extend(funcs);
+    pub fn register_var(&mut self, var: Variable) {
+        println!("Registering var - {:?}", var);
+        self.vars.push(var);
     }
 
-    fn register_func(&mut self, func: Function) {
-        self.context.global_funcs.push(func);
+    pub fn register_func(&mut self, func: Function) {
+        println!("Registering func - {:?}", func);
+        self.funcs.push(func);
     }
 
-    fn get_context(&self) -> &dyn VmContext {
-        &self.context
+    pub fn get_vars(&self) -> Vec<Variable> {
+        self.vars.clone()
+    }
+
+    pub fn get_funcs(&self) -> Vec<Function> {
+        self.funcs.clone()
+    }
+
+    pub fn set_var(&mut self, name: impl AsRef<str>, value: Value) -> Result<()> {
+        let name = name.as_ref();
+        let var = self
+            .vars
+            .iter_mut()
+            .find(|x| x.name == name)
+            .ok_or(format!("Could not find variable '{}'!", name))?;
+        var.value = value;
+        Ok(())
     }
 }
 
 impl VirtualMachine {
     pub fn new() -> Self {
         VirtualMachine {
-            context: VmGlobalContext {
-                global_vars: vec![],
-                global_funcs: vec![],
+            context: VmContext {
+                vars: vec![],
+                funcs: vec![],
             },
         }
     }
 
-    fn execute(&mut self, reader: impl std::io::BufRead) -> Result<()> {
-        let mut parser = Parser::new(reader);
-        parser.parse(self)?;
+    pub fn get_context(&mut self) -> &mut VmContext {
+        &mut self.context
+    }
+
+    pub fn call_func(&self, name: impl AsRef<str>, args: &[Value]) -> Result<()> {
+        let name = name.as_ref();
+        let func = self
+            .context
+            .funcs
+            .iter()
+            .find(|x| x.name == name)
+            .ok_or(format!("Could not find function '{}'!", name))?;
+        Parser::parse_func_code(&func.body.code, args)?;
         Ok(())
     }
 
-    pub fn execute_file(&mut self, path: &str) -> Result<()> {
-        let file = File::open(path)?;
+    fn execute(&mut self, reader: impl std::io::BufRead) -> Result<()> {
+        Parser::parse(reader, self)?;
+        Ok(())
+    }
+
+    pub fn execute_file(&mut self, path: impl AsRef<str>) -> Result<()> {
+        let file = File::open(path.as_ref())?;
         let reader = std::io::BufReader::new(file);
         self.execute(reader)
     }
 
-    pub fn execute_text(&mut self, text: &str) -> Result<()> {
-        self.execute(text.as_bytes())
+    pub fn execute_text(&mut self, text: impl AsRef<str>) -> Result<()> {
+        self.execute(text.as_ref().as_bytes())
     }
 }
