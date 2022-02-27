@@ -1,10 +1,9 @@
 mod defs;
-mod expression;
+mod expressions;
 mod identifiable;
 mod keyword;
 mod operators;
 mod parser;
-mod util;
 mod value;
 mod vm;
 

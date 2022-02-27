@@ -1,54 +1,82 @@
-use crate::defs::{Function, Variable};
+use crate::defs::Function;
 use crate::parser::Parser;
-use crate::value::Value;
+use crate::value::{Argument, NamedValue, Value};
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs::File;
+
+use std::rc::Rc;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+type NamedVal = Rc<RefCell<dyn NamedValue>>;
+
+pub trait Contextable {
+    fn get_var(&self, name: &str) -> Option<NamedVal>;
+    fn get_func(&self, name: &str) -> Option<&Function>;
+
+    fn push_var(&mut self, var: NamedVal); // Make this func more ergonomic to use. See if traits work with it.
+    fn push_func(&mut self, func: Function);
+}
+
+pub trait ExecutionContext: Contextable {
+    fn contains_var(&self, var_name: &str) -> bool;
+    fn contains_func(&self, func_name: &str) -> bool;
+
+    fn set_var(&mut self, name: &str, value: Value) -> Result<()>;
+}
+
+#[derive(Clone)]
 pub struct VmContext {
-    vars: Vec<Variable>, // Use hashmap instead?
-    funcs: Vec<Function>,
+    vars: HashMap<String, NamedVal>,
+    funcs: HashMap<String, Function>,
 }
 
 pub struct VirtualMachine {
     context: VmContext,
 }
 
-impl VmContext {
-    pub fn contains_var(&self, var_name: impl AsRef<str>) -> bool {
-        self.vars.iter().any(|x| var_name.as_ref() == x.name)
+impl Contextable for VmContext {
+    fn get_var(&self, name: &str) -> Option<NamedVal> {
+        self.vars.get(name).map(Rc::clone)
     }
 
-    pub fn contains_func(&self, func_name: impl AsRef<str>) -> bool {
-        self.funcs.iter().any(|x| func_name.as_ref() == x.name)
+    fn get_func(&self, name: &str) -> Option<&Function> {
+        self.funcs.get(name)
     }
 
-    pub fn register_var(&mut self, var: Variable) {
-        println!("Registering var - {:?}", var);
-        self.vars.push(var);
+    fn push_var(&mut self, var: NamedVal) {
+        let name;
+        {
+            name = var.borrow().get_name().to_string();
+        }
+        println!("Pushing var: {} = {:?}", name, var.borrow().get_value());
+        self.vars.insert(name, var);
     }
 
-    pub fn register_func(&mut self, func: Function) {
-        println!("Registering func - {:?}", func);
-        self.funcs.push(func);
+    fn push_func(&mut self, func: Function) {
+        println!("Pushing func: {:?}", func);
+        self.funcs.insert(func.name.clone(), func);
+    }
+}
+
+impl<T: Contextable> ExecutionContext for T {
+    fn contains_var(&self, var_name: &str) -> bool {
+        self.get_var(var_name).is_some()
     }
 
-    pub fn get_vars(&self) -> Vec<Variable> {
-        self.vars.clone()
+    fn contains_func(&self, func_name: &str) -> bool {
+        self.get_func(func_name).is_some()
     }
 
-    pub fn get_funcs(&self) -> Vec<Function> {
-        self.funcs.clone()
-    }
-
-    pub fn set_var(&mut self, name: impl AsRef<str>, value: Value) -> Result<()> {
-        let name = name.as_ref();
+    fn set_var(&mut self, name: &str, value: Value) -> Result<()> {
+        println!("Setting var: {} = {:?}", name, value);
+        let name = name;
         let var = self
-            .vars
-            .iter_mut()
-            .find(|x| x.name == name)
+            .get_var(name)
             .ok_or(format!("Could not find variable '{}'!", name))?;
-        var.value = value;
+        let mut var = var.borrow_mut();
+        var.set_value(value);
         Ok(())
     }
 }
@@ -57,8 +85,8 @@ impl VirtualMachine {
     pub fn new() -> Self {
         VirtualMachine {
             context: VmContext {
-                vars: vec![],
-                funcs: vec![],
+                vars: HashMap::new(),
+                funcs: HashMap::new(),
             },
         }
     }
@@ -67,15 +95,23 @@ impl VirtualMachine {
         &mut self.context
     }
 
-    pub fn call_func(&self, name: impl AsRef<str>, args: &[Value]) -> Result<()> {
+    pub fn call_func(&mut self, name: impl AsRef<str>, args: &mut [Argument]) -> Result<()> {
         let name = name.as_ref();
         let func = self
             .context
-            .funcs
-            .iter()
-            .find(|x| x.name == name)
-            .ok_or(format!("Could not find function '{}'!", name))?;
-        Parser::parse_func_code(&func.body.code, args)?;
+            .get_func(name)
+            .ok_or(format!("Could not call func {}! Does not exist.", name))?
+            .clone(); //TODO: Make sure cloning won't affect anything.
+
+        for arg in args.iter_mut() {
+            for param in func.params.iter() {
+                if arg.index == param.index {
+                    arg.matched_name = Some(param.name.clone());
+                }
+            }
+        }
+
+        Parser::parse_func_code(&func.body.code, args, self)?;
         Ok(())
     }
 

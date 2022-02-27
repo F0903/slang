@@ -1,125 +1,45 @@
-use crate::defs::{Function, Variable};
+use super::sub_expressions::SubExpression;
 use crate::identifiable::Identifiable;
-use crate::operators::{self, OpPriority, Operation};
+use crate::operators::{self, Operation};
 use crate::value::Value;
-use crate::vm::VmContext;
+use crate::vm::ExecutionContext;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-#[derive(Clone, Debug)]
-struct SubExpression {
-    value: Value,
-    op: Operation,
-    next: Option<Box<Self>>,
-}
+//TODO: Extract to file.
 
-impl SubExpression {
-    fn remove_next_from_chain(&mut self) {
-        let next: SubExpression;
-        {
-            let next_temp = match &self.next {
-                None => return,
-                Some(x) => x,
-            };
-            next = (**next_temp).clone();
-        }
-
-        let new_next = match next.next {
-            None => {
-                self.next = None;
-                return;
-            }
-            Some(x) => x,
-        };
-        self.next = Some(new_next);
-    }
-
-    pub fn evaluate(&mut self) -> Result<Value> {
-        let next = match &mut self.next {
-            None => return Ok(self.value.clone()),
-            Some(x) => x,
-        };
-
-        let my_priority = self.op.get_op_priority();
-        let next_priority = next.op.get_op_priority();
-
-        let mut set_plus_op = false;
-        let next_value;
-        if my_priority < next_priority {
-            next_value = next.evaluate()?;
-        } else {
-            next_value = next.value.clone();
-            if matches!(next.op, Operation::Minus(_)) && matches!(self.op, Operation::Plus(_)) {
-                self.op = operators::MINUS;
-            }
-            set_plus_op = true;
-        }
-
-        self.value = self.value.perform_op(&self.op, &next_value)?;
-        self.remove_next_from_chain();
-
-        if set_plus_op {
-            self.op = operators::PLUS
-        }
-
-        self.evaluate()
-    }
-}
-
-pub struct ExpressionContext {
-    pub vars: Vec<Variable>,
-    pub funcs: Vec<Function>,
-}
-
-impl From<&VmContext> for ExpressionContext {
-    fn from(from: &VmContext) -> Self {
-        ExpressionContext {
-            vars: from.get_vars(),
-            funcs: from.get_funcs(),
-        }
-    }
-}
-
-impl From<&mut VmContext> for ExpressionContext {
-    fn from(from: &mut VmContext) -> Self {
-        ExpressionContext {
-            vars: from.get_vars(),
-            funcs: from.get_funcs(),
-        }
-    }
-}
-
-pub struct Expression {
+pub struct Expression<'a> {
     expr_string: String,
-    context: ExpressionContext,
+    context: &'a dyn ExecutionContext,
 }
 
-impl Expression {
-    pub fn from_str(expr: impl ToString, context: impl Into<ExpressionContext>) -> Expression {
+impl<'a> Expression<'a> {
+    pub fn from_str(expr: impl ToString, context: &'a dyn ExecutionContext) -> Expression {
         Expression {
             expr_string: expr.to_string(),
-            context: context.into(),
+            context,
         }
     }
 
     fn get_value_from_expr_token(&self, expr_token: &str) -> Result<Value> {
-        let vars = &self.context.vars;
         let mut token_chars = expr_token.chars();
         let value = if token_chars.all(|ch| ch.is_numeric()) || token_chars.any(|ch| ch == '"') {
             // If here then first token is a constant.
             Value::from_string(expr_token)?
         } else {
             // If here then first token is a variable.
-            vars.iter()
-                .find(|x| x.name == expr_token)
-                .ok_or("Could not find varible.")?
-                .value
-                .clone()
+            let var = self
+                .context
+                .get_var(expr_token)
+                .ok_or("Could not find variable!")?
+                .borrow()
+                .get_value();
+            var
         };
         Ok(value)
     }
 
-    fn is_char_operator<'a>(ch: char) -> Option<&'a Operation> {
+    fn is_char_operator(ch: char) -> Option<&'a Operation> {
         for op in operators::OPERATORS {
             if op.get_identifier().chars().all(|x| x == ch) {
                 return Some(op);

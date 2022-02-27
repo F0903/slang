@@ -2,6 +2,33 @@ use crate::operators::Operation;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+pub trait NamedValue {
+    fn get_name(&self) -> String;
+    fn get_value(&self) -> Value;
+    fn set_value(&mut self, val: Value);
+}
+
+impl NamedValue for Argument {
+    fn get_name(&self) -> String {
+        self.matched_name.as_ref().unwrap().clone() // Should always contain a value when this should be called.
+    }
+
+    fn get_value(&self) -> Value {
+        self.value.clone()
+    }
+
+    fn set_value(&mut self, val: Value) {
+        self.value = val;
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Argument {
+    pub matched_name: Option<String>,
+    pub index: usize,
+    pub value: Value,
+}
+
 #[derive(Debug, Clone)]
 pub enum Value {
     String(String),
