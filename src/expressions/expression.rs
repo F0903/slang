@@ -6,8 +6,6 @@ use crate::vm::ExecutionContext;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-//TODO: Extract to file.
-
 pub struct Expression<'a> {
     expr_string: String,
     context: &'a dyn ExecutionContext,
@@ -22,19 +20,10 @@ impl<'a> Expression<'a> {
     }
 
     fn get_value_from_expr_token(&self, expr_token: &str) -> Result<Value> {
-        let mut token_chars = expr_token.chars();
-        let value = if token_chars.all(|ch| ch.is_numeric()) || token_chars.any(|ch| ch == '"') {
-            // If here then first token is a constant.
-            Value::from_string(expr_token)?
-        } else {
-            // If here then first token is a variable.
-            let var = self
-                .context
-                .get_var(expr_token)
-                .ok_or("Could not find variable!")?
-                .borrow()
-                .get_value();
-            var
+        let var = self.context.get_var(expr_token);
+        let value = match var {
+            Some(x) => x.borrow().get_value(),
+            None => Value::from_string(expr_token)?,
         };
         Ok(value)
     }

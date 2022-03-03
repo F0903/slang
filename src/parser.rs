@@ -2,16 +2,19 @@ use crate::defs::{Function, FunctionBody, Parameter, Variable};
 use crate::expressions::Expression;
 use crate::identifiable::Identifiable;
 use crate::keyword::{Keyword, KeywordInfo, KEYWORDS};
+use crate::line_reader::LineReader;
 use crate::operators::OPERATORS;
 use crate::value::{Argument, Value};
-use crate::vm::{Contextable, ExecutionContext, VirtualMachine};
+use crate::vm::{Contextable, ExecutionContext, VirtualMachine, VmContext};
+use std::borrow::Borrow;
 use std::cell::RefCell;
-use std::io::BufRead;
+use std::io::BufReader;
 use std::rc::Rc;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-//TODO: Refactor and seperate into files?
+//TODO: Many lines are duplicated. Seperate into functions and simplify.
+//TODO: Consider moving into seperate files.
 
 pub struct Parser {}
 
@@ -26,7 +29,12 @@ impl Parser {
         ch.is_alphabetic() || ch.is_numeric() || *ch == '_' || *ch == '-'
     }
 
-    fn parse_func_name(line: &mut impl Iterator<Item = char>) -> String {
+    fn is_scope_end(st: impl AsRef<str>) -> bool {
+        let st = st.as_ref();
+        st.len() >= 3 && &st[st.len() - 3..st.len()] == "end"
+    }
+
+    fn read_func_name(line: &mut impl Iterator<Item = char>) -> String {
         //Skip the included keyword
         for ch in line.by_ref() {
             if ch == ' ' {
@@ -57,22 +65,13 @@ impl Parser {
         name_buf
     }
 
-    fn parse_func_params(
-        mut input: impl BufRead,
-        keyword_line: impl ToString,
-    ) -> Result<Vec<Parameter>> {
-        let line_iter = [Ok(keyword_line.to_string())]
-            .into_iter()
-            .chain(input.by_ref().lines());
+    fn read_func_params(lines: &LineReader, keyword_line: impl ToString) -> Result<Vec<Parameter>> {
+        let line_iter = [keyword_line.to_string()].into_iter().chain(lines);
 
         let mut params = vec![];
         let mut param_idx = 0;
         let mut param_name_buf = String::default();
         'line_iter: for line in line_iter {
-            let line = match line {
-                Ok(x) => x,
-                Err(x) => return Err(x.into()),
-            };
             for ch in line.chars() {
                 if ch == ')' || ch == ',' {
                     params.push(Parameter {
@@ -110,34 +109,35 @@ impl Parser {
         Ok(params)
     }
 
-    fn parse_func_signature(
-        input: impl BufRead,
+    fn read_func_signature(
+        lines: &LineReader,
         keyword_line: impl AsRef<str>,
     ) -> Result<(String, Vec<Parameter>)> {
         let mut keyword_line = keyword_line.as_ref().chars();
-        let name = Self::parse_func_name(&mut keyword_line);
+        let name = Self::read_func_name(&mut keyword_line);
         let keyword_line = keyword_line.collect::<String>();
 
-        let params = Self::parse_func_params(input, keyword_line)?;
+        let params = Self::read_func_params(lines, keyword_line)?;
         Ok((name, params))
     }
 
-    fn parse_func_body(mut input: impl BufRead) -> Result<FunctionBody> {
+    fn read_func_body(lines: &LineReader) -> Result<FunctionBody> {
         // Assume that the function signature is not included
         let mut code = String::default();
+        let mut line_buf = String::default();
         'line_loop: loop {
-            let mut line = String::default();
-            input.read_line(&mut line)?;
+            if lines.read_line(&mut line_buf)? == 0 {
+                break;
+            }
             let mut encountered_letter = false;
-            for ch in line.chars() {
+            for ch in line_buf.chars() {
                 if !encountered_letter && ch == ' ' {
                     continue;
                 } else if ch.is_alphabetic() {
                     encountered_letter = true;
                 }
-
                 code.push(ch);
-                if code.len() >= 3 && &code[code.len() - 3..code.len()] == "end" {
+                if Self::is_scope_end(&mut code) {
                     code.pop();
                     code.pop();
                     code.pop();
@@ -148,10 +148,9 @@ impl Parser {
         Ok(FunctionBody { code })
     }
 
-    // Find alternative instead of the keyword line arg?
-    fn parse_func(mut input: impl BufRead, keyword_line: impl AsRef<str>) -> Result<Function> {
-        let (name, params) = Self::parse_func_signature(input.by_ref(), keyword_line)?;
-        let body = Self::parse_func_body(input)?;
+    fn read_func(lines: &LineReader, keyword_line: impl AsRef<str>) -> Result<Function> {
+        let (name, params) = Self::read_func_signature(lines, keyword_line)?;
+        let body = Self::read_func_body(lines)?;
         let func = Function {
             name,
             params,
@@ -161,7 +160,7 @@ impl Parser {
         Ok(func)
     }
 
-    fn parse_var_name(line: impl IntoIterator<Item = char>) -> Result<String> {
+    fn read_var_name(line: impl IntoIterator<Item = char>) -> Result<String> {
         let mut name_buf = String::default();
         let mut encountered_name = false;
         for ch in line {
@@ -249,7 +248,7 @@ impl Parser {
             }
         }
 
-        let name = Self::parse_var_name(&mut chars)?;
+        let name = Self::read_var_name(&mut chars)?;
         let value = Self::parse_var_value(&mut chars, expr_context)?;
 
         let var = Variable { name, value };
@@ -283,7 +282,7 @@ impl Parser {
         None
     }
 
-    fn check_line_statement(line: impl AsRef<str>, vm: &mut VirtualMachine) -> Result<()> {
+    fn parse_line_statement(line: impl AsRef<str>, vm: &mut VirtualMachine) -> Result<()> {
         let line = line.as_ref();
         if line.is_empty()
             || (!line.is_empty() && &line[0..1] == "\n")
@@ -348,6 +347,124 @@ impl Parser {
         Ok(())
     }
 
+    pub fn parse_repeat(
+        lines: &LineReader,
+        keyword_line: impl AsRef<str>,
+        vm: &mut VirtualMachine,
+    ) -> Result<()> {
+        //TODO: Implement
+        panic!("Not implemented.");
+    }
+
+    pub fn parse_if(
+        lines: &LineReader,
+        keyword_line: impl AsRef<str>,
+        vm: &mut VirtualMachine,
+        ctx: &mut VmContext,
+    ) -> Result<()> {
+        let mut keyword_line_chars = keyword_line.as_ref().chars();
+        let mut encountered_letters = false;
+        // Skip the 'if'.
+        for ch in keyword_line_chars.by_ref() {
+            if ch == ' ' {
+                if encountered_letters {
+                    break;
+                }
+                continue;
+            }
+
+            if ch.is_alphabetic() && !encountered_letters {
+                encountered_letters = true;
+            }
+        }
+
+        let mut expr_buf = String::default();
+        let mut encountered_letters = false;
+        for ch in keyword_line_chars {
+            if ch == '?' || ch == '\n' || ch == '\r' {
+                break;
+            }
+
+            if !Self::is_char_legal_identifier(ch) && !Self::is_char_legal_literal(ch) {
+                continue;
+            }
+
+            if !encountered_letters {
+                encountered_letters = true;
+            }
+
+            expr_buf.push(ch);
+        }
+
+        let expr = Expression::from_str(expr_buf, ctx);
+        let expr_val = match expr.evaluate()? {
+            Value::Boolean(x) => x,
+            _ => return Err("Expression in 'if' must evaluate to a boolean!".into()),
+        };
+
+        if !expr_val {
+            for line in lines {
+                if !Self::is_scope_end(line) {
+                    continue;
+                }
+            }
+            return Ok(());
+        }
+
+        Self::parse_scope(lines, vm, Some(ctx))?;
+
+        Ok(())
+    }
+
+    fn handle_keyword_instance(
+        keyword: impl Borrow<Keyword>,
+        keyword_line: impl AsRef<str>,
+        lines: &LineReader,
+        vm: &mut VirtualMachine,
+        ctx: &mut VmContext,
+    ) -> Result<()> {
+        match keyword.borrow() {
+            Keyword::Variable(_) => ctx.push_var(Rc::new(RefCell::new(Self::parse_var(keyword_line, ctx)?))),
+            Keyword::Function(_) => ctx.push_func(Self::read_func(lines, keyword_line)?), // UNTESTED
+            Keyword::IfScope(_) => Self::parse_if(lines, keyword_line, vm, ctx)?,
+            Keyword::RepeatScope(_) => Self::parse_repeat(lines, keyword_line, vm)?,
+            Keyword::ScopeEnd(_) | Keyword::ScopeBreak(_) => return Err("Invalid structured program! Cannot encounter a scope end or break before a scope is declared.".into()),
+        };
+        Ok(())
+    }
+
+    fn parse_scope(
+        lines: &LineReader,
+        vm: &mut VirtualMachine,
+        ctx: Option<&mut VmContext>,
+    ) -> Result<()> {
+        let mut ctx_val;
+        let ctx = match ctx {
+            Some(x) => x,
+            None => {
+                ctx_val = vm.get_context().clone();
+                &mut ctx_val
+            }
+        };
+
+        let mut line_buf = String::default();
+        loop {
+            line_buf.clear();
+            if lines.read_line(&mut line_buf)? == 0 {
+                break;
+            }
+            let keyword = match Self::get_keyword(&line_buf) {
+                Some(x) => x,
+                None => {
+                    Self::parse_line_statement(&line_buf, vm)?;
+                    continue;
+                }
+            };
+            Self::handle_keyword_instance(keyword, &line_buf, lines, vm, ctx)?;
+        }
+        Ok(())
+    }
+
     pub fn parse_func_code(
         code: impl AsRef<str>,
         args: &[Argument],
@@ -358,52 +475,14 @@ impl Parser {
         for arg in args {
             ctx.push_var(Rc::new(RefCell::new(arg.clone())));
         }
-        for line in code.lines() {
-            let keyword = match Self::get_keyword(line) {
-                Some(x) => x,
-                None => {
-                    Self::check_line_statement(line, vm)?;
-                    continue;
-                }
-            };
-
-            match keyword {
-                Keyword::Variable(_) => ctx.push_var(Rc::new(RefCell::new(Self::parse_var(line, &ctx)?))),
-                Keyword::Function(_) => ctx.push_func(Self::parse_func(code.as_bytes(), line)?), // UNTESTED AND NOT EXPECTED OR SUPPOSED TO WORK
-                Keyword::ScopeEnd(_) => return Err("Invalid structured program! Cannot encounter a scope end before a scope is declared.".into()),
-            }
-        }
+        let buf_reader = BufReader::new(code.as_bytes());
+        let reader = LineReader::new(buf_reader);
+        Self::parse_scope(&reader, vm, Some(&mut ctx))?;
 
         Ok(())
     }
 
-    pub fn parse(mut input: impl BufRead, vm: &mut VirtualMachine) -> Result<()> {
-        loop {
-            let mut line = String::default();
-            let count = input.by_ref().read_line(&mut line)?;
-            if count == 0 {
-                break;
-            }
-            if line.is_empty() {
-                continue;
-            }
-
-            let keyword = match Self::get_keyword(&line) {
-                Some(x) => x,
-                None => {
-                    Self::check_line_statement(line, vm)?;
-                    continue;
-                }
-            };
-
-            let ctx = vm.get_context();
-            match keyword {
-                Keyword::Variable(_) => ctx.push_var(Rc::new(RefCell::new(Self::parse_var(line, ctx)?))),
-                Keyword::Function(_) => ctx.push_func(Self::parse_func(input.by_ref(), line)?),
-                Keyword::ScopeEnd(_) => return Err("Invalid structured program! Cannot encounter a scope end before a scope is declared.".into()),
-            }
-        }
-
-        Ok(())
+    pub fn parse_buffer(input: LineReader, vm: &mut VirtualMachine) -> Result<()> {
+        Self::parse_scope(&input, vm, None)
     }
 }

@@ -1,9 +1,11 @@
 use crate::defs::Function;
+use crate::line_reader::LineReader;
 use crate::parser::Parser;
 use crate::value::{Argument, NamedValue, Value};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
+use std::io::BufReader;
 
 use std::rc::Rc;
 
@@ -101,7 +103,7 @@ impl VirtualMachine {
             .context
             .get_func(name)
             .ok_or(format!("Could not call func {}! Does not exist.", name))?
-            .clone(); //TODO: Make sure cloning won't affect anything.
+            .clone();
 
         for arg in args.iter_mut() {
             for param in func.params.iter() {
@@ -111,22 +113,23 @@ impl VirtualMachine {
             }
         }
 
-        Parser::parse_func_code(&func.body.code, args, self)?;
+        Parser::parse_func_code(func.body.code, args, self)?;
         Ok(())
     }
 
-    fn execute(&mut self, reader: impl std::io::BufRead) -> Result<()> {
-        Parser::parse(reader, self)?;
+    fn execute(&mut self, reader: LineReader) -> Result<()> {
+        Parser::parse_buffer(reader, self)?;
         Ok(())
     }
 
     pub fn execute_file(&mut self, path: impl AsRef<str>) -> Result<()> {
         let file = File::open(path.as_ref())?;
         let reader = std::io::BufReader::new(file);
-        self.execute(reader)
+        self.execute(LineReader::new(reader))
     }
 
     pub fn execute_text(&mut self, text: impl AsRef<str>) -> Result<()> {
-        self.execute(text.as_ref().as_bytes())
+        let reader = BufReader::new(text.as_ref().as_bytes());
+        self.execute(LineReader::new(reader))
     }
 }
