@@ -31,7 +31,12 @@ impl Parser {
 
     fn is_scope_end(st: impl AsRef<str>) -> bool {
         let st = st.as_ref();
-        st.len() >= 3 && &st[st.len() - 3..st.len()] == "end"
+        for (x, (y, z)) in st.chars().zip(st.chars().skip(1).zip(st.chars().skip(2))) {
+            if x == 'e' && y == 'n' && z == 'd' {
+                return true;
+            }
+        }
+        false
     }
 
     fn read_func_name(line: &mut impl Iterator<Item = char>) -> String {
@@ -187,7 +192,7 @@ impl Parser {
             name_buf.push(ch);
         }
 
-        if KEYWORDS.iter().any(|x| x.get_keyword().contains(&name_buf)) {
+        if KEYWORDS.iter().all(|x| x.get_keyword().contains(&name_buf)) {
             return Err(format!(
                 "Variable identifier '{}' is illegal. Identifiers cannot contain keywords!",
                 name_buf
@@ -256,19 +261,12 @@ impl Parser {
     }
 
     fn get_keyword(line: impl AsRef<str>) -> Option<&'static Keyword> {
+        let line = line.as_ref();
         for keyword in KEYWORDS {
             let keyword_str = keyword.get_keyword();
-            let keyword_line_iter = line.as_ref().chars().zip(keyword_str.chars());
+            let keyword_line_iter = line.chars().zip(keyword_str.chars());
             let mut match_count = 0;
             for (ch, keyword_ch) in keyword_line_iter {
-                if ch == ' ' {
-                    continue;
-                }
-
-                if ch == '?' {
-                    break;
-                }
-
                 if ch != keyword_ch {
                     break;
                 }
@@ -396,22 +394,24 @@ impl Parser {
             expr_buf.push(ch);
         }
 
-        let expr = Expression::from_str(expr_buf, ctx);
+        let mut if_ctx = ctx.clone();
+        let expr = Expression::from_str(expr_buf, &if_ctx);
         let expr_val = match expr.evaluate()? {
             Value::Boolean(x) => x,
             _ => return Err("Expression in 'if' must evaluate to a boolean!".into()),
         };
 
         if !expr_val {
+            // Forward through the 'if' body.
             for line in lines {
-                if !Self::is_scope_end(line) {
-                    continue;
+                if Self::is_scope_end(line) {
+                    break;
                 }
             }
             return Ok(());
         }
 
-        Self::parse_scope(lines, vm, Some(ctx))?;
+        Self::parse_scope(lines, vm, Some(&mut if_ctx))?;
 
         Ok(())
     }
@@ -424,11 +424,18 @@ impl Parser {
         ctx: &mut VmContext,
     ) -> Result<()> {
         match keyword.borrow() {
-            Keyword::Variable(_) => ctx.push_var(Rc::new(RefCell::new(Self::parse_var(keyword_line, ctx)?))),
+            Keyword::Variable(_) => {
+                ctx.push_var(Rc::new(RefCell::new(Self::parse_var(keyword_line, ctx)?)))
+            }
             Keyword::Function(_) => ctx.push_func(Self::read_func(lines, keyword_line)?), // UNTESTED
             Keyword::IfScope(_) => Self::parse_if(lines, keyword_line, vm, ctx)?,
             Keyword::RepeatScope(_) => Self::parse_repeat(lines, keyword_line, vm)?,
-            Keyword::ScopeEnd(_) | Keyword::ScopeBreak(_) => return Err("Invalid structured program! Cannot encounter a scope end or break before a scope is declared.".into()),
+            Keyword::ScopeEnd(_) => {
+                return Err(
+                    "Invalid structured program. Encountered end before scope start.".into(),
+                )
+            }
+            Keyword::ScopeBreak(_) => panic!("Not implemented"),
         };
         Ok(())
     }
@@ -453,14 +460,21 @@ impl Parser {
             if lines.read_line(&mut line_buf)? == 0 {
                 break;
             }
-            let keyword = match Self::get_keyword(&line_buf) {
+            let line = line_buf.trim_start();
+
+            if Self::is_scope_end(line) {
+                return Ok(());
+            }
+
+            let keyword = match Self::get_keyword(line) {
                 Some(x) => x,
                 None => {
-                    Self::parse_line_statement(&line_buf, vm)?;
+                    Self::parse_line_statement(line, vm)?;
                     continue;
                 }
             };
-            Self::handle_keyword_instance(keyword, &line_buf, lines, vm, ctx)?;
+
+            Self::handle_keyword_instance(keyword, line, lines, vm, ctx)?;
         }
         Ok(())
     }

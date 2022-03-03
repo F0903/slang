@@ -1,8 +1,14 @@
 ? comment
 
+if false
+    offering a = 5
+    offering b = 10
+    offering c = a + b
+end
+
 offering var_empty ?another comment
 
-offering var_num_1=20
+offering var_num_1 = 20
 offering var_num_2 = 15
 
 var_num_2 = 69
