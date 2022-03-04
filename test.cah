@@ -1,7 +1,10 @@
 ? comment
 
 if true
-    offering a = 5
+    if false
+        offering t = 0
+    end
+    offering a = t
     offering b = 10
     offering c = a + b
 end

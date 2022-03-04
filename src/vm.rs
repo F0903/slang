@@ -48,10 +48,7 @@ impl Contextable for VmContext {
     }
 
     fn push_var(&mut self, var: NamedVal) {
-        let name;
-        {
-            name = var.borrow().get_name().to_string();
-        }
+        let name = { var.borrow().get_name().to_string() };
         println!("Pushing var: {} = {:?}", name, var.borrow().get_value());
         self.vars.insert(name, var);
     }

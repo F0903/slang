@@ -402,7 +402,6 @@ impl Parser {
         };
 
         if !expr_val {
-            //TODO: Test if this works in case of a func def or other scope that ends with 'end'. It probably doesn't work.
             // Forward through the 'if' body.
             for line in lines {
                 if Self::is_scope_end(line) {

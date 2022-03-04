@@ -40,15 +40,14 @@ pub enum Value {
 
 impl Value {
     pub fn from_string(string: &str) -> Result<Self> {
-        let chars = &mut string.chars();
+        let mut chars = string.chars();
         let first_char = chars.next().ok_or("Could not get first char of value.")?;
-
         if first_char == '"' && chars.last().ok_or("Could not get last char of value.")? == '"' {
             // Don't include the '"', so exlude the first and last char.
             return Ok(Value::String(string[1..string.len() - 1].to_string()));
         }
 
-        if chars.all(|ch| ch.is_numeric()) {
+        if string.chars().all(|ch| ch.is_numeric()) {
             return Ok(Value::Number(string.parse()?));
         }
 
@@ -56,7 +55,7 @@ impl Value {
             return Ok(Value::Boolean(x));
         }
 
-        Err("Invalid value.".into())
+        Err(format!("Value '{}' is invalid. Either it's a variable that dosn't exist, or an incorrect litteral.", string).into())
     }
 
     fn add(&self, other: &Value) -> Result<Self> {
