@@ -1,10 +1,13 @@
 ? comment
 
-if true
+offering t_1 = 5
+offering t_2 = 5
+
+if t_1 is t_2
     if false
         offering t = 0
     end
-    offering a = t
+    offering a = 20
     offering b = 10
     offering c = a + b
 end
@@ -16,7 +19,7 @@ offering var_num_2 = 15
 
 var_num_2 = 69
 
-offering var_test_a = 20 + var_num_1 + 5 + var_num_2
+offering var_test_a = 21 + var_num_1 + 5 + var_num_2
 offering var_test_b = 20 * 50 - 5 + 10 / 2 * 5
 
 offering var_num_total = var_num_1 + var_num_2

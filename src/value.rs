@@ -38,6 +38,26 @@ pub enum Value {
     None,
 }
 
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            Value::String(x) => match other {
+                Value::String(y) => x == y,
+                _ => false,
+            },
+            Value::Number(x) => match other {
+                Value::Number(y) => x == y,
+                _ => false,
+            },
+            Value::Boolean(x) => match other {
+                Value::Boolean(y) => x == y,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+}
+
 impl Value {
     pub fn from_string(string: &str) -> Result<Self> {
         let mut chars = string.chars();
@@ -125,12 +145,13 @@ impl Value {
         Ok(new_val)
     }
 
-    pub fn perform_op(&self, op: &Operation, other: &Value) -> Result<Self> {
+    pub fn perform_op(&self, op: &Operation, other: &Value) -> Result<Value> {
         match op {
             Operation::Plus(_) => self.add(other),
             Operation::Minus(_) => self.minus(other),
             Operation::Multiply(_) => self.multiply(other),
             Operation::Divide(_) => self.divide(other),
+            Operation::Equal(_) => Ok(Value::Boolean(self == other)),
             Operation::NoOp(_) => Ok(self.clone()),
         }
     }

@@ -4,11 +4,12 @@ To do list that is somewhat in order.
 
 - [x] Implement changing the value of a variable.
 - [x] Implement branching with "if" statements.
-- [ ] Comparison operators.
+- [x] Comparison operators.
 - [ ] Implement loops.
+- [ ] Floats.
 - [ ] Add ability to add native functions.
 - [ ] Refactor when basics are working.
-- [ ] Heap allocation
+- [ ] Heap allocation.
 
 ## Ideas
 

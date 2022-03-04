@@ -383,7 +383,8 @@ impl Parser {
                 break;
             }
 
-            if !Self::is_char_legal_identifier(ch) && !Self::is_char_legal_literal(ch) {
+            if ch != ' ' && !Self::is_char_legal_identifier(ch) && !Self::is_char_legal_literal(ch)
+            {
                 continue;
             }
 
@@ -395,7 +396,7 @@ impl Parser {
         }
 
         let mut if_ctx = ctx.clone();
-        let expr = Expression::from_str(expr_buf, &if_ctx);
+        let expr = Expression::from_str(expr_buf.trim(), &if_ctx);
         let expr_val = match expr.evaluate()? {
             Value::Boolean(x) => x,
             _ => return Err("Expression in 'if' must evaluate to a boolean!".into()),
@@ -403,12 +404,22 @@ impl Parser {
 
         if !expr_val {
             // Forward through the 'if' body.
+            let mut end_index = 0;
+            let mut end_target_index = 0;
             for line in lines {
+                let line = line.trim();
+                if let Some(Keyword::IfScope(_)) = Self::get_keyword(&line) {
+                    end_target_index += 1;
+                }
+
                 if Self::is_scope_end(line) {
-                    break;
+                    if end_index == end_target_index {
+                        return Ok(());
+                    }
+                    end_index += 1;
                 }
             }
-            return Ok(());
+            return Err("Could not find matching 'end' for current if statement!".into());
         }
 
         Self::parse_scope(lines, vm, Some(&mut if_ctx))?;

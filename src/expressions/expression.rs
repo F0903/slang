@@ -28,16 +28,31 @@ impl<'a> Expression<'a> {
         Ok(value)
     }
 
-    fn is_char_operator(ch: char) -> Option<&'a Operation> {
+    fn contains_operator(token_buf: &mut String) -> Option<&'a Operation> {
+        if token_buf.is_empty() {
+            return None;
+        }
+        let token_buf_copy = token_buf.clone();
         for op in operators::OPERATORS {
-            if op.get_identifier().chars().all(|x| x == ch) {
-                return Some(op);
+            let op_id = op.get_identifier();
+            let mut match_count = 0;
+            for op_id_ch in op_id.chars() {
+                for ch in token_buf_copy.chars() {
+                    if ch == op_id_ch {
+                        match_count += 1;
+                    }
+                    if match_count == op_id.len() {
+                        for _i in 0..match_count {
+                            token_buf.pop();
+                        }
+                        return Some(op);
+                    }
+                }
             }
         }
         None
     }
 
-    /// NOTE: Expects no spacing in input
     fn parse_expr(self) -> Result<Value> {
         let expression_str = &self.expr_string;
         let mut token_values = vec![];
@@ -45,18 +60,17 @@ impl<'a> Expression<'a> {
         let mut token_buf = String::default();
 
         for ch in expression_str.chars() {
-            if let Some(op) = Self::is_char_operator(ch) {
-                let value = self.get_value_from_expr_token(&token_buf)?;
+            if let Some(op) = Self::contains_operator(&mut token_buf) {
+                let value = self.get_value_from_expr_token(token_buf.trim_end())?;
                 token_values.push(value);
                 token_buf.clear();
                 ops.push(Some(op));
-                continue;
             }
             token_buf.push(ch);
         }
 
         if !token_buf.is_empty() {
-            let value = self.get_value_from_expr_token(&token_buf)?;
+            let value = self.get_value_from_expr_token(token_buf.trim_start())?;
             token_values.push(value);
             token_buf.clear();
         }

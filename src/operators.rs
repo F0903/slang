@@ -22,6 +22,7 @@ pub enum Operation {
     Minus(Operator),
     Multiply(Operator),
     Divide(Operator),
+    Equal(Operator),
     NoOp(Operator),
 }
 
@@ -32,6 +33,7 @@ impl ContainsOperator for Operation {
             Operation::Minus(x) => x,
             Operation::Multiply(x) => x,
             Operation::Divide(x) => x,
+            Operation::Equal(x) => x,
             Operation::NoOp(x) => x,
         }
     }
@@ -61,12 +63,6 @@ impl Identifiable for Operator {
     }
 }
 
-//TODO: Find a better way to define operators than this. Extremely error prone.
-pub const NOOP: Operation = Operation::NoOp(Operator {
-    identifier: "noop",
-    priority: OperatorPriority::Low,
-});
-
 pub const PLUS: Operation = Operation::Plus(Operator {
     identifier: "+",
     priority: OperatorPriority::Low,
@@ -87,4 +83,14 @@ pub const DIVIDE: Operation = Operation::Divide(Operator {
     priority: OperatorPriority::Medium,
 });
 
-pub const OPERATORS: &[Operation] = &[PLUS, MINUS, MULTIPLY, DIVIDE, NOOP];
+pub const EQUAL: Operation = Operation::Equal(Operator {
+    identifier: "is",
+    priority: OperatorPriority::Low,
+});
+
+pub const NOOP: Operation = Operation::NoOp(Operator {
+    identifier: "noop",
+    priority: OperatorPriority::Low,
+});
+
+pub const OPERATORS: &[Operation] = &[PLUS, MINUS, MULTIPLY, DIVIDE, EQUAL, NOOP];
