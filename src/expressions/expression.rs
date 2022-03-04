@@ -109,7 +109,7 @@ impl<'a> Expression<'a> {
         }
 
         let mut start_node = match next_sub_expr {
-            None => return Err("No start node found!".into()),
+            None => return Err("No sub-expression start node found!".into()),
             Some(x) => x,
         };
         let val = start_node.evaluate()?;

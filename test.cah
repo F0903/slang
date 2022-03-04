@@ -28,12 +28,14 @@ offering text_1 = "hello "
 offering text_2 = "world!"
 offering text_test = text_1 + text_2
 
-ritual do_something_func(arg1, arg2)
-    offering f_var_a = arg1
-    offering f_var_b = 15
+if false
+    ritual do_something_func(arg1, arg2)
+        offering f_var_a = arg1
+        offering f_var_b = 15
 
-    offering f_var_c = f_var_a + f_var_b
-    offering f_var_d = f_var_c + var_num_1
+        offering f_var_c = f_var_a + f_var_b
+        offering f_var_d = f_var_c + var_num_1
+    end
 end
 
 ? Function call

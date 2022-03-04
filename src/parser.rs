@@ -403,12 +403,14 @@ impl Parser {
         };
 
         if !expr_val {
-            // Forward through the 'if' body.
+            // Forward through the 'if' body and terminate on matching "end"
             let mut end_index = 0;
             let mut end_target_index = 0;
             for line in lines {
                 let line = line.trim();
-                if let Some(Keyword::IfScope(_)) = Self::get_keyword(&line) {
+                if let Some(Keyword::IfScope(_) | Keyword::Function(_) | Keyword::RepeatScope(_)) =
+                    Self::get_keyword(&line)
+                {
                     end_target_index += 1;
                 }
 
