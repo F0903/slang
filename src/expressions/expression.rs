@@ -1,4 +1,4 @@
-use super::sub_expressions::SubExpression;
+use super::sub_expression::SubExpression;
 use crate::identifiable::Identifiable;
 use crate::operators::{self, Operation};
 use crate::value::Value;
@@ -28,44 +28,70 @@ impl<'a> Expression<'a> {
         Ok(value)
     }
 
-    fn contains_operator(token_buf: &mut String) -> Option<&'a Operation> {
+    fn get_op(token_buf: &mut String) -> Option<&'a Operation> {
         if token_buf.is_empty() {
             return None;
         }
         let token_buf_copy = token_buf.clone();
+        let mut best_op = None;
+        let mut best_match_count = 0;
+        let mut best_start_index = 0;
+        let mut best_end_index = 0;
         for op in operators::OPERATORS {
             let op_id = op.get_identifier();
             let mut match_count = 0;
-            for op_id_ch in op_id.chars() {
-                for ch in token_buf_copy.chars() {
-                    if ch == op_id_ch {
-                        match_count += 1;
+            let mut match_index = 0;
+            for op_ch in op_id.chars() {
+                for (i, tkn_ch) in token_buf_copy.chars().enumerate() {
+                    if tkn_ch != op_ch {
+                        continue;
                     }
-                    if match_count == op_id.len() {
-                        for _i in 0..match_count {
-                            token_buf.pop();
-                        }
-                        return Some(op);
+
+                    if i > match_index {
+                        match_count += 1;
+                        match_index = i;
+                    }
+
+                    if i < best_start_index {
+                        best_start_index = i;
+                    }
+                    if i > best_end_index {
+                        best_end_index = i;
+                    }
+
+                    if match_count == op_id.len() && match_count > best_match_count {
+                        best_op = Some(op);
+                        best_match_count = match_count;
                     }
                 }
             }
         }
-        None
+        if let Some(op) = best_op {
+            for _ in 0..op.get_identifier().len() {
+                token_buf.pop();
+            }
+        }
+        best_op
     }
 
     fn parse_expr(self) -> Result<Value> {
         let expression_str = &self.expr_string;
+
         let mut token_values = vec![];
         let mut ops = vec![];
         let mut token_buf = String::default();
-
         for ch in expression_str.chars() {
-            if let Some(op) = Self::contains_operator(&mut token_buf) {
+            if !ch.is_alphabetic() && !ch.is_numeric() {
+                continue;
+            }
+
+            if let Some(op) = Self::get_op(&mut token_buf) {
                 let value = self.get_value_from_expr_token(token_buf.trim_end())?;
                 token_values.push(value);
                 token_buf.clear();
                 ops.push(Some(op));
             }
+
             token_buf.push(ch);
         }
 
