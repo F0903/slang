@@ -1,4 +1,5 @@
 use crate::operators::Operation;
+use std::cmp::Ordering;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -9,14 +10,17 @@ pub trait NamedValue {
 }
 
 impl NamedValue for Argument {
+    #[inline]
     fn get_name(&self) -> String {
         self.matched_name.as_ref().unwrap().clone() // Should always contain a value when this should be called.
     }
 
+    #[inline]
     fn get_value(&self) -> Value {
         self.value.clone()
     }
 
+    #[inline]
     fn set_value(&mut self, val: Value) {
         self.value = val;
     }
@@ -39,6 +43,7 @@ pub enum Value {
 }
 
 impl PartialEq for Value {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         match self {
             Value::String(x) => match other {
@@ -58,7 +63,29 @@ impl PartialEq for Value {
     }
 }
 
+impl PartialOrd for Value {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match self {
+            Value::String(x) => match other {
+                Value::String(y) => x.partial_cmp(y),
+                _ => None,
+            },
+            Value::Number(x) => match other {
+                Value::Number(y) => x.partial_cmp(y),
+                _ => None,
+            },
+            Value::Boolean(x) => match other {
+                Value::Boolean(y) => x.partial_cmp(y),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
 impl Value {
+    #[inline]
     pub fn from_string(string: &str) -> Result<Self> {
         let mut chars = string.chars();
         let first_char = chars.next().ok_or("Could not get first char of value.")?;
@@ -78,7 +105,8 @@ impl Value {
         Err(format!("Value '{}' is invalid. Either it's a variable that dosn't exist, or an incorrect litteral.", string).into())
     }
 
-    fn add(&self, other: &Value) -> Result<Self> {
+    #[inline]
+    fn add(&self, other: &Self) -> Result<Self> {
         let new_val = match self {
             Value::Number(x) => {
                 let other = match other {
@@ -103,7 +131,8 @@ impl Value {
         Ok(new_val)
     }
 
-    fn minus(&self, other: &Value) -> Result<Self> {
+    #[inline]
+    fn minus(&self, other: &Self) -> Result<Self> {
         let new_val = match self {
             Value::Number(x) => {
                 let other = match other {
@@ -117,7 +146,8 @@ impl Value {
         Ok(new_val)
     }
 
-    fn multiply(&self, other: &Value) -> Result<Self> {
+    #[inline]
+    fn multiply(&self, other: &Self) -> Result<Self> {
         let new_val = match self {
             Value::Number(x) => {
                 let other = match other {
@@ -131,7 +161,8 @@ impl Value {
         Ok(new_val)
     }
 
-    fn divide(&self, other: &Value) -> Result<Self> {
+    #[inline]
+    fn divide(&self, other: &Self) -> Result<Self> {
         let new_val = match self {
             Value::Number(x) => {
                 let other = match other {
@@ -145,13 +176,48 @@ impl Value {
         Ok(new_val)
     }
 
+    #[inline]
+    fn equal(&self, other: &Self) -> Result<Self> {
+        let is_eq = self == other;
+        Ok(Value::Boolean(is_eq))
+    }
+
+    #[inline]
+    fn less_than(&self, other: &Self) -> Result<Self> {
+        let is_less = self < other;
+        Ok(Value::Boolean(is_less))
+    }
+
+    #[inline]
+    fn less_or_eq(&self, other: &Self) -> Result<Self> {
+        let less_or_eq = self <= other;
+        Ok(Value::Boolean(less_or_eq))
+    }
+
+    #[inline]
+    fn more_than(&self, other: &Self) -> Result<Self> {
+        let more_than = self > other;
+        Ok(Value::Boolean(more_than))
+    }
+
+    #[inline]
+    fn more_or_eq(&self, other: &Self) -> Result<Self> {
+        let more_or_eq = self >= other;
+        Ok(Value::Boolean(more_or_eq))
+    }
+
+    #[inline]
     pub fn perform_op(&self, op: &Operation, other: &Value) -> Result<Value> {
         match op {
             Operation::Plus(_) => self.add(other),
             Operation::Minus(_) => self.minus(other),
             Operation::Multiply(_) => self.multiply(other),
             Operation::Divide(_) => self.divide(other),
-            Operation::Equal(_) => Ok(Value::Boolean(self == other)),
+            Operation::Equal(_) => self.equal(other),
+            Operation::LessThan(_) => self.less_than(other),
+            Operation::LessOrEq(_) => self.less_or_eq(other),
+            Operation::MoreThan(_) => self.more_than(other),
+            Operation::MoreOrEq(_) => self.more_or_eq(other),
             Operation::NoOp(_) => Ok(self.clone()),
         }
     }

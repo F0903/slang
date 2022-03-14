@@ -21,7 +21,12 @@ pub struct Parser {}
 impl Parser {
     fn is_char_legal_literal(ch: impl std::borrow::Borrow<char>) -> bool {
         let ch = ch.borrow();
-        ch.is_alphabetic() || ch.is_numeric() || *ch == '"'
+        ch.is_alphabetic()
+            || ch.is_numeric()
+            || *ch == '"'
+            || *ch == '='
+            || *ch == '>'
+            || *ch == '<'
     }
 
     fn is_char_legal_identifier(ch: impl std::borrow::Borrow<char>) -> bool {

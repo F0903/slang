@@ -6,7 +6,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-
 use std::rc::Rc;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -68,6 +67,7 @@ impl<T: Contextable> ExecutionContext for T {
         self.get_func(func_name).is_some()
     }
 
+    // Make this an operation and move to Value?
     fn set_var(&mut self, name: &str, value: Value) -> Result<()> {
         println!("Setting var: {} = {:?}", name, value);
         let name = name;

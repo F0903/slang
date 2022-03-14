@@ -15,6 +15,10 @@ Made purely for fun and learning. Don't expect this to work flawlessly.
 **-**  Subtraction \
 **\***  Multiplication \
 **/**  Division \
-**is**  Equality
+**==**  Equality \
+**<** Less Than \
+**<=** Less Or Equal \
+**>** More Than \
+**>=** More Or Equal
 
 For other things see the test.cah file.

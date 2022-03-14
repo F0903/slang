@@ -1,9 +1,6 @@
 ? comment
 
-offering t_1 = 5
-offering t_2 = 5
-
-if t_1 is t_2
+if 5 <= 6
     if false
         offering t = 0
     end

@@ -1,4 +1,4 @@
 pub mod expression;
-mod sub_expressions;
+mod sub_expression;
 
 pub use expression::Expression;

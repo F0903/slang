@@ -23,18 +23,26 @@ pub enum Operation {
     Multiply(Operator),
     Divide(Operator),
     Equal(Operator),
+    LessThan(Operator),
+    LessOrEq(Operator),
+    MoreThan(Operator),
+    MoreOrEq(Operator),
     NoOp(Operator),
 }
 
 impl ContainsOperator for Operation {
     fn get_op(&self) -> &Operator {
         match self {
-            Operation::Plus(x) => x,
-            Operation::Minus(x) => x,
-            Operation::Multiply(x) => x,
-            Operation::Divide(x) => x,
-            Operation::Equal(x) => x,
-            Operation::NoOp(x) => x,
+            Operation::Plus(x)
+            | Operation::Minus(x)
+            | Operation::Multiply(x)
+            | Operation::Divide(x)
+            | Operation::Equal(x)
+            | Operation::LessThan(x)
+            | Operation::LessOrEq(x)
+            | Operation::MoreThan(x)
+            | Operation::MoreOrEq(x)
+            | Operation::NoOp(x) => x,
         }
     }
 }
@@ -84,7 +92,27 @@ pub const DIVIDE: Operation = Operation::Divide(Operator {
 });
 
 pub const EQUAL: Operation = Operation::Equal(Operator {
-    identifier: "is",
+    identifier: "==",
+    priority: OperatorPriority::Low,
+});
+
+pub const LESSTHAN: Operation = Operation::LessThan(Operator {
+    identifier: "<",
+    priority: OperatorPriority::Low,
+});
+
+pub const LESSOREQ: Operation = Operation::LessOrEq(Operator {
+    identifier: "<=",
+    priority: OperatorPriority::Low,
+});
+
+pub const MORETHAN: Operation = Operation::MoreThan(Operator {
+    identifier: ">",
+    priority: OperatorPriority::Low,
+});
+
+pub const MOREOREQ: Operation = Operation::MoreOrEq(Operator {
+    identifier: ">=",
     priority: OperatorPriority::Low,
 });
 
@@ -93,4 +121,7 @@ pub const NOOP: Operation = Operation::NoOp(Operator {
     priority: OperatorPriority::Low,
 });
 
-pub const OPERATORS: &[Operation] = &[PLUS, MINUS, MULTIPLY, DIVIDE, EQUAL, NOOP];
+// REMEMBER TO DEFINE OPS HERE AS WELL.
+pub const OPERATORS: &[Operation] = &[
+    PLUS, MINUS, MULTIPLY, DIVIDE, EQUAL, LESSTHAN, LESSOREQ, MORETHAN, MOREOREQ, NOOP,
+];
