@@ -40,7 +40,6 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-///! Do not debug with any rust version later than 1.58.1 or breakpoints will not be hit.
 fn main() -> Result<()> {
     run()
 }
