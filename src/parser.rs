@@ -214,6 +214,10 @@ impl Parser {
     ) -> Result<Value> {
         let mut expression_text = String::default();
         for ch in line {
+            if ch == '=' {
+                continue;
+            }
+
             if ch == '?' {
                 break;
             }
@@ -222,26 +226,11 @@ impl Parser {
                 break;
             }
 
-            if ch == '=' || ch == ' ' {
-                continue;
-            }
-
-            if ch != '"'
-                && ch != '_'
-                && !ch.is_alphabetic()
-                && !ch.is_numeric()
-                && !OPERATORS
-                    .iter()
-                    .any(|op| op.get_identifier().chars().next().unwrap() == ch)
-            {
-                continue;
-            }
-
             expression_text.push(ch);
         }
 
         let val = if !expression_text.is_empty() {
-            Expression::from_str(expression_text, expr_context).evaluate()?
+            Expression::from_str(expression_text.trim(), expr_context).evaluate()?
         } else {
             Value::None
         };
@@ -251,7 +240,7 @@ impl Parser {
     fn parse_var(line: impl AsRef<str>, expr_context: &impl ExecutionContext) -> Result<Variable> {
         let mut chars = line.as_ref().chars();
 
-        // Skip the included keyword.
+        // Skip the included keyword. (forward the iterator until a space is hit)
         for ch in chars.by_ref() {
             if ch == ' ' {
                 break;
@@ -445,7 +434,7 @@ impl Parser {
             Keyword::Variable(_) => {
                 ctx.push_var(Rc::new(RefCell::new(Self::parse_var(keyword_line, ctx)?)))
             }
-            Keyword::Function(_) => ctx.push_func(Self::read_func(lines, keyword_line)?), // UNTESTED
+            Keyword::Function(_) => ctx.push_func(Self::read_func(lines, keyword_line)?),
             Keyword::IfScope(_) => Self::parse_if(lines, keyword_line, vm, ctx)?,
             Keyword::RepeatScope(_) => Self::parse_repeat(lines, keyword_line, vm)?,
             Keyword::ScopeEnd(_) => {

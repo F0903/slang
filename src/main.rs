@@ -5,6 +5,7 @@ mod keyword;
 mod line_reader;
 mod operators;
 mod parser;
+mod util;
 mod value;
 mod vm;
 

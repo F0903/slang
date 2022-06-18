@@ -102,7 +102,7 @@ impl Value {
             return Ok(Value::Boolean(x));
         }
 
-        Err(format!("Value '{}' is invalid. Either it's a variable that dosn't exist, or an incorrect litteral.", string).into())
+        Err(format!("Value '{}' is invalid. Either it's a variable that dosn't exist, or an incorrect litteral or expression.", string).into())
     }
 
     #[inline]
