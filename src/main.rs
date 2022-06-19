@@ -8,7 +8,7 @@ mod util;
 mod vm;
 
 use types::{Argument, Value};
-use vm::VirtualMachine;
+use vm::{NativeFunction, VirtualMachine};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -24,16 +24,11 @@ fn test(_args: Vec<Argument>) -> Value {
 ///DEBUG
 #[cfg(debug_assertions)]
 fn run() -> Result<()> {
-    use vm::Contextable;
-
-    use crate::vm::{Function, NativeFunction};
-
     let source = DEBUG_FILE;
 
     let mut vm = VirtualMachine::new();
 
-    vm.get_context()
-        .push_func(Function::Native(NativeFunction::new("test", [], test)));
+    vm.register_native_func(NativeFunction::new("test", [], test));
 
     vm.execute_text(source)?;
 

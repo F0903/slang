@@ -67,6 +67,10 @@ impl VirtualMachine {
         Ok(())
     }
 
+    pub fn register_native_func(&mut self, func: NativeFunction) {
+        self.context.push_func(Function::Native(func));
+    }
+
     pub fn execute_file(&mut self, path: impl AsRef<str>) -> Result<()> {
         let file = File::open(path.as_ref())?;
         let reader = std::io::BufReader::new(file);
