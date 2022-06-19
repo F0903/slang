@@ -42,8 +42,8 @@ fn run() -> Result<()> {
         .nth(1)
         .ok_or("Could not get input argument. Please specify the file to interpret.")?;
 
-    let parser = Parser::new();
-    let mut vm = VirtualMachine::new(parser);
+    let mut vm = VirtualMachine::new();
+    core_lib::register_funcs(&mut vm);
     vm.execute_file(&input_arg)?;
 
     Ok(())
