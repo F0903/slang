@@ -38,12 +38,11 @@ impl VirtualMachine {
 
     fn call_script_func(&mut self, func: ScriptFunction, args: &mut [Argument]) -> Result<()> {
         Self::match_args_to_params(args, &func.params);
-        Parser::parse_func_code(func.body.code, args, self)?;
+        Parser::parse_func_code(func.code, args, self)?;
         Ok(())
     }
 
     fn call_native_func(&self, func: NativeFunction, args: &mut [Argument]) -> Result<()> {
-        Self::match_args_to_params(args, &func.params);
         func.call(args.to_owned());
         Ok(())
     }

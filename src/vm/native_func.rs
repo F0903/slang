@@ -1,21 +1,15 @@
-use crate::types::{Argument, Parameter, ScriptFunction, Value};
+use crate::types::{Argument, ScriptFunction, Value};
 
 #[derive(Debug, Clone)]
 pub struct NativeFunction {
     pub name: String,
-    pub params: Vec<Parameter>,       // Params = Input names
     func: fn(Vec<Argument>) -> Value, // Args = Input values
 }
 
 impl NativeFunction {
-    pub fn new(
-        name: impl ToString,
-        params: impl Into<Vec<Parameter>>,
-        func: fn(Vec<Argument>) -> Value,
-    ) -> Self {
+    pub fn new(name: impl ToString, func: fn(Vec<Argument>) -> Value) -> Self {
         Self {
             name: name.to_string(),
-            params: params.into(),
             func,
         }
     }
@@ -36,13 +30,6 @@ impl Function {
         match self {
             Self::Native(x) => &x.name,
             Self::Script(x) => &x.name,
-        }
-    }
-
-    pub fn get_params(&self) -> &Vec<Parameter> {
-        match self {
-            Self::Native(x) => &x.params,
-            Self::Script(x) => &x.params,
         }
     }
 }

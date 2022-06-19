@@ -36,9 +36,8 @@ pub struct Argument {
 #[derive(Debug, Clone)]
 pub enum Value {
     String(String),
-    Number(u32),
+    Number(f64),
     Boolean(bool),
-    Any,
     None,
 }
 
@@ -94,8 +93,8 @@ impl Value {
             return Ok(Value::String(string[1..string.len() - 1].to_string()));
         }
 
-        if string.chars().all(|ch| ch.is_numeric()) {
-            return Ok(Value::Number(string.parse()?));
+        if let Ok(x) = string.parse::<f64>() {
+            return Ok(Value::Number(x));
         }
 
         if let Ok(x) = string.parse::<bool>() {

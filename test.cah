@@ -1,5 +1,8 @@
 ? comment
 
+offering p = 2.5
+
+print_line("Hello world!")
 test()
 
 if 5 <= 6

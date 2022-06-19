@@ -1,3 +1,4 @@
+mod core_lib;
 mod expressions;
 mod keyword;
 mod line_reader;
@@ -27,9 +28,8 @@ fn run() -> Result<()> {
     let source = DEBUG_FILE;
 
     let mut vm = VirtualMachine::new();
-
-    vm.register_native_func(NativeFunction::new("test", [], test));
-
+    core_lib::register_funcs(&mut vm);
+    vm.register_native_func(NativeFunction::new("test", test));
     vm.execute_text(source)?;
 
     Ok(())

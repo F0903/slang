@@ -6,7 +6,8 @@ To-Do list that is somewhat in order.
 - [x] Implement branching with "if" statements.
 - [x] Comparison operators.
 - [x] Add ability to add native functions.
-- [ ] Floats.
+- [x] Floats.
+- [ ] Function return values.
 - [ ] Implement loops.
 - [ ] Refactor
 

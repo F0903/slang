@@ -1,7 +1,7 @@
 use crate::expressions::Expression;
 use crate::keyword::{Keyword, KeywordInfo, KEYWORDS};
 use crate::line_reader::LineReader;
-use crate::types::{Argument, FunctionBody, Parameter, ScriptFunction, Value, Variable};
+use crate::types::{Argument, Parameter, ScriptFunction, Value, Variable};
 use crate::vm::{Contextable, ExecutionContext, Function, VirtualMachine, VmContext};
 use std::borrow::Borrow;
 use std::cell::RefCell;
@@ -84,7 +84,7 @@ impl Parser {
                     params.push(Parameter {
                         index: param_idx,
                         name: param_name_buf.clone(),
-                        value: Value::Any,
+                        value: Value::None,
                     });
                     param_name_buf.clear();
                     if ch == ',' {
@@ -128,7 +128,7 @@ impl Parser {
         Ok((name, params))
     }
 
-    fn read_func_body(lines: &LineReader) -> Result<FunctionBody> {
+    fn read_func_body(lines: &LineReader) -> Result<String> {
         // Assume that the function signature is not included
         let mut code = String::default();
         let mut line_buf = String::default();
@@ -152,7 +152,7 @@ impl Parser {
                 }
             }
         }
-        Ok(FunctionBody { code })
+        Ok(code)
     }
 
     fn read_func(lines: &LineReader, keyword_line: impl AsRef<str>) -> Result<ScriptFunction> {
@@ -161,8 +161,8 @@ impl Parser {
         let func = ScriptFunction {
             name,
             params,
-            body,
-            ret_val: Value::Any,
+            code: body,
+            ret_val: Value::None,
         };
         Ok(func)
     }
@@ -271,32 +271,24 @@ impl Parser {
         None
     }
 
-    fn parse_line_statement(line: impl AsRef<str>, vm: &mut VirtualMachine) -> Result<()> {
-        let line = line.as_ref();
-        if line.is_empty()
-            || (!line.is_empty() && &line[0..1] == "\n")
-            || (line.len() >= 2 && &line[0..2] == "\r\n")
-        {
-            return Ok(());
-        }
-
-        let ctx = vm.get_context();
-        let mut name_buf = String::default();
-        let mut vals_str_buf = vec![];
-        let mut val_buf = String::default();
+    fn parse_var_assign_or_func_call(
+        line: &str,
+        name_buf: &mut String,
+        vals_str_buf: &mut Vec<String>,
+        val_buf: &mut String,
+    ) {
         let mut value_encountered = false;
         for ch in line.chars() {
             if value_encountered {
                 if ch == ')' {
-                    vals_str_buf.push(val_buf.clone());
+                    if !val_buf.is_empty() {
+                        vals_str_buf.push(val_buf.clone());
+                    }
                     break;
                 }
                 if ch == ',' {
                     vals_str_buf.push(val_buf.clone());
                     val_buf.clear();
-                    continue;
-                }
-                if !Self::is_char_legal_literal(ch) {
                     continue;
                 }
                 val_buf.push(ch);
@@ -311,31 +303,41 @@ impl Parser {
                 value_encountered = true;
                 continue;
             }
-
-            if !Self::is_char_legal_identifier(ch) {
-                continue;
-            }
             name_buf.push(ch);
         }
+    }
 
+    fn parse_line_statement(line: impl AsRef<str>, vm: &mut VirtualMachine) -> Result<()> {
+        let line = line.as_ref();
+        if line.is_empty()
+            || (!line.is_empty() && &line[0..1] == "\n")
+            || (line.len() >= 2 && &line[0..2] == "\r\n")
+        {
+            return Ok(());
+        }
+
+        let mut name_buf = String::default();
+        let mut vals_str_buf = vec![];
+        let mut val_buf = String::default();
+        Self::parse_var_assign_or_func_call(line, &mut name_buf, &mut vals_str_buf, &mut val_buf);
+
+        let ctx = vm.get_context();
         if ctx.contains_var(&name_buf) {
             ctx.set_var(&name_buf, Expression::from_str(val_buf, ctx).evaluate()?)?;
-        } else if let Some(func) = ctx.get_func(&name_buf) {
-            let params = func.get_params();
+        } else if ctx.contains_func(&name_buf) {
             let mut vals_buf = vec![];
-            if params.len() > 0 {
-                for (i, val_str) in vals_str_buf.iter().enumerate() {
-                    let expr = Expression::from_str(val_str, ctx);
-                    let expr_value = expr.evaluate()?;
-                    vals_buf.push(Argument {
-                        matched_name: None,
-                        index: i,
-                        value: expr_value,
-                    });
-                }
+            for (i, val_str) in vals_str_buf.iter().enumerate() {
+                let expr = Expression::from_str(val_str, ctx);
+                let expr_value = expr.evaluate()?;
+                vals_buf.push(Argument {
+                    matched_name: None,
+                    index: i,
+                    value: expr_value,
+                });
             }
             vm.call_func(name_buf, &mut vals_buf)?;
         }
+
         Ok(())
     }
 
@@ -344,8 +346,7 @@ impl Parser {
         keyword_line: impl AsRef<str>,
         vm: &mut VirtualMachine,
     ) -> Result<()> {
-        //TODO: Implement
-        panic!("Not implemented.");
+        todo!();
     }
 
     pub fn parse_if(

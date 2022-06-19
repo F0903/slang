@@ -42,14 +42,9 @@ pub struct Parameter {
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionBody {
-    pub code: String,
-}
-
-#[derive(Debug, Clone)]
 pub struct ScriptFunction {
     pub name: String,
     pub params: Vec<Parameter>,
-    pub body: FunctionBody,
+    pub code: String,
     pub ret_val: Value,
 }
