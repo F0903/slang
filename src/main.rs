@@ -1,14 +1,13 @@
-mod defs;
 mod expressions;
-mod identifiable;
 mod keyword;
 mod line_reader;
 mod operators;
 mod parser;
+mod types;
 mod util;
-mod value;
 mod vm;
 
+use types::{Argument, Value};
 use vm::VirtualMachine;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -16,12 +15,26 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 #[cfg(debug_assertions)]
 const DEBUG_FILE: &str = include_str!("../test.cah");
 
+#[cfg(debug_assertions)]
+fn test(_args: Vec<Argument>) -> Value {
+    println!("test");
+    Value::None
+}
+
 ///DEBUG
 #[cfg(debug_assertions)]
 fn run() -> Result<()> {
+    use vm::Contextable;
+
+    use crate::vm::{Function, NativeFunction};
+
     let source = DEBUG_FILE;
 
     let mut vm = VirtualMachine::new();
+
+    vm.get_context()
+        .push_func(Function::Native(NativeFunction::new("test", [], test)));
+
     vm.execute_text(source)?;
 
     Ok(())

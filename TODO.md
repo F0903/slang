@@ -5,9 +5,9 @@ To-Do list that is somewhat in order.
 - [x] Implement changing the value of a variable.
 - [x] Implement branching with "if" statements.
 - [x] Comparison operators.
+- [x] Add ability to add native functions.
 - [ ] Floats.
 - [ ] Implement loops.
-- [ ] Add ability to add native functions.
 - [ ] Refactor
 
 ## Ideas

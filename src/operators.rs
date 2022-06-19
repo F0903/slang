@@ -1,4 +1,4 @@
-use crate::identifiable::Identifiable;
+use crate::types::Identifiable;
 
 pub trait ContainsOperator {
     fn get_op(&self) -> &Operator;

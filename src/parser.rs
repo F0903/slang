@@ -1,11 +1,8 @@
-use crate::defs::{Function, FunctionBody, Parameter, Variable};
 use crate::expressions::Expression;
-use crate::identifiable::Identifiable;
 use crate::keyword::{Keyword, KeywordInfo, KEYWORDS};
 use crate::line_reader::LineReader;
-use crate::operators::OPERATORS;
-use crate::value::{Argument, Value};
-use crate::vm::{Contextable, ExecutionContext, VirtualMachine, VmContext};
+use crate::types::{Argument, FunctionBody, Parameter, ScriptFunction, Value, Variable};
+use crate::vm::{Contextable, ExecutionContext, Function, VirtualMachine, VmContext};
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::io::BufReader;
@@ -158,10 +155,10 @@ impl Parser {
         Ok(FunctionBody { code })
     }
 
-    fn read_func(lines: &LineReader, keyword_line: impl AsRef<str>) -> Result<Function> {
+    fn read_func(lines: &LineReader, keyword_line: impl AsRef<str>) -> Result<ScriptFunction> {
         let (name, params) = Self::read_func_signature(lines, keyword_line)?;
         let body = Self::read_func_body(lines)?;
-        let func = Function {
+        let func = ScriptFunction {
             name,
             params,
             body,
@@ -323,16 +320,19 @@ impl Parser {
 
         if ctx.contains_var(&name_buf) {
             ctx.set_var(&name_buf, Expression::from_str(val_buf, ctx).evaluate()?)?;
-        } else if ctx.contains_func(&name_buf) {
+        } else if let Some(func) = ctx.get_func(&name_buf) {
+            let params = func.get_params();
             let mut vals_buf = vec![];
-            for (i, val_str) in vals_str_buf.iter().enumerate() {
-                let expr = Expression::from_str(val_str, ctx);
-                let expr_value = expr.evaluate()?;
-                vals_buf.push(Argument {
-                    matched_name: None,
-                    index: i,
-                    value: expr_value,
-                });
+            if params.len() > 0 {
+                for (i, val_str) in vals_str_buf.iter().enumerate() {
+                    let expr = Expression::from_str(val_str, ctx);
+                    let expr_value = expr.evaluate()?;
+                    vals_buf.push(Argument {
+                        matched_name: None,
+                        index: i,
+                        value: expr_value,
+                    });
+                }
             }
             vm.call_func(name_buf, &mut vals_buf)?;
         }
@@ -434,7 +434,9 @@ impl Parser {
             Keyword::Variable(_) => {
                 ctx.push_var(Rc::new(RefCell::new(Self::parse_var(keyword_line, ctx)?)))
             }
-            Keyword::Function(_) => ctx.push_func(Self::read_func(lines, keyword_line)?),
+            Keyword::Function(_) => {
+                ctx.push_func(Function::Script(Self::read_func(lines, keyword_line)?))
+            }
             Keyword::IfScope(_) => Self::parse_if(lines, keyword_line, vm, ctx)?,
             Keyword::RepeatScope(_) => Self::parse_repeat(lines, keyword_line, vm)?,
             Keyword::ScopeEnd(_) => {

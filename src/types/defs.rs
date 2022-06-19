@@ -1,4 +1,4 @@
-use crate::value::{NamedValue, Value};
+use super::{NamedValue, Value};
 
 impl NamedValue for Variable {
     fn get_name(&self) -> String {
@@ -47,7 +47,7 @@ pub struct FunctionBody {
 }
 
 #[derive(Debug, Clone)]
-pub struct Function {
+pub struct ScriptFunction {
     pub name: String,
     pub params: Vec<Parameter>,
     pub body: FunctionBody,

@@ -1,5 +1,7 @@
 ? comment
 
+test()
+
 if 5 <= 6
     if false
         offering t = 0

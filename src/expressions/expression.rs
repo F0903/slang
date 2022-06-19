@@ -1,12 +1,10 @@
-use std::borrow::{Borrow, BorrowMut};
-use std::ops::Deref;
-
 use super::sub_expression::SubExpression;
-use crate::identifiable::Identifiable;
 use crate::operators::{self, Operation};
+use crate::types::{Identifiable, Value};
 use crate::util::window_iter::IntoWindowIter;
-use crate::value::Value;
 use crate::vm::ExecutionContext;
+use std::borrow::Borrow;
+use std::ops::Deref;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
