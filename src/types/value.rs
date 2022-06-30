@@ -1,9 +1,9 @@
 use crate::operators::Operation;
-use std::cmp::Ordering;
+use std::{cmp::Ordering, fmt::Debug};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-pub trait NamedValue {
+pub trait NamedValue: Debug {
     fn get_name(&self) -> String;
     fn get_value(&self) -> Value;
     fn set_value(&mut self, val: Value);

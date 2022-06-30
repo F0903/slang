@@ -7,10 +7,10 @@ To-Do list that is somewhat in order.
 - [x] Comparison operators.
 - [x] Add ability to add native functions.
 - [x] Floats.
+- [x] Implement loops.
 - [ ] Function return values.
-- [ ] Implement loops.
-- [ ] Refactor
+- [ ] Refactor (e.g. better internal error handling and custom error types)
 
 ## Ideas
 
-- [ ] Perhaps add a lexer and rewrite parser to handle tokens instead of raw text.
+- Perhaps covert to lexing and that whole ordeal instead of parsing raw text.

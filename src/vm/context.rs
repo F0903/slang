@@ -2,18 +2,22 @@ use super::native_func::Function;
 use super::NamedVal;
 use super::Result;
 use crate::types::Value;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct VmContext {
-    vars: HashMap<String, NamedVal>,
-    funcs: HashMap<String, Function>,
+    vars: RefCell<HashMap<String, NamedVal>>,
+    funcs: RefCell<HashMap<String, Function>>,
 }
 
 impl VmContext {
     pub fn new(vars: HashMap<String, NamedVal>, funcs: HashMap<String, Function>) -> Self {
-        VmContext { vars, funcs }
+        VmContext {
+            vars: RefCell::new(vars),
+            funcs: RefCell::new(funcs),
+        }
     }
 }
 
@@ -25,37 +29,39 @@ impl Default for VmContext {
 
 pub trait Contextable {
     fn get_var(&self, name: &str) -> Option<NamedVal>;
-    fn get_func(&self, name: &str) -> Option<&Function>;
+    fn get_func(&self, name: &str) -> Option<Function>;
 
-    fn push_var(&mut self, var: NamedVal);
-    fn push_func(&mut self, func: Function);
+    fn push_var(&self, var: NamedVal);
+    fn push_func(&self, func: Function);
 }
 
 pub trait ExecutionContext: Contextable {
     fn contains_var(&self, var_name: &str) -> bool;
     fn contains_func(&self, func_name: &str) -> bool;
 
-    fn set_var(&mut self, name: &str, value: Value) -> Result<()>;
+    fn set_var(&self, name: &str, value: Value) -> Result<()>;
 }
 
 impl Contextable for VmContext {
     fn get_var(&self, name: &str) -> Option<NamedVal> {
-        self.vars.get(name).map(Rc::clone)
+        self.vars.borrow_mut().get(name).map(Rc::clone)
     }
 
-    fn get_func(&self, name: &str) -> Option<&Function> {
-        self.funcs.get(name)
+    fn get_func(&self, name: &str) -> Option<Function> {
+        self.funcs.borrow().get(name).cloned()
     }
 
-    fn push_var(&mut self, var: NamedVal) {
+    fn push_var(&self, var: NamedVal) {
         let name = { var.borrow().get_name().to_string() };
         println!("Pushing var: {} = {:?}", name, var.borrow().get_value());
-        self.vars.insert(name, var);
+        self.vars.borrow_mut().insert(name, var);
     }
 
-    fn push_func(&mut self, func: Function) {
+    fn push_func(&self, func: Function) {
         println!("Pushing func: {:?}", func);
-        self.funcs.insert(func.get_name().to_owned(), func);
+        self.funcs
+            .borrow_mut()
+            .insert(func.get_name().to_owned(), func);
     }
 }
 
@@ -69,7 +75,7 @@ impl<T: Contextable> ExecutionContext for T {
     }
 
     // Make this an operation and move to Value?
-    fn set_var(&mut self, name: &str, value: Value) -> Result<()> {
+    fn set_var(&self, name: &str, value: Value) -> Result<()> {
         println!("Setting var: {} = {:?}", name, value);
         let name = name;
         let var = self

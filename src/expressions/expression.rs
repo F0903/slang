@@ -39,8 +39,7 @@ impl<'a> Expression<'a> {
     }
 
     fn parse_expr(self) -> Result<Value> {
-        let expression_str = &self.expr_string;
-
+        let expression_str = &self.expr_string.trim();
         if expression_str.starts_with('"') && expression_str.ends_with('"') {
             return Value::from_string(expression_str);
         }
