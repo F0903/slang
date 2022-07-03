@@ -9,6 +9,7 @@ pub enum Keyword {
     RepeatScope(&'static str),
     ScopeBreak(&'static str),
     ScopeEnd(&'static str),
+    ScopeReturn(&'static str),
 }
 
 pub const KEYWORDS: &[Keyword] = &[
@@ -18,6 +19,7 @@ pub const KEYWORDS: &[Keyword] = &[
     Keyword::RepeatScope("repeat"),
     Keyword::ScopeBreak("break"),
     Keyword::ScopeEnd("end"),
+    Keyword::ScopeReturn("return"),
 ];
 
 impl KeywordInfo for Keyword {
@@ -29,6 +31,7 @@ impl KeywordInfo for Keyword {
             Keyword::RepeatScope(x) => x,
             Keyword::ScopeBreak(x) => x,
             Keyword::ScopeEnd(x) => x,
+            Keyword::ScopeReturn(x) => x,
         }
     }
 }

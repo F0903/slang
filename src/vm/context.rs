@@ -27,55 +27,18 @@ impl Default for VmContext {
     }
 }
 
-pub trait Contextable {
-    fn get_var(&self, name: &str) -> Option<NamedVal>;
-    fn get_func(&self, name: &str) -> Option<Function>;
-
-    fn push_var(&self, var: NamedVal);
-    fn push_func(&self, func: Function);
-}
-
-pub trait ExecutionContext: Contextable {
-    fn contains_var(&self, var_name: &str) -> bool;
-    fn contains_func(&self, func_name: &str) -> bool;
-
-    fn set_var(&self, name: &str, value: Value) -> Result<()>;
-}
-
-impl Contextable for VmContext {
-    fn get_var(&self, name: &str) -> Option<NamedVal> {
-        self.vars.borrow_mut().get(name).map(Rc::clone)
-    }
-
-    fn get_func(&self, name: &str) -> Option<Function> {
-        self.funcs.borrow().get(name).cloned()
-    }
-
-    fn push_var(&self, var: NamedVal) {
+impl VmContext {
+    pub fn push_var(&self, var: NamedVal) {
         let name = { var.borrow().get_name().to_string() };
         println!("Pushing var: {} = {:?}", name, var.borrow().get_value());
         self.vars.borrow_mut().insert(name, var);
     }
 
-    fn push_func(&self, func: Function) {
-        println!("Pushing func: {:?}", func);
-        self.funcs
-            .borrow_mut()
-            .insert(func.get_name().to_owned(), func);
-    }
-}
-
-impl<T: Contextable> ExecutionContext for T {
-    fn contains_var(&self, var_name: &str) -> bool {
-        self.get_var(var_name).is_some()
+    pub fn get_var(&self, name: &str) -> Option<NamedVal> {
+        self.vars.borrow_mut().get(name).map(Rc::clone)
     }
 
-    fn contains_func(&self, func_name: &str) -> bool {
-        self.get_func(func_name).is_some()
-    }
-
-    // Make this an operation and move to Value?
-    fn set_var(&self, name: &str, value: Value) -> Result<()> {
+    pub fn set_var(&self, name: &str, value: Value) -> Result<()> {
         println!("Setting var: {} = {:?}", name, value);
         let name = name;
         let var = self
@@ -84,5 +47,24 @@ impl<T: Contextable> ExecutionContext for T {
         let mut var = var.borrow_mut();
         var.set_value(value);
         Ok(())
+    }
+
+    pub fn get_func(&self, name: &str) -> Option<Function> {
+        self.funcs.borrow().get(name).cloned()
+    }
+
+    pub fn push_func(&self, func: Function) {
+        println!("Pushing func: {:?}", func);
+        self.funcs
+            .borrow_mut()
+            .insert(func.get_name().to_owned(), func);
+    }
+
+    pub fn contains_var(&self, var_name: &str) -> bool {
+        self.get_var(var_name).is_some()
+    }
+
+    pub fn contains_func(&self, func_name: &str) -> bool {
+        self.get_func(func_name).is_some()
     }
 }

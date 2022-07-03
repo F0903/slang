@@ -2,7 +2,7 @@ use crate::code_reader::CodeReader;
 use crate::expressions::Expression;
 use crate::keyword::{Keyword, KeywordInfo, KEYWORDS};
 use crate::types::{Argument, Parameter, ScriptFunction, Value, Variable};
-use crate::vm::{Contextable, ExecutionContext, Function, VirtualMachine, VmContext};
+use crate::vm::{Function, VirtualMachine, VmContext};
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -198,7 +198,8 @@ impl Parser {
 
     fn parse_var_value(
         line: impl IntoIterator<Item = char>,
-        expr_context: &impl ExecutionContext,
+        expr_context: &VmContext,
+        vm: &VirtualMachine,
     ) -> Result<Value> {
         let mut expression_text = String::default();
         for ch in line {
@@ -214,14 +215,18 @@ impl Parser {
         }
 
         let val = if !expression_text.is_empty() {
-            Expression::from_str(expression_text.trim(), expr_context).evaluate()?
+            Expression::from_str(expression_text.trim(), expr_context, vm).evaluate()?
         } else {
             Value::None
         };
         Ok(val)
     }
 
-    fn parse_var(line: impl AsRef<str>, expr_context: &impl ExecutionContext) -> Result<Variable> {
+    fn parse_var(
+        line: impl AsRef<str>,
+        expr_context: &VmContext,
+        vm: &VirtualMachine,
+    ) -> Result<Variable> {
         let mut chars = line.as_ref().chars();
 
         // Skip the included keyword. (forward the iterator until a space is hit)
@@ -232,7 +237,7 @@ impl Parser {
         }
 
         let name = Self::read_var_name(&mut chars)?;
-        let value = Self::parse_var_value(&mut chars, expr_context)?;
+        let value = Self::parse_var_value(&mut chars, expr_context, vm)?;
 
         let var = Variable { name, value };
         Ok(var)
@@ -258,79 +263,19 @@ impl Parser {
         None
     }
 
-    fn parse_var_assign_or_func_call(
-        line: &str,
-        name_buf: &mut String,
-        vals_str_buf: &mut Vec<String>,
-        val_buf: &mut String,
-    ) {
-        let mut value_encountered = false;
-        for ch in line.chars() {
-            if value_encountered {
-                if ch == ')' {
-                    if !val_buf.is_empty() {
-                        vals_str_buf.push(val_buf.clone());
-                    }
-                    break;
-                }
-                if ch == ',' {
-                    vals_str_buf.push(val_buf.clone());
-                    val_buf.clear();
-                    continue;
-                }
-                val_buf.push(ch);
-                continue;
-            }
-
-            if ch == '?' {
-                break;
-            }
-
-            if ch == '=' || ch == '(' {
-                value_encountered = true;
-                continue;
-            }
-            name_buf.push(ch);
-        }
-    }
-
     fn parse_line_statement(
         line: impl AsRef<str>,
         vm: &VirtualMachine,
         ctx: &VmContext,
-    ) -> Result<()> {
-        let line = line.as_ref();
+    ) -> Result<Value> {
+        let line = line.as_ref().trim();
         if line.is_empty() {
-            return Ok(());
+            return Ok(Value::None);
         }
 
-        let mut name_buf = String::default();
-        let mut vals_str_buf = vec![];
-        let mut val_buf = String::default();
-        Self::parse_var_assign_or_func_call(line, &mut name_buf, &mut vals_str_buf, &mut val_buf);
+        Expression::from_str(line, ctx, vm).evaluate()?;
 
-        let name_buf = name_buf.trim();
-        let val_buf = val_buf.trim();
-
-        if ctx.contains_var(name_buf) {
-            let new_val = Expression::from_str(val_buf, ctx).evaluate()?;
-            ctx.set_var(name_buf, new_val)?;
-        } else if ctx.contains_func(name_buf) {
-            let mut vals_buf = vec![];
-            for (i, val_str) in vals_str_buf.iter().enumerate() {
-                let val_str = val_str.trim();
-                let expr = Expression::from_str(val_str, ctx);
-                let expr_value = expr.evaluate()?;
-                vals_buf.push(Argument {
-                    matched_name: None,
-                    index: i,
-                    value: expr_value,
-                });
-            }
-            vm.call_func(name_buf, &mut vals_buf)?;
-        }
-
-        Ok(())
+        Ok(Value::None)
     }
 
     pub fn parse_repeat(
@@ -412,7 +357,7 @@ impl Parser {
         }
 
         let if_ctx = ctx.clone();
-        let expr = Expression::from_str(expr_buf.trim(), &if_ctx);
+        let expr = Expression::from_str(expr_buf.trim(), &if_ctx, vm);
         let expr_val = match expr.evaluate()? {
             Value::Boolean(x) => x,
             _ => return Err("Expression in 'if' must evaluate to a boolean!".into()),
@@ -426,6 +371,22 @@ impl Parser {
         Self::parse_scope(lines, vm, Some(&if_ctx))
     }
 
+    fn parse_return_value(
+        keyword_line: impl AsRef<str>,
+        vm: &VirtualMachine,
+        ctx: &VmContext,
+    ) -> Result<ScopeParseResult> {
+        let keyword_line = keyword_line.as_ref();
+        let first_space = keyword_line
+            .find(' ')
+            .ok_or("Could not parse return value!")?
+            + 1;
+        let expr_str = keyword_line.split_at(first_space).1;
+        let expr = Expression::from_str(expr_str, ctx, vm);
+        let value = expr.evaluate()?;
+        Ok(ScopeParseResult::Return(value))
+    }
+
     fn handle_keyword_instance(
         keyword: impl Borrow<Keyword>,
         keyword_line: impl AsRef<str>,
@@ -434,9 +395,11 @@ impl Parser {
         ctx: &VmContext,
     ) -> Result<ScopeParseResult> {
         match keyword.borrow() {
-            Keyword::Variable(_) => {
-                ctx.push_var(Rc::new(RefCell::new(Self::parse_var(keyword_line, ctx)?)))
-            }
+            Keyword::Variable(_) => ctx.push_var(Rc::new(RefCell::new(Self::parse_var(
+                keyword_line,
+                ctx,
+                vm,
+            )?))),
             Keyword::Function(_) => {
                 ctx.push_func(Function::Script(Self::read_func(lines, keyword_line)?))
             }
@@ -444,6 +407,7 @@ impl Parser {
             Keyword::RepeatScope(_) => Self::parse_repeat(lines, keyword_line, vm, ctx)?,
             Keyword::ScopeEnd(_) => return Ok(ScopeParseResult::None),
             Keyword::ScopeBreak(_) => return Ok(ScopeParseResult::Break),
+            Keyword::ScopeReturn(_) => return Self::parse_return_value(keyword_line, vm, ctx),
         };
         Ok(ScopeParseResult::None)
     }
@@ -477,8 +441,9 @@ impl Parser {
                 }
             };
 
-            match Self::handle_keyword_instance(keyword, line, lines, vm, ctx)? {
-                ScopeParseResult::Break => return Ok(ScopeParseResult::Break),
+            let result = Self::handle_keyword_instance(keyword, line, lines, vm, ctx)?;
+            match result {
+                ScopeParseResult::Break | ScopeParseResult::Return(_) => return Ok(result),
                 _ => (),
             }
         }

@@ -33,6 +33,16 @@ pub struct Argument {
     pub value: Value,
 }
 
+impl Argument {
+    pub fn new(index: usize, value: Value) -> Self {
+        Self {
+            matched_name: None,
+            index,
+            value,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Value {
     String(String),

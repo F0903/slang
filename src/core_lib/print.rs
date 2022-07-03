@@ -1,10 +1,10 @@
 use crate::{
     types::{Argument, Value},
-    vm::{NativeFunction, VirtualMachine},
+    vm::VirtualMachine,
 };
 
 pub fn register_funcs(vm: &mut VirtualMachine) {
-    vm.register_native_func(NativeFunction::new("print_line", print_line))
+    vm.register_native_func("print_line", print_line);
 }
 
 pub fn print_line(input: Vec<Argument>) -> Value {

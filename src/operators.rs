@@ -16,6 +16,7 @@ pub enum OperatorPriority {
     Highest,
 }
 
+//TODO: Add assign as an operator.
 #[derive(Debug, Clone)]
 pub enum Operation {
     Plus(Operator),

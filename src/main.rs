@@ -1,4 +1,5 @@
 #![feature(get_mut_unchecked)]
+#![feature(string_remove_matches)]
 
 mod code_reader;
 mod core_lib;

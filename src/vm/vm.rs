@@ -1,13 +1,14 @@
-use super::Contextable;
 use super::Function;
 use super::NativeFunction;
 use super::Result;
 use super::VmContext;
 use crate::code_reader::CodeReader;
 use crate::parser::Parser;
+use crate::parser::ScopeParseResult;
 use crate::types::Argument;
 use crate::types::Parameter;
 use crate::types::ScriptFunction;
+use crate::types::Value;
 use std::fs::File;
 
 pub struct VirtualMachine {
@@ -35,18 +36,21 @@ impl VirtualMachine {
         }
     }
 
-    fn call_script_func(&self, func: ScriptFunction, args: &mut [Argument]) -> Result<()> {
+    fn call_script_func(&self, func: ScriptFunction, args: &mut [Argument]) -> Result<Value> {
         Self::match_args_to_params(args, &func.params);
-        Parser::parse_func_code(func.code, args, self)?;
-        Ok(())
+        if let ScopeParseResult::Return(x) = Parser::parse_func_code(func.code, args, self)? {
+            Ok(x)
+        } else {
+            Ok(Value::None)
+        }
     }
 
-    fn call_native_func(&self, func: NativeFunction, args: &mut [Argument]) -> Result<()> {
-        func.call(args.to_owned());
-        Ok(())
+    fn call_native_func(&self, func: NativeFunction, args: &mut [Argument]) -> Result<Value> {
+        let value = func.call(args.to_owned());
+        Ok(value)
     }
 
-    pub fn call_func(&self, name: impl AsRef<str>, args: &mut [Argument]) -> Result<()> {
+    pub fn call_func(&self, name: impl AsRef<str>, args: &mut [Argument]) -> Result<Value> {
         let name = name.as_ref();
         let func = self
             .context
@@ -65,8 +69,9 @@ impl VirtualMachine {
         Ok(())
     }
 
-    pub fn register_native_func(&self, func: NativeFunction) {
-        self.context.push_func(Function::Native(func));
+    pub fn register_native_func(&self, name: impl ToString, func: fn(Vec<Argument>) -> Value) {
+        self.context
+            .push_func(Function::Native(NativeFunction::new(name, func)));
     }
 
     pub fn execute_file(&self, path: impl AsRef<str>) -> Result<()> {
