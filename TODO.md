@@ -17,5 +17,5 @@ To-Do list that is somewhat in order.
 ## Ideas
 
 - Move to a single stack or collection for both vars and funcs.
-- Perhaps covert to lexing and that whole ordeal instead of parsing raw text.
 - Unit tests for intepreter
+- Switch to lexing and parsing AST (basically a rewrite)

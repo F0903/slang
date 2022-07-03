@@ -1,6 +1,9 @@
 #![feature(get_mut_unchecked)]
 #![feature(string_remove_matches)]
 
+#[macro_use]
+extern crate lazy_static;
+
 mod code_reader;
 mod core_lib;
 mod expressions;

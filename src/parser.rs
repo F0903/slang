@@ -1,12 +1,11 @@
 use crate::code_reader::CodeReader;
 use crate::expressions::Expression;
-use crate::keyword::{Keyword, KeywordInfo, KEYWORDS};
+use crate::keyword::{Keyword, KEYWORDS};
 use crate::types::{Argument, Parameter, ScriptFunction, Value, Variable};
 use crate::vm::{Function, VirtualMachine, VmContext};
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::thread::Scope;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -131,10 +130,10 @@ impl Parser {
         for line in lines {
             let line = line.trim();
             match Self::get_keyword(&line) {
-                Some(Keyword::Function(_) | Keyword::IfScope(_) | Keyword::RepeatScope(_)) => {
+                Some(Keyword::Function | Keyword::IfScope | Keyword::RepeatScope) => {
                     end_index_target += 1
                 }
-                Some(Keyword::ScopeEnd(_)) => current_end_index += 1,
+                Some(Keyword::ScopeEnd) => current_end_index += 1,
                 _ => (),
             };
             if current_end_index == end_index_target {
@@ -185,7 +184,10 @@ impl Parser {
             name_buf.push(ch);
         }
 
-        if KEYWORDS.iter().all(|x| x.get_keyword().contains(&name_buf)) {
+        if KEYWORDS
+            .iter()
+            .all(|(_kw, kw_str)| kw_str.contains(&name_buf))
+        {
             return Err(format!(
                 "Variable identifier '{}' is illegal. Identifiers cannot contain keywords!",
                 name_buf
@@ -245,8 +247,7 @@ impl Parser {
 
     fn get_keyword(line: impl AsRef<str>) -> Option<&'static Keyword> {
         let line = line.as_ref();
-        for keyword in KEYWORDS {
-            let keyword_str = keyword.get_keyword();
+        for (keyword, keyword_str) in KEYWORDS.iter() {
             let keyword_line_iter = line.chars().zip(keyword_str.chars());
             let mut match_count = 0;
             for (ch, keyword_ch) in keyword_line_iter {
@@ -256,7 +257,7 @@ impl Parser {
 
                 match_count += 1;
                 if match_count == keyword_str.len() {
-                    return Some(keyword);
+                    return Some(&keyword);
                 }
             }
         }
@@ -302,10 +303,10 @@ impl Parser {
         for line in lines {
             let line = line.trim();
             match Self::get_keyword(&line) {
-                Some(Keyword::Function(_) | Keyword::IfScope(_) | Keyword::RepeatScope(_)) => {
+                Some(Keyword::Function | Keyword::IfScope | Keyword::RepeatScope) => {
                     end_index_target += 1
                 }
-                Some(Keyword::ScopeEnd(_)) => current_end_index += 1,
+                Some(Keyword::ScopeEnd) => current_end_index += 1,
                 _ => (),
             };
             if current_end_index == end_index_target {
@@ -395,19 +396,19 @@ impl Parser {
         ctx: &VmContext,
     ) -> Result<ScopeParseResult> {
         match keyword.borrow() {
-            Keyword::Variable(_) => ctx.push_var(Rc::new(RefCell::new(Self::parse_var(
+            Keyword::Variable => ctx.push_var(Rc::new(RefCell::new(Self::parse_var(
                 keyword_line,
                 ctx,
                 vm,
             )?))),
-            Keyword::Function(_) => {
+            Keyword::Function => {
                 ctx.push_func(Function::Script(Self::read_func(lines, keyword_line)?))
             }
-            Keyword::IfScope(_) => return Self::parse_if(lines, keyword_line, vm, ctx),
-            Keyword::RepeatScope(_) => Self::parse_repeat(lines, keyword_line, vm, ctx)?,
-            Keyword::ScopeEnd(_) => return Ok(ScopeParseResult::None),
-            Keyword::ScopeBreak(_) => return Ok(ScopeParseResult::Break),
-            Keyword::ScopeReturn(_) => return Self::parse_return_value(keyword_line, vm, ctx),
+            Keyword::IfScope => return Self::parse_if(lines, keyword_line, vm, ctx),
+            Keyword::RepeatScope => Self::parse_repeat(lines, keyword_line, vm, ctx)?,
+            Keyword::ScopeEnd => return Ok(ScopeParseResult::None),
+            Keyword::ScopeBreak => return Ok(ScopeParseResult::Break),
+            Keyword::ScopeReturn => return Self::parse_return_value(keyword_line, vm, ctx),
         };
         Ok(ScopeParseResult::None)
     }
@@ -433,7 +434,7 @@ impl Parser {
             let line = line_buf.trim_start();
 
             let keyword = match Self::get_keyword(line) {
-                Some(Keyword::ScopeEnd(_)) => break,
+                Some(Keyword::ScopeEnd) => break,
                 Some(x) => x,
                 None => {
                     Self::parse_line_statement(line, vm, ctx)?;

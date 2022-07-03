@@ -43,7 +43,7 @@ impl<'a> Expression<'a> {
             if arg.is_empty() {
                 continue;
             }
-            let val = Expression::from_str(arg, self.context, self.vm).evaluate()?;
+            let val = self.get_value_from_expr(&arg)?;
             arg_values.push(val);
         }
         self.vm.call_func(
@@ -86,21 +86,26 @@ impl<'a> Expression<'a> {
     }
 
     fn handle_var_assignment(&self, expression_str: &str) -> Result<()> {
-        //offering a = 5
-        let keyword_name_spacer = expression_str
-            .find(' ')
-            .ok_or("Could not find variable name start!")?;
-        let assignment = expression_str
+        let assignment_indx = expression_str
             .find('=')
             .ok_or("Could not find variable assignment operator!")?;
 
-        let name = expression_str[keyword_name_spacer..assignment].trim();
-        let expr = expression_str[assignment..].trim();
-        self.context.set_var(
-            name,
-            Expression::from_str(expr, self.context, self.vm).evaluate()?,
-        )?;
+        let name = expression_str[0..assignment_indx].trim();
+        let expr = expression_str[assignment_indx + 1..].trim();
+        self.context
+            .set_var(name, self.get_value_from_expr(expr)?)?;
         Ok(())
+    }
+
+    fn is_expr_assignment(expr_str: &str) -> bool {
+        for ch in expr_str.chars() {
+            match ch {
+                '=' => return true,
+                '"' => break,
+                _ => continue,
+            }
+        }
+        false
     }
 
     fn parse_expr(self) -> Result<Value> {
@@ -114,7 +119,7 @@ impl<'a> Expression<'a> {
             return Value::from_string(expression_str);
         }
 
-        if expression_str.starts_with("offering") {
+        if Self::is_expr_assignment(expression_str) {
             self.handle_var_assignment(expression_str)?;
             return Ok(Value::None);
         }

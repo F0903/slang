@@ -59,12 +59,4 @@ impl VmContext {
             .borrow_mut()
             .insert(func.get_name().to_owned(), func);
     }
-
-    pub fn contains_var(&self, var_name: &str) -> bool {
-        self.get_var(var_name).is_some()
-    }
-
-    pub fn contains_func(&self, func_name: &str) -> bool {
-        self.get_func(func_name).is_some()
-    }
 }

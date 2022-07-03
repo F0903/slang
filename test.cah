@@ -1,5 +1,10 @@
 ? comment
 
+offering s = test_ret()
+print_line(s)
+s = "I have now changed the string :>"
+print_line(s)
+
 ritual sussy()
     offering a = 1
     offering b = 3
@@ -13,6 +18,3 @@ ritual bakka()
 end
 
 offering f = sussy() + bakka()
-
-offering s = test_ret()
-print_line(s)
