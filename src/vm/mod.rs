@@ -8,6 +8,6 @@ use std::{cell::RefCell, rc::Rc};
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 type NamedVal = Rc<RefCell<dyn NamedValue>>;
 
-pub use context::VmContext;
+pub use context::ExecutionContext;
 pub use native_func::{Function, NativeFunction};
 pub use vm::VirtualMachine;

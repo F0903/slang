@@ -4,20 +4,20 @@ use super::sub_expression::SubExpression;
 use crate::operators::{self, Operation};
 use crate::types::{Argument, Identifiable, Value};
 use crate::util::window_iter::IntoWindowIter;
-use crate::vm::{VirtualMachine, VmContext};
+use crate::vm::{ExecutionContext, VirtualMachine};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub struct Expression<'a> {
     expr_string: String,
-    context: &'a VmContext,
+    context: &'a ExecutionContext,
     vm: &'a VirtualMachine,
 }
 
 impl<'a> Expression<'a> {
     pub fn from_str(
         expr: impl ToString,
-        context: &'a VmContext,
+        context: &'a ExecutionContext,
         vm: &'a VirtualMachine,
     ) -> Expression<'a> {
         Expression {

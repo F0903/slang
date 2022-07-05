@@ -5,16 +5,16 @@ print_line(s)
 s = "I have now changed the string :>"
 print_line(s)
 
-ritual sussy()
+ritual func_a()
     offering a = 1
     offering b = 3
     return a + b
 end
 
-ritual bakka()
+ritual func_b()
     offering a = 5
     offering b = 2
     return a + b
 end
 
-offering f = sussy() + bakka()
+offering f = func_a() + func_b()

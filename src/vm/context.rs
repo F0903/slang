@@ -7,27 +7,27 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
-pub struct VmContext {
+pub struct ExecutionContext {
     vars: RefCell<HashMap<String, NamedVal>>,
     funcs: RefCell<HashMap<String, Function>>,
 }
 
-impl VmContext {
+impl ExecutionContext {
     pub fn new(vars: HashMap<String, NamedVal>, funcs: HashMap<String, Function>) -> Self {
-        VmContext {
+        ExecutionContext {
             vars: RefCell::new(vars),
             funcs: RefCell::new(funcs),
         }
     }
 }
 
-impl Default for VmContext {
+impl Default for ExecutionContext {
     fn default() -> Self {
         Self::new(HashMap::new(), HashMap::new())
     }
 }
 
-impl VmContext {
+impl ExecutionContext {
     pub fn push_var(&self, var: NamedVal) {
         let name = { var.borrow().get_name().to_string() };
         println!("Pushing var: {} = {:?}", name, var.borrow().get_value());

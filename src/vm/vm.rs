@@ -1,10 +1,10 @@
+use super::ExecutionContext;
 use super::Function;
 use super::NativeFunction;
 use super::Result;
-use super::VmContext;
 use crate::code_reader::CodeReader;
-use crate::parser::Parser;
 use crate::parser::ScopeParseResult;
+use crate::parser::{parse_buffer, parse_func_code};
 use crate::types::Argument;
 use crate::types::Parameter;
 use crate::types::ScriptFunction;
@@ -12,17 +12,17 @@ use crate::types::Value;
 use std::fs::File;
 
 pub struct VirtualMachine {
-    context: VmContext,
+    context: ExecutionContext,
 }
 
 impl VirtualMachine {
     pub fn new() -> Self {
         VirtualMachine {
-            context: VmContext::default(),
+            context: ExecutionContext::default(),
         }
     }
 
-    pub fn get_context(&self) -> &VmContext {
+    pub fn get_context(&self) -> &ExecutionContext {
         &self.context
     }
 
@@ -38,7 +38,7 @@ impl VirtualMachine {
 
     fn call_script_func(&self, func: ScriptFunction, args: &mut [Argument]) -> Result<Value> {
         Self::match_args_to_params(args, &func.params);
-        if let ScopeParseResult::Return(x) = Parser::parse_func_code(func.code, args, self)? {
+        if let ScopeParseResult::Return(x) = parse_func_code(func.code, args, self)? {
             Ok(x)
         } else {
             Ok(Value::None)
@@ -65,7 +65,7 @@ impl VirtualMachine {
     }
 
     fn execute(&self, reader: CodeReader) -> Result<()> {
-        Parser::parse_buffer(reader, self)?;
+        parse_buffer(reader, self)?;
         Ok(())
     }
 
