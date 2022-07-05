@@ -17,6 +17,7 @@ pub enum OperatorPriority {
 }
 
 //TODO: Add assign as an operator.
+//TODO: Add indexing as an operator.
 #[derive(Debug, Clone)]
 pub enum Operation {
     Plus(Operator),

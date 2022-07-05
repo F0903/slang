@@ -45,6 +45,6 @@ pub struct Parameter {
 pub struct ScriptFunction {
     pub name: String,
     pub params: Vec<Parameter>,
-    pub code: String,
+    pub code: String, // Store line index instead of this?
     pub ret_val: Value,
 }

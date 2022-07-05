@@ -48,6 +48,7 @@ pub enum Value {
     String(String),
     Number(f64),
     Boolean(bool),
+    Array(Vec<Value>),
     None,
 }
 

@@ -1,5 +1,8 @@
 ? comment
 
+offering nice_list = [1, 2, 4.2, "hello there again"]
+offering test_elem = nice_list[2]
+
 offering s = test_ret()
 print_line(s)
 s = "I have now changed the string :>"

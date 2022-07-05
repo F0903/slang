@@ -9,8 +9,6 @@ use std::rc::Rc;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-//TODO: Refactor
-
 pub(crate) enum ScopeParseResult {
     None,
     Break,

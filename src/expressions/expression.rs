@@ -1,3 +1,4 @@
+use std::fmt::format;
 use std::ops::Deref;
 
 use super::sub_expression::SubExpression;
@@ -57,23 +58,82 @@ impl<'a> Expression<'a> {
         )
     }
 
+    fn get_array_name_and_indexing(expression_str: &str) -> Result<Option<(&str, usize)>> {
+        let mut index_start = 0;
+        let mut index_end = 0;
+        let mut index_start_found = false;
+        let mut index_end_found = false;
+        for (i, ch) in expression_str.chars().enumerate() {
+            if ch == '[' && !index_start_found {
+                index_start = i;
+                index_start_found = true;
+            }
+            if ch == ']' && !index_end_found {
+                index_end = i;
+                index_end_found = true;
+            }
+            if index_start_found && index_end_found {
+                break;
+            }
+        }
+
+        if !index_start_found && !index_end_found {
+            return Ok(None);
+        }
+
+        let var_name = &expression_str[0..index_start];
+        let arr_index = expression_str[index_start + 1..index_end].parse::<usize>()?;
+        Ok(Some((var_name, arr_index)))
+    }
+
+    fn get_value_from_var_or_literal(&self, expr_str: &str) -> Result<Value> {
+        let mut is_array = false;
+        let mut arr_name = "";
+        let mut arr_indexing = 0;
+        if let Some((name, indexing)) = Self::get_array_name_and_indexing(expr_str)? {
+            is_array = true;
+            arr_name = name;
+            arr_indexing = indexing;
+        }
+        if is_array {
+            let array = match self.context.get_var(arr_name) {
+                Some(x) => x.deref().borrow().get_value(),
+                None => {
+                    return Err(
+                        format!("Could not find array variable with name '{arr_name}'").into(),
+                    )
+                }
+            };
+            let arr_val_result = match array {
+                Value::Array(raw_vec) => raw_vec
+                    .get(arr_indexing)
+                    .cloned()
+                    .ok_or("Invalid index!".into()),
+                _ => Err("Can only index into arrays!".into()),
+            };
+            return arr_val_result;
+        }
+
+        let var_val = match self.context.get_var(expr_str) {
+            Some(x) => x.deref().borrow().get_value(),
+            None => Value::from_string(expr_str)?,
+        };
+        return Ok(var_val);
+    }
+
     fn get_value_from_expr(&self, expr_str: &str) -> Result<Value> {
-        let brace_start = expr_str.rfind('(');
+        let brace_start = expr_str.find('(');
         let brace_end = expr_str.rfind(')');
         let is_callable = brace_start.is_some() && brace_end.is_some();
-        let val = if is_callable {
+        if is_callable {
             self.resolve_func_value(
                 unsafe { brace_start.unwrap_unchecked() },
                 unsafe { brace_end.unwrap_unchecked() },
                 expr_str,
-            )?
+            )
         } else {
-            match self.context.get_var(expr_str) {
-                Some(x) => x.deref().borrow().get_value(),
-                None => Value::from_string(expr_str)?,
-            }
-        };
-        Ok(val)
+            self.get_value_from_var_or_literal(expr_str)
+        }
     }
 
     fn get_op(op_str: &str) -> Option<&'a Operation> {
@@ -108,6 +168,18 @@ impl<'a> Expression<'a> {
         false
     }
 
+    fn handle_array_initializer(&self, expression_str: &str) -> Result<Value> {
+        // Remove the '[' and ']'
+        let expression_str = &expression_str[1..expression_str.len() - 1];
+
+        let mut vals = vec![];
+        for val_expr in expression_str.split(',') {
+            let val = self.get_value_from_expr(val_expr.trim())?;
+            vals.push(val);
+        }
+        Ok(Value::Array(vals))
+    }
+
     fn parse_expr(self) -> Result<Value> {
         let expression_str = self.expr_string.trim();
 
@@ -117,6 +189,10 @@ impl<'a> Expression<'a> {
 
         if expression_str.starts_with('"') && expression_str.ends_with('"') {
             return Value::from_string(expression_str);
+        }
+
+        if expression_str.starts_with('[') && expression_str.ends_with(']') {
+            return self.handle_array_initializer(expression_str);
         }
 
         if Self::is_expr_assignment(expression_str) {
