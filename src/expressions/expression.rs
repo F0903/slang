@@ -35,12 +35,10 @@ impl<'a> Expression<'a> {
         expr_str: &str,
     ) -> Result<Value> {
         let func_name = &expr_str[0..brace_start];
-        let arg_list = &expr_str[brace_start..brace_end];
+        let arg_list = &expr_str[brace_start + 1..brace_end];
         let args = arg_list.split(',');
         let mut arg_values = vec![];
         for arg in args {
-            let mut arg = arg.to_owned();
-            arg.remove_matches(&['(', ')']);
             if arg.is_empty() {
                 continue;
             }
