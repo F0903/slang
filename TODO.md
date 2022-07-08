@@ -11,7 +11,7 @@ To-Do list that is somewhat in order.
 - [x] Function return values.
 - [x] Arrays and array indexing.
 - [ ] Logical operators.
-- [ ] Make Variable or Value type handle more stuff, instead of asigning through VM type.
+- [ ] Make Variable or Value type handle their raw value, instead of going through VM.
 - [ ] Better error handling and custom error types.
 - [ ] Global logger that can be disabled on release mode instead of println
 - [ ] Refactor
