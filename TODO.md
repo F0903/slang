@@ -2,6 +2,7 @@
 
 To-Do list that is somewhat in order.
 
+- [ ] Complete rewrite with lexer, parser, and interpretor. (wip)
 - [x] Implement changing the value of a variable.
 - [x] Implement branching with "if" statements.
 - [x] Comparison operators.
