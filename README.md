@@ -1,3 +1,3 @@
 # Cahlang
 
-Rewrite of a for-fun hobby language in a proper manner.
+An interpreter for a joke programming language made for educational purposes.
