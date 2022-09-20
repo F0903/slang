@@ -1,20 +1,9 @@
 ? comment
 
-print_line(test_ret())
+hello_world()
 
-offering nice_list = [1, 2, 4.2, "hello there again", test_ret()]
-offering test_elem = nice_list[2]
+ritual test(x) {
+    $< "Got the following value: " + x
+}
 
-ritual func_a()
-    offering a = 1
-    offering b = 3
-    return a + b
-end
-
-ritual func_b()
-    offering a = 5
-    offering b = 2
-    return a + b
-end
-
-offering f = func_a() + func_b()
+test(5)

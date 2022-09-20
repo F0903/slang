@@ -1,52 +1,82 @@
-#![feature(get_mut_unchecked)]
-#![feature(string_remove_matches)]
-
-#[macro_use]
-extern crate lazy_static;
-
-mod code_reader;
-mod core_lib;
-mod expressions;
-mod keyword;
-mod operators;
+mod environment;
+mod error;
+mod expression;
+mod interpreter;
+mod lexer;
 mod parser;
-mod types;
-mod util;
-mod vm;
+mod statement;
+mod token;
+mod utils;
+mod value;
 
-use vm::VirtualMachine;
+use interpreter::Interpreter;
+use lexer::Lexer;
+use parser::Parser;
+use std::{
+    env::args,
+    fs::File,
+    io::{stdin, stdout, BufRead, Read, Write},
+};
+
+use crate::value::{NativeFunction, Value};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-#[cfg(debug_assertions)]
-const DEBUG_FILE: &str = include_str!("../test.cah");
+const DEBUG_TEST_FILE: &str = include_str!("../test.cah");
+const RUN_DEBUG_FILE: bool = true;
 
-///DEBUG
-#[cfg(debug_assertions)]
-fn run() -> Result<()> {
-    let source = DEBUG_FILE;
+fn get_source_path() -> Option<String> {
+    let mut args = args();
+    args.nth(1)
+}
 
-    let mut vm = VirtualMachine::new();
-    core_lib::register_funcs(&mut vm);
-    vm.execute_text(source)?;
+fn run(source: String, interpreter: &mut Interpreter) -> Result<()> {
+    interpreter.register_native(NativeFunction::new("hello_world".to_owned(), 0, |_, _| {
+        println!("Hello world!");
+        Ok(Value::None)
+    }));
 
+    println!("{}\n", source);
+    let lexer = Lexer::new(source);
+    let mut parser = Parser::new(lexer);
+    let statements = parser.parse();
+    interpreter.interpret(statements);
     Ok(())
 }
 
-///RELEASE
-#[cfg(not(debug_assertions))]
-fn run() -> Result<()> {
-    let input_arg = std::env::args()
-        .nth(1)
-        .ok_or("Could not get input argument. Please specify the file to interpret.")?;
+fn run_interactively() -> Result<()> {
+    let mut interpreter = Interpreter::new();
+    let mut stdout = stdout().lock();
+    let mut stdin = stdin().lock();
+    let mut strbuf = String::new();
+    loop {
+        stdout.write_all(b"> ")?;
+        stdout.flush()?;
+        let count = stdin.read_line(&mut strbuf)?;
+        if count == 0 {
+            break;
+        }
+        run(strbuf.clone(), &mut interpreter).ok();
+        strbuf.clear();
+    }
+    Ok(())
+}
 
-    let mut vm = VirtualMachine::new();
-    core_lib::register_funcs(&mut vm);
-    vm.execute_file(&input_arg)?;
-
+fn run_file(path: String) -> Result<()> {
+    let mut interpreter = Interpreter::new();
+    let mut buf = String::new();
+    File::open(path)?.read_to_string(&mut buf)?;
+    run(buf, &mut interpreter)?;
     Ok(())
 }
 
 fn main() -> Result<()> {
-    run()
+    if RUN_DEBUG_FILE {
+        let mut intr = Interpreter::new();
+        return run(DEBUG_TEST_FILE.to_owned(), &mut intr);
+    }
+    match get_source_path() {
+        Some(x) => run_file(x),
+        None => run_interactively(),
+    }
 }

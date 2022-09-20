@@ -1,453 +1,541 @@
-use crate::code_reader::CodeReader;
-use crate::expressions::Expression;
-use crate::keyword::{Keyword, KEYWORDS};
-use crate::types::{Argument, Parameter, ScriptFunction, Value, Variable};
-use crate::vm::{ExecutionContext, Function, VirtualMachine};
-use std::borrow::Borrow;
-use std::cell::RefCell;
-use std::rc::Rc;
+use core::panic;
+use std::{fmt::Display, iter::Peekable};
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+use crate::{
+    error::{get_err_handler, Result, RuntimeError},
+    expression::{
+        AssignExpression, BinaryExpression, CallExpression, Expression, GroupingExpression,
+        LiteralExpression, LogicalExpression, UnaryExpression, VariableExpression,
+    },
+    statement::{
+        BlockStatement, ExpressionStatement, FunctionStatement, IfStatement, PrintStatement,
+        ReturnStatement, Statement, VarStatement, WhileStatement,
+    },
+    token::{Token, TokenType},
+    value::Value,
+};
 
-pub(crate) enum ScopeParseResult {
-    None,
-    Break,
-    Return(Value),
+const MAX_FUNC_ARG_COUNT: usize = 255;
+
+enum FunctionKind {
+    Function,
+    Method,
 }
 
-fn is_char_legal_literal(ch: impl std::borrow::Borrow<char>) -> bool {
-    let ch = ch.borrow();
-    ch.is_alphabetic() || ch.is_numeric() || *ch == '"' || *ch == '=' || *ch == '>' || *ch == '<'
+impl Display for FunctionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = match self {
+            Self::Function => "Function",
+            Self::Method => "Method",
+        };
+        f.write_str(text)
+    }
 }
 
-fn is_char_legal_identifier(ch: impl std::borrow::Borrow<char>) -> bool {
-    let ch = ch.borrow();
-    ch.is_alphabetic() || ch.is_numeric() || *ch == '_' || *ch == '-'
+pub struct Parser<I: Iterator<Item = Token>> {
+    tokens: Peekable<I>,
+    last_token: Option<Token>,
 }
 
-fn read_func_name(line: &mut impl Iterator<Item = char>) -> String {
-    //Skip the included keyword
-    for ch in line.by_ref() {
-        if ch == ' ' {
-            break;
+impl<I: Iterator<Item = Token>> Parser<I> {
+    pub fn new(tokens: I) -> Self {
+        Self {
+            tokens: tokens.peekable(),
+            last_token: None,
         }
     }
 
-    let mut name_buf = String::default();
-    let mut last_char = '0';
-    for ch in line.by_ref() {
-        if last_char.is_alphabetic() && (ch == ' ' || ch == '(') {
-            break;
-        }
-
-        // Remove extra spaces at the start.
-        if ch == ' ' {
-            continue;
-        }
-
-        if !is_char_legal_identifier(ch) {
-            continue;
-        }
-
-        name_buf.push(ch);
-        last_char = ch;
+    fn error<T>(token: &Token, msg: &str) -> Result<T> {
+        get_err_handler().report(token.line, msg);
+        Err(RuntimeError::new(token.clone(), msg))
     }
 
-    name_buf
-}
+    fn check(&mut self, typ: TokenType) -> bool {
+        if self.at_end() {
+            false
+        } else {
+            self.peek().token_type == typ
+        }
+    }
 
-fn read_func_params(lines: &CodeReader, keyword_line: impl ToString) -> Result<Vec<Parameter>> {
-    let line_iter = [keyword_line.to_string()].into_iter().chain(lines);
+    fn peek(&mut self) -> &Token {
+        self.tokens.peek().unwrap()
+    }
 
-    let mut params = vec![];
-    let mut param_idx = 0;
-    let mut param_name_buf = String::default();
-    'line_iter: for line in line_iter {
-        for ch in line.chars() {
-            if ch == ')' || ch == ',' {
-                params.push(Parameter {
-                    index: param_idx,
-                    name: param_name_buf.clone(),
-                    value: Value::None,
-                });
-                param_name_buf.clear();
-                if ch == ',' {
-                    param_idx += 1;
-                    continue;
+    fn at_end(&mut self) -> bool {
+        self.peek().token_type == TokenType::EOF
+    }
+
+    fn previous(&self) -> Token {
+        self.last_token.clone().unwrap()
+    }
+
+    fn advance(&mut self) -> Token {
+        let ret = self.peek().clone();
+        let next = self.tokens.next().unwrap();
+        self.last_token = Some(next);
+        return ret;
+    }
+
+    fn match_next(&mut self, types: &[TokenType]) -> bool {
+        for typ in types {
+            if self.check(*typ) {
+                self.advance();
+                return true;
+            }
+        }
+        false
+    }
+
+    fn synchronize(&mut self) {
+        self.advance();
+        while !self.at_end() {
+            if self.previous().token_type == TokenType::StatementEnd {
+                return;
+            }
+
+            // Skip through untill a statement end is hit, then advance.
+            if self.peek().token_type == TokenType::StatementEnd {
+                self.advance();
+                return;
+            }
+        }
+    }
+
+    fn consume_if(&mut self, token_type: TokenType, err_msg: &str) -> Result<Token> {
+        if self.check(token_type) {
+            return Ok(self.advance());
+        }
+
+        Self::error(self.peek(), err_msg)
+    }
+
+    fn handle_primary(&mut self) -> Result<Expression> {
+        if self.match_next(&[TokenType::Identifier]) {
+            Ok(Expression::Variable(Box::new(VariableExpression {
+                name: self.previous().clone(),
+            })))
+        } else if self.match_next(&[TokenType::False]) {
+            Ok(Expression::Literal(Box::new(LiteralExpression {
+                value: Value::Boolean(false),
+            })))
+        } else if self.match_next(&[TokenType::True]) {
+            Ok(Expression::Literal(Box::new(LiteralExpression {
+                value: Value::Boolean(true),
+            })))
+        } else if self.match_next(&[TokenType::None]) {
+            Ok(Expression::Literal(Box::new(LiteralExpression {
+                value: Value::None,
+            })))
+        } else if self.match_next(&[TokenType::Number, TokenType::String]) {
+            Ok(Expression::Literal(Box::new(LiteralExpression {
+                value: self.previous().literal,
+            })))
+        } else if self.match_next(&[TokenType::ParenOpen]) {
+            let expr = self.handle_expression()?;
+            self.consume_if(TokenType::ParenClose, "Expected ')' after expression.")?;
+            Ok(Expression::Grouping(Box::new(GroupingExpression { expr })))
+        } else {
+            Self::error(self.peek(), "Expected an expression.")
+        }
+    }
+
+    fn handle_postfix(&mut self) -> Result<Expression> {
+        let primary = self.handle_primary()?;
+        if let Expression::Variable(x) = primary {
+            if self.match_next(&[TokenType::MinusMinus, TokenType::PlusPlus]) {
+                let prev_token = self.previous();
+                let op_type = match prev_token.token_type {
+                    TokenType::MinusMinus => TokenType::Minus,
+                    TokenType::PlusPlus => TokenType::Plus,
+                    _ => return Self::error(&prev_token, "Unknown token in postfix operator."),
+                };
+                let operator = Token {
+                    token_type: op_type,
+                    ..prev_token
+                };
+                let start = Expression::Assign(Box::new(AssignExpression {
+                    name: x.name.clone(),
+                    value: Expression::Binary(Box::new(BinaryExpression {
+                        left: Expression::Variable(x),
+                        operator,
+                        right: Expression::Literal(Box::new(LiteralExpression {
+                            value: Value::Number(1.0),
+                        })),
+                    })),
+                }));
+                return Ok(start);
+            }
+            return Ok(Expression::Variable(x));
+        }
+        Ok(primary)
+    }
+
+    fn finish_call(&mut self, callee: Expression) -> Result<Expression> {
+        let mut args = vec![];
+        if !self.check(TokenType::ParenClose) {
+            loop {
+                if args.len() > MAX_FUNC_ARG_COUNT {
+                    return Self::error(self.peek(), "Can't have more that 255 arguments.");
                 }
-                if ch == ')' {
-                    break 'line_iter;
+                args.push(self.handle_expression()?);
+                if !self.match_next(&[TokenType::Comma]) {
+                    break;
                 }
+            }
+        }
+        let paren = self.consume_if(TokenType::ParenClose, "Expected ')' after call arguments.")?;
+        Ok(Expression::Call(Box::new(CallExpression {
+            callee,
+            args,
+            paren,
+        })))
+    }
+
+    fn handle_call(&mut self) -> Result<Expression> {
+        let mut expr = self.handle_postfix()?;
+        loop {
+            if self.match_next(&[TokenType::ParenOpen]) {
+                expr = self.finish_call(expr)?;
+            } else {
                 break;
             }
-
-            if ch == ' ' {
-                continue;
-            }
-
-            if ch == '(' {
-                continue;
-            }
-
-            if !is_char_legal_identifier(ch) {
-                continue;
-            }
-
-            param_name_buf.push(ch);
         }
+
+        Ok(expr)
     }
 
-    Ok(params)
-}
+    fn handle_unary(&mut self) -> Result<Expression> {
+        if self.match_next(&[TokenType::Not, TokenType::Minus]) {
+            let operator = self.previous();
+            let right = self.handle_unary()?;
+            return Ok(Expression::Unary(Box::new(UnaryExpression {
+                operator,
+                right,
+            })));
+        }
+        self.handle_call()
+    }
 
-fn read_func_signature(
-    lines: &CodeReader,
-    keyword_line: impl AsRef<str>,
-) -> Result<(String, Vec<Parameter>)> {
-    let mut keyword_line = keyword_line.as_ref().chars();
-    let name = read_func_name(&mut keyword_line);
-    let keyword_line = keyword_line.collect::<String>();
+    fn handle_factor(&mut self) -> Result<Expression> {
+        let mut expr = self.handle_unary()?;
+        while self.match_next(&[TokenType::Divide, TokenType::Multiply]) {
+            let operator = self.previous();
+            let right = self.handle_unary()?;
+            expr = Expression::Binary(Box::new(BinaryExpression {
+                left: expr,
+                operator,
+                right,
+            }));
+        }
+        Ok(expr)
+    }
 
-    let params = read_func_params(lines, keyword_line)?;
-    Ok((name, params))
-}
+    fn handle_term(&mut self) -> Result<Expression> {
+        let mut expr = self.handle_factor()?;
+        while self.match_next(&[TokenType::Minus, TokenType::Plus]) {
+            let operator = self.previous();
+            let right = self.handle_factor()?;
+            expr = Expression::Binary(Box::new(BinaryExpression {
+                left: expr,
+                operator,
+                right,
+            }));
+        }
+        Ok(expr)
+    }
 
-fn read_func_body(lines: &mut CodeReader) -> Result<String> {
-    // Assume that the function signature is not included
-    let mut code = String::default();
-    let mut current_end_index = 0;
-    let mut end_index_target = 1;
-    for line in lines {
-        let line = line.trim();
-        match get_keyword(&line) {
-            Some(Keyword::Function | Keyword::IfScope | Keyword::RepeatScope) => {
-                end_index_target += 1
+    fn handle_comparison(&mut self) -> Result<Expression> {
+        let mut expr = self.handle_term()?;
+        while self.match_next(&[
+            TokenType::Greater,
+            TokenType::GreaterEqual,
+            TokenType::Less,
+            TokenType::LessEqual,
+        ]) {
+            let operator = self.previous();
+            let right = self.handle_term()?;
+            expr = Expression::Binary(Box::new(BinaryExpression {
+                left: expr,
+                operator: operator.clone(),
+                right,
+            }));
+        }
+        Ok(expr)
+    }
+
+    fn handle_equality(&mut self) -> Result<Expression> {
+        let mut expr = self.handle_comparison()?;
+        while self.match_next(&[TokenType::Is, TokenType::Not]) {
+            let operator = self.previous();
+            let right = self.handle_comparison()?;
+            expr = Expression::Binary(Box::new(BinaryExpression {
+                left: expr,
+                operator: operator.clone(),
+                right,
+            }));
+        }
+        Ok(expr)
+    }
+
+    fn handle_and(&mut self) -> Result<Expression> {
+        let mut expr = self.handle_equality()?;
+        while self.match_next(&[TokenType::And]) {
+            let operator = self.previous();
+            let right = self.handle_equality()?;
+            expr = Expression::Logical(Box::new(LogicalExpression {
+                left: expr,
+                operator,
+                right,
+            }))
+        }
+        Ok(expr)
+    }
+
+    fn handle_or(&mut self) -> Result<Expression> {
+        let mut expr = self.handle_and()?;
+        while self.match_next(&[TokenType::And]) {
+            let operator = self.previous();
+            let right = self.handle_and()?;
+            expr = Expression::Logical(Box::new(LogicalExpression {
+                left: expr,
+                operator,
+                right,
+            }));
+        }
+        Ok(expr)
+    }
+
+    fn handle_assignment(&mut self) -> Result<Expression> {
+        let expr = self.handle_or()?;
+        if self.match_next(&[TokenType::Equal]) {
+            let equals = self.previous();
+            let value = self.handle_assignment()?;
+            if let Expression::Variable(x) = expr {
+                let name = x.name;
+                return Ok(Expression::Assign(Box::new(AssignExpression {
+                    name,
+                    value,
+                })));
             }
-            Some(Keyword::ScopeEnd) => current_end_index += 1,
-            _ => (),
+
+            // Dont throw, just report
+            Self::error::<RuntimeError>(&equals, "Invalid assignment target.").ok();
+        } else if self.match_next(&[TokenType::PlusEqual, TokenType::MinusEqual]) {
+            let prev = self.previous();
+            let token_type = match prev.token_type {
+                TokenType::PlusEqual => TokenType::Plus,
+                TokenType::MinusEqual => TokenType::Minus,
+                _ => return Self::error(&prev, "Unknown operator type in +=/-= operator."),
+            };
+            let operator = Token { token_type, ..prev };
+            let value = self.handle_assignment()?;
+            if let Expression::Variable(x) = expr {
+                let name = x.name;
+                return Ok(Expression::Assign(Box::new(AssignExpression {
+                    name: name.clone(),
+                    value: Expression::Binary(Box::new(BinaryExpression {
+                        left: Expression::Variable(Box::new(VariableExpression { name })),
+                        operator,
+                        right: value,
+                    })),
+                })));
+            }
+        }
+        Ok(expr)
+    }
+
+    fn handle_expression(&mut self) -> Result<Expression> {
+        self.handle_assignment()
+    }
+
+    fn handle_print_statement(&mut self) -> Result<Statement> {
+        let expr = self.handle_expression()?;
+        self.consume_if(
+            TokenType::StatementEnd,
+            "Expected statement end after expression.",
+        )?;
+        Ok(Statement::Print(PrintStatement { expr }))
+    }
+
+    fn handle_expression_statement(&mut self) -> Result<Statement> {
+        let expr = self.handle_expression()?;
+        self.consume_if(
+            TokenType::StatementEnd,
+            "Expected statement end after expression.",
+        )?;
+        Ok(Statement::Expression(ExpressionStatement { expr }))
+    }
+
+    fn parse_block(&mut self) -> Result<Vec<Statement>> {
+        let mut statements = vec![];
+        while !self.check(TokenType::BraceClose) && !self.at_end() {
+            statements.push(self.handle_declaration()?);
+        }
+        self.consume_if(TokenType::BraceClose, "Expected '}' after block.")?;
+        self.consume_if(
+            TokenType::StatementEnd,
+            "Expected statement end after block.",
+        )?;
+        Ok(statements)
+    }
+
+    fn handle_block_statement(&mut self) -> Result<Statement> {
+        Ok(Statement::Block(BlockStatement {
+            statements: self.parse_block()?,
+        }))
+    }
+
+    fn handle_if_statement(&mut self) -> Result<Statement> {
+        let condition = self.handle_expression()?;
+        let then_branch = match self.handle_statement()? {
+            Statement::Block(x) => x,
+            _ => return Self::error(&self.previous(), "Expected a block statement after if."),
         };
-        if current_end_index == end_index_target {
-            break;
+        let mut else_branch = None;
+        if self.match_next(&[TokenType::Else]) {
+            else_branch = match self.handle_statement()? {
+                Statement::Block(x) => Some(x),
+                _ => {
+                    return Self::error(&self.previous(), "Expected a block statement after else.")
+                }
+            };
         }
-        code.push_str(&line);
-        code.push('\n');
-    }
-    Ok(code)
-}
-
-fn read_func(lines: &mut CodeReader, keyword_line: impl AsRef<str>) -> Result<ScriptFunction> {
-    let (name, params) = read_func_signature(lines, keyword_line)?;
-    let body = read_func_body(lines)?;
-    let func = ScriptFunction {
-        name,
-        params,
-        code: body,
-        ret_val: Value::None,
-    };
-    Ok(func)
-}
-
-fn read_var_name(line: impl IntoIterator<Item = char>) -> Result<String> {
-    let mut name_buf = String::default();
-    let mut encountered_name = false;
-    for ch in line {
-        if ch == ' ' {
-            if encountered_name {
-                break;
-            }
-            continue;
-        }
-
-        if ch == '=' {
-            break;
-        }
-
-        if ch == '?' {
-            break;
-        }
-
-        if !is_char_legal_identifier(ch) {
-            continue;
-        }
-
-        encountered_name = true;
-        name_buf.push(ch);
+        Ok(Statement::If(IfStatement {
+            condition,
+            then_branch,
+            else_branch,
+        }))
     }
 
-    if KEYWORDS
-        .iter()
-        .all(|(_kw, kw_str)| kw_str.contains(&name_buf))
-    {
-        return Err(format!(
-            "Variable identifier '{}' is illegal. Identifiers cannot contain keywords!",
-            name_buf
-        )
-        .into());
-    }
-
-    Ok(name_buf)
-}
-
-fn parse_var_value(
-    line: impl IntoIterator<Item = char>,
-    expr_context: &ExecutionContext,
-    vm: &VirtualMachine,
-) -> Result<Value> {
-    let mut expression_text = String::default();
-    for ch in line {
-        if ch == '=' {
-            continue;
-        }
-
-        if ch == '?' {
-            break;
-        }
-
-        expression_text.push(ch);
-    }
-
-    let val = if !expression_text.is_empty() {
-        Expression::from_str(expression_text.trim(), expr_context, vm).evaluate()?
-    } else {
-        Value::None
-    };
-    Ok(val)
-}
-
-fn parse_var(
-    line: impl AsRef<str>,
-    expr_context: &ExecutionContext,
-    vm: &VirtualMachine,
-) -> Result<Variable> {
-    let mut chars = line.as_ref().chars();
-
-    // Skip the included keyword. (forward the iterator until a space is hit)
-    for ch in chars.by_ref() {
-        if ch == ' ' {
-            break;
-        }
-    }
-
-    let name = read_var_name(&mut chars)?;
-    let value = parse_var_value(&mut chars, expr_context, vm)?;
-
-    let var = Variable { name, value };
-    Ok(var)
-}
-
-fn get_keyword(line: impl AsRef<str>) -> Option<&'static Keyword> {
-    let line = line.as_ref();
-    for (keyword, keyword_str) in KEYWORDS.iter() {
-        let keyword_line_iter = line.chars().zip(keyword_str.chars());
-        let mut match_count = 0;
-        for (ch, keyword_ch) in keyword_line_iter {
-            if ch != keyword_ch {
-                break;
-            }
-
-            match_count += 1;
-            if match_count == keyword_str.len() {
-                return Some(&keyword);
-            }
-        }
-    }
-    None
-}
-
-fn parse_line_statement(
-    line: impl AsRef<str>,
-    vm: &VirtualMachine,
-    ctx: &ExecutionContext,
-) -> Result<Value> {
-    let line = line.as_ref().trim();
-    if line.is_empty() {
-        return Ok(Value::None);
-    }
-
-    Expression::from_str(line, ctx, vm).evaluate()?;
-
-    Ok(Value::None)
-}
-
-fn parse_repeat(
-    lines: &mut CodeReader,
-    _keyword_line: impl AsRef<str>, // maybe use this at a later point for "for-loop" functionality
-    vm: &VirtualMachine,
-    ctx: &ExecutionContext,
-) -> Result<()> {
-    let repeat_ctx = ctx.clone();
-    loop {
-        let indx = lines.get_index();
-        if let Ok(ScopeParseResult::Break) = parse_scope(lines, vm, Some(&repeat_ctx)) {
-            break;
-        }
-        lines.seek(indx);
-    }
-    Ok(())
-}
-
-fn skip_body(lines: &CodeReader) -> Result<()> {
-    // Forward through the 'if' body and terminate on matching "end"
-    let mut current_end_index = 0;
-    let mut end_index_target = 1;
-    for line in lines {
-        let line = line.trim();
-        match get_keyword(&line) {
-            Some(Keyword::Function | Keyword::IfScope | Keyword::RepeatScope) => {
-                end_index_target += 1
-            }
-            Some(Keyword::ScopeEnd) => current_end_index += 1,
-            _ => (),
+    fn handle_while_statement(&mut self) -> Result<Statement> {
+        let condition = self.handle_expression()?;
+        let body = match self.handle_statement()? {
+            Statement::Block(x) => x,
+            _ => return Self::error(&self.previous(), "Expected block statement after 'while'."),
         };
-        if current_end_index == end_index_target {
-            return Ok(());
-        }
-    }
-    Err("Could not find matching 'end' for current body!".into())
-}
-
-fn parse_if(
-    lines: &mut CodeReader,
-    keyword_line: impl AsRef<str>,
-    vm: &VirtualMachine,
-    ctx: &ExecutionContext,
-) -> Result<ScopeParseResult> {
-    let mut keyword_line_chars = keyword_line.as_ref().chars();
-    let mut encountered_letters = false;
-    // Skip the 'if'.
-    for ch in keyword_line_chars.by_ref() {
-        if ch == ' ' {
-            if encountered_letters {
-                break;
-            }
-            continue;
-        }
-
-        if ch.is_alphabetic() && !encountered_letters {
-            encountered_letters = true;
-        }
+        Ok(Statement::While(WhileStatement { condition, body }))
     }
 
-    let mut expr_buf = String::default();
-    let mut encountered_letters = false;
-    for ch in keyword_line_chars {
-        if ch == '?' {
-            break;
-        }
-
-        if ch != ' ' && !is_char_legal_identifier(ch) && !is_char_legal_literal(ch) {
-            continue;
-        }
-
-        if !encountered_letters {
-            encountered_letters = true;
-        }
-
-        expr_buf.push(ch);
-    }
-
-    let if_ctx = ctx.clone();
-    let expr = Expression::from_str(expr_buf.trim(), &if_ctx, vm);
-    let expr_val = match expr.evaluate()? {
-        Value::Boolean(x) => x,
-        _ => return Err("Expression in 'if' must evaluate to a boolean!".into()),
-    };
-
-    if !expr_val {
-        skip_body(lines)?;
-        return Ok(ScopeParseResult::None);
-    }
-
-    parse_scope(lines, vm, Some(&if_ctx))
-}
-
-fn parse_return_value(
-    keyword_line: impl AsRef<str>,
-    vm: &VirtualMachine,
-    ctx: &ExecutionContext,
-) -> Result<ScopeParseResult> {
-    let keyword_line = keyword_line.as_ref();
-    let first_space = keyword_line
-        .find(' ')
-        .ok_or("Could not parse return value!")?
-        + 1;
-    let expr_str = keyword_line.split_at(first_space).1;
-    let expr = Expression::from_str(expr_str, ctx, vm);
-    let value = expr.evaluate()?;
-    Ok(ScopeParseResult::Return(value))
-}
-
-fn handle_keyword_instance(
-    keyword: impl Borrow<Keyword>,
-    keyword_line: impl AsRef<str>,
-    lines: &mut CodeReader,
-    vm: &VirtualMachine,
-    ctx: &ExecutionContext,
-) -> Result<ScopeParseResult> {
-    match keyword.borrow() {
-        Keyword::Variable => ctx.push_var(Rc::new(RefCell::new(parse_var(keyword_line, ctx, vm)?))),
-        Keyword::Function => ctx.push_func(Function::Script(read_func(lines, keyword_line)?)),
-        Keyword::IfScope => return parse_if(lines, keyword_line, vm, ctx),
-        Keyword::RepeatScope => parse_repeat(lines, keyword_line, vm, ctx)?,
-        Keyword::ScopeEnd => return Ok(ScopeParseResult::None),
-        Keyword::ScopeBreak => return Ok(ScopeParseResult::Break),
-        Keyword::ScopeReturn => return parse_return_value(keyword_line, vm, ctx),
-    };
-    Ok(ScopeParseResult::None)
-}
-
-fn parse_scope(
-    lines: &mut CodeReader,
-    vm: &VirtualMachine,
-    ctx: Option<&ExecutionContext>,
-) -> Result<ScopeParseResult> {
-    let ctx = match ctx {
-        Some(x) => x,
-        None => vm.get_context(),
-    };
-
-    let mut line_buf = String::default();
-    loop {
-        line_buf.clear();
-        match lines.read_line(&mut line_buf) {
-            Ok(0) => continue,
-            Err(_) => break,
-            _ => (),
+    fn handle_return_statement(&mut self) -> Result<Statement> {
+        let keyword = self.previous();
+        let expr = if !self.check(TokenType::BraceClose) {
+            Some(self.handle_expression()?)
+        } else {
+            None
         };
-        let line = line_buf.trim_start();
+        if !self.check(TokenType::BraceClose) {
+            return Self::error(
+                &keyword,
+                "Return must be the last statement in a block. (preceeding '}')",
+            );
+        }
+        Ok(Statement::Return(ReturnStatement { expr, keyword }))
+    }
 
-        let keyword = match get_keyword(line) {
-            Some(Keyword::ScopeEnd) => break,
-            Some(x) => x,
-            None => {
-                parse_line_statement(line, vm, ctx)?;
-                continue;
-            }
-        };
-
-        let result = handle_keyword_instance(keyword, line, lines, vm, ctx)?;
-        match result {
-            ScopeParseResult::Break | ScopeParseResult::Return(_) => return Ok(result),
-            _ => (),
+    fn handle_statement(&mut self) -> Result<Statement> {
+        if self.match_next(&[TokenType::DollarLess]) {
+            self.handle_print_statement()
+        } else if self.match_next(&[TokenType::BraceOpen]) {
+            self.handle_block_statement()
+        } else if self.match_next(&[TokenType::If]) {
+            self.handle_if_statement()
+        } else if self.match_next(&[TokenType::While]) {
+            self.handle_while_statement()
+        } else if self.match_next(&[TokenType::Return]) {
+            self.handle_return_statement()
+        } else {
+            self.handle_expression_statement()
         }
     }
-    Ok(ScopeParseResult::None)
-}
 
-pub(crate) fn parse_func_code(
-    code: impl AsRef<str>,
-    args: &[Argument],
-    vm: &VirtualMachine,
-) -> Result<ScopeParseResult> {
-    let mut ctx = vm.get_context().clone();
-    for arg in args {
-        ctx.push_var(Rc::new(RefCell::new(arg.clone())));
+    fn handle_var_declaration(&mut self) -> Result<Statement> {
+        let name = self.consume_if(TokenType::Identifier, "Expected variable name.")?;
+        let mut initializer = None;
+        if self.match_next(&[TokenType::Equal]) {
+            initializer = Some(self.handle_expression()?);
+        }
+        self.consume_if(
+            TokenType::StatementEnd,
+            "Expected statement end after variable declaration.",
+        )?;
+        Ok(Statement::Var(VarStatement { name, initializer }))
     }
-    let mut reader = CodeReader::from_str(code);
-    parse_scope(&mut reader, vm, Some(&mut ctx))
-}
 
-pub fn parse_buffer(mut input: CodeReader, vm: &VirtualMachine) -> Result<()> {
-    parse_scope(&mut input, vm, None)?;
-    Ok(())
+    fn handle_function_declaration(&mut self, kind: FunctionKind) -> Result<Statement> {
+        let name = self.consume_if(TokenType::Identifier, &format!("Expected {} name", kind))?;
+        self.consume_if(
+            TokenType::ParenOpen,
+            &format!("Expected '(' after {} name.", kind),
+        )?;
+        let mut params = vec![];
+        if !self.check(TokenType::ParenClose) {
+            loop {
+                if params.len() >= MAX_FUNC_ARG_COUNT {
+                    return Self::error(
+                        self.peek(),
+                        &format!("Can't have more than {} parameters.", MAX_FUNC_ARG_COUNT),
+                    );
+                }
+                params.push(self.consume_if(TokenType::Identifier, "Expected paramter name.")?);
+                if !self.match_next(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+        self.consume_if(TokenType::ParenClose, "Expected ')' after parameters.")?;
+        self.consume_if(
+            TokenType::BraceOpen,
+            &format!("Expected '{{' before {} body.", kind),
+        )?;
+        let body = self.parse_block()?;
+        Ok(Statement::Function(FunctionStatement {
+            body,
+            name,
+            params,
+        }))
+    }
+
+    fn handle_declaration(&mut self) -> Result<Statement> {
+        let had_err;
+        if self.match_next(&[TokenType::Offering]) {
+            match self.handle_var_declaration() {
+                Ok(x) => return Ok(x),
+                Err(_) => had_err = true,
+            }
+        } else if self.match_next(&[TokenType::Ritual]) {
+            match self.handle_function_declaration(FunctionKind::Function) {
+                Ok(x) => return Ok(x),
+                Err(_) => had_err = true,
+            }
+        } else {
+            match self.handle_statement() {
+                Ok(x) => return Ok(x),
+                Err(_) => had_err = true,
+            }
+        }
+
+        //TODO: Test that his works when expected
+        if had_err {
+            self.synchronize();
+            // Dont throw error, so just return a None expr statement
+            return Ok(Statement::Expression(ExpressionStatement {
+                expr: Expression::Literal(Box::new(LiteralExpression { value: Value::None })),
+            }));
+        }
+
+        Self::error(self.peek(), "Unexpected token in declaration.")
+    }
+
+    pub fn parse(&mut self) -> Vec<Statement> {
+        let mut statements = vec![];
+        while !self.at_end() {
+            let decl_statement = match self.handle_declaration() {
+                Ok(x) => x,
+                Err(err) => panic!("Unhandled error in parser: {}", err),
+            };
+            statements.push(decl_statement);
+        }
+        statements
+    }
 }
