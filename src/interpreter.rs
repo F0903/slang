@@ -437,7 +437,7 @@ impl Interpreter {
         }
     }
 
-    pub fn interpret(&mut self, statements: Vec<Statement>) {
+    pub fn interpret(&mut self, statements: impl Iterator<Item = Statement>) {
         for statement in statements {
             if let Err(x) = self.execute(&statement) {
                 get_err_handler().runtime_error(x);

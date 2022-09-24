@@ -527,15 +527,22 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         Self::error(self.peek(), "Unexpected token in declaration.")
     }
 
-    pub fn parse(&mut self) -> Vec<Statement> {
-        let mut statements = vec![];
-        while !self.at_end() {
-            let decl_statement = match self.handle_declaration() {
-                Ok(x) => x,
-                Err(err) => panic!("Unhandled error in parser: {}", err),
-            };
-            statements.push(decl_statement);
+    pub fn parse(&mut self) -> Statement {
+        match self.handle_declaration() {
+            Ok(x) => x,
+            Err(err) => panic!("Unhandled error in parser: {}", err),
         }
-        statements
+    }
+}
+
+impl<I: Iterator<Item = Token>> Iterator for Parser<I> {
+    type Item = Statement;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.at_end() {
+            None
+        } else {
+            Some(self.parse())
+        }
     }
 }

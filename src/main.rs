@@ -38,9 +38,8 @@ fn run(source: String, interpreter: &mut Interpreter) -> Result<()> {
 
     println!("{}\n", source);
     let lexer = Lexer::new(source);
-    let mut parser = Parser::new(lexer);
-    let statements = parser.parse();
-    interpreter.interpret(statements);
+    let parser = Parser::new(lexer);
+    interpreter.interpret(parser);
     Ok(())
 }
 
