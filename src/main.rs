@@ -14,16 +14,14 @@ use lexer::Lexer;
 use parser::Parser;
 use std::{
     env::args,
-    fs::File,
+    fs::{canonicalize, File},
     io::{stdin, stdout, BufRead, Read, Write},
+    path::Path,
 };
 
 use crate::value::{NativeFunction, Value};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
-const DEBUG_TEST_FILE: &str = include_str!("../test.cah");
-const RUN_DEBUG_FILE: bool = true;
 
 fn get_source_path() -> Option<String> {
     let mut args = args();
@@ -60,7 +58,8 @@ fn run_interactively() -> Result<()> {
     Ok(())
 }
 
-fn run_file(path: String) -> Result<()> {
+fn run_file(path: impl AsRef<Path>) -> Result<()> {
+    let path = canonicalize(path)?;
     let mut interpreter = Interpreter::new();
     let mut buf = String::new();
     File::open(path)?.read_to_string(&mut buf)?;
@@ -69,10 +68,6 @@ fn run_file(path: String) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    if RUN_DEBUG_FILE {
-        let mut intr = Interpreter::new();
-        return run(DEBUG_TEST_FILE.to_owned(), &mut intr);
-    }
     match get_source_path() {
         Some(x) => run_file(x),
         None => run_interactively(),

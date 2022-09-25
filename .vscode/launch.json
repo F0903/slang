@@ -7,7 +7,26 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'cahlang'",
+            "name": "Debug executable 'cahlang' with debug file.",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=cahlang",
+                    "--package=cahlang"
+                ],
+                "filter": {
+                    "name": "cahlang",
+                    "kind": "bin"
+                }
+            },
+            "args": ["./test.cah"],
+            "cwd": "${workspaceFolder}",
+            "console": "externalTerminal"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'cahlang' with REPL",
             "cargo": {
                 "args": [
                     "build",
@@ -23,24 +42,5 @@
             "cwd": "${workspaceFolder}",
             "console": "externalTerminal"
         },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in executable 'cahlang'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=cahlang",
-                    "--package=cahlang"
-                ],
-                "filter": {
-                    "name": "cahlang",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}"
-        }
     ]
 }
