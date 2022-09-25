@@ -1,7 +1,7 @@
 use crate::{
     environment::{Env, Environment},
     error::Result,
-    interpreter::Interpreter,
+    interpreter::{Interpreter, MaybeReturn},
     statement::FunctionStatement,
 };
 use std::fmt::{Debug, Display};
@@ -54,8 +54,13 @@ impl Callable for Function {
         for (param, arg) in self.declaration.params.iter().zip(args.iter()) {
             local_env.define(param.lexeme.clone(), arg.clone());
         }
-        interpreter.execute_block(&self.declaration.body, local_env.into())?;
-        Ok(Value::None)
+        if let MaybeReturn::Return(x) =
+            interpreter.execute_block(&self.declaration.body, local_env.into())?
+        {
+            Ok(x)
+        } else {
+            Ok(Value::None)
+        }
     }
 
     fn get_arity(&self) -> usize {

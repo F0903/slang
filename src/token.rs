@@ -35,7 +35,7 @@ pub enum TokenType {
     Identifier,
 
     // Keywords
-    Offering,
+    Let,
     Ritual,
     End,
     Return,

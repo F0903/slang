@@ -15,6 +15,17 @@ use crate::{
     value::{Function, NativeFunction, Value},
 };
 
+pub enum MaybeReturn {
+    Normal(Value),
+    Return(Value),
+}
+
+impl From<()> for MaybeReturn {
+    fn from(_: ()) -> Self {
+        Self::Normal(Value::None)
+    }
+}
+
 pub struct Interpreter {
     globals: Env,
     env: Env,
@@ -355,18 +366,21 @@ impl Interpreter {
         }
     }
 
-    fn execute_print_statement(&mut self, statement: &PrintStatement) -> Result<()> {
+    fn execute_print_statement(&mut self, statement: &PrintStatement) -> Result<MaybeReturn> {
         let val = self.evaluate(&statement.expr)?;
         println!("{}", val);
-        Ok(())
+        Ok(().into())
     }
 
-    fn execute_expression_statement(&mut self, statement: &ExpressionStatement) -> Result<()> {
+    fn execute_expression_statement(
+        &mut self,
+        statement: &ExpressionStatement,
+    ) -> Result<MaybeReturn> {
         self.evaluate(&statement.expr)?;
-        Ok(())
+        Ok(().into())
     }
 
-    fn execute_var_statement(&mut self, statement: &VarStatement) -> Result<()> {
+    fn execute_var_statement(&mut self, statement: &VarStatement) -> Result<MaybeReturn> {
         let mut value = Value::None;
         if let Some(init) = &statement.initializer {
             value = self.evaluate(&init)?;
@@ -374,57 +388,63 @@ impl Interpreter {
         self.env
             .borrow_mut()
             .define(statement.name.lexeme.clone(), value);
-        Ok(())
+        Ok(().into())
     }
 
-    fn execute_function_statement(&mut self, statement: &FunctionStatement) -> Result<()> {
+    fn execute_function_statement(&mut self, statement: &FunctionStatement) -> Result<MaybeReturn> {
         let function = Function::new(statement.clone());
         self.env.borrow_mut().define(
             statement.name.lexeme.clone(),
             Value::Callable(Box::new(function)),
         );
-        Ok(())
+        Ok(().into())
     }
 
-    pub fn execute_block(&mut self, statements: &[Statement], env: Env) -> Result<()> {
+    pub fn execute_block(&mut self, statements: &[Statement], env: Env) -> Result<MaybeReturn> {
         let previous = self.env.clone();
         self.env = env;
         for statement in statements {
-            self.execute(statement).ok();
+            if let MaybeReturn::Return(x) = self.execute(statement)? {
+                return Ok(MaybeReturn::Return(x));
+            }
         }
         self.env = previous;
-        Ok(())
+        Ok(().into())
     }
 
-    fn execute_block_statement(&mut self, statement: &BlockStatement) -> Result<()> {
+    fn execute_block_statement(&mut self, statement: &BlockStatement) -> Result<MaybeReturn> {
         self.execute_block(
             &statement.statements,
             Rc::new(RefCell::new(Environment::new(Some(self.env.clone())))),
         )
     }
 
-    fn execute_if_statement(&mut self, statement: &IfStatement) -> Result<()> {
+    fn execute_if_statement(&mut self, statement: &IfStatement) -> Result<MaybeReturn> {
         if Self::is_truthy(&self.evaluate(&statement.condition)?) {
             self.execute_block_statement(&statement.then_branch)?;
         } else if let Some(x) = &statement.else_branch {
             self.execute_block_statement(&x)?;
         }
-        Ok(())
+        Ok(().into())
     }
 
-    fn execute_while_statement(&mut self, statement: &WhileStatement) -> Result<()> {
+    fn execute_while_statement(&mut self, statement: &WhileStatement) -> Result<MaybeReturn> {
         while Self::is_truthy(&self.evaluate(&statement.condition)?) {
             self.execute_block_statement(&statement.body)?;
         }
-        Ok(())
+        Ok(().into())
     }
 
-    fn execute_return_statement(&mut self, statement: &ReturnStatement) -> Result<()> {
-        //TODO
-        todo!()
+    fn execute_return_statement(&mut self, statement: &ReturnStatement) -> Result<MaybeReturn> {
+        let value = if let Some(x) = &statement.expr {
+            self.evaluate(x)?
+        } else {
+            Value::None
+        };
+        Ok(MaybeReturn::Return(value))
     }
 
-    fn execute(&mut self, statement: &Statement) -> Result<()> {
+    fn execute(&mut self, statement: &Statement) -> Result<MaybeReturn> {
         match statement {
             Statement::Print(x) => self.execute_print_statement(x),
             Statement::Expression(x) => self.execute_expression_statement(x),

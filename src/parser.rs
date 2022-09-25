@@ -54,7 +54,8 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         if self.at_end() {
             false
         } else {
-            self.peek().token_type == typ
+            let next = self.peek();
+            next.token_type == typ
         }
     }
 
@@ -424,12 +425,10 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         } else {
             None
         };
-        if !self.check(TokenType::BraceClose) {
-            return Self::error(
-                &keyword,
-                "Return must be the last statement in a block. (preceeding '}')",
-            );
-        }
+        self.consume_if(
+            TokenType::StatementEnd,
+            "Expected newline after return value.",
+        )?;
         Ok(Statement::Return(ReturnStatement { expr, keyword }))
     }
 
@@ -498,7 +497,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
     fn handle_declaration(&mut self) -> Result<Statement> {
         let had_err;
-        if self.match_next(&[TokenType::Offering]) {
+        if self.match_next(&[TokenType::Let]) {
             match self.handle_var_declaration() {
                 Ok(x) => return Ok(x),
                 Err(_) => had_err = true,
