@@ -36,7 +36,6 @@ fn run(source: String, interpreter: &mut Interpreter) -> Result<()> {
         Ok(Value::None)
     }));
 
-    println!("{}\n", source);
     let lexer = Lexer::new(source);
     let parser = Parser::new(lexer);
     interpreter.interpret(parser);
