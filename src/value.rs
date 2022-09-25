@@ -1,23 +1,39 @@
 use crate::{
-    environment::{Env, Environment},
+    environment::{EnvPtr, Environment},
     error::Result,
     interpreter::{Interpreter, MaybeReturn},
     statement::FunctionStatement,
 };
 use std::fmt::{Debug, Display};
 
+#[derive(Clone, Copy)]
+pub enum FunctionKind {
+    Function,
+    Method,
+}
+
+impl Display for FunctionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = match self {
+            Self::Function => "Function",
+            Self::Method => "Method",
+        };
+        f.write_str(text)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NativeFunction {
     name: String,
     arg_count: usize,
-    func: fn(env: Env, args: Vec<Value>) -> Result<Value>,
+    func: fn(env: EnvPtr, args: Vec<Value>) -> Result<Value>,
 }
 
 impl NativeFunction {
     pub fn new(
         name: impl ToString,
         arg_count: usize,
-        func: fn(env: Env, args: Vec<Value>) -> Result<Value>,
+        func: fn(env: EnvPtr, args: Vec<Value>) -> Result<Value>,
     ) -> Self {
         Self {
             name: name.to_string(),
@@ -34,11 +50,11 @@ impl NativeFunction {
 #[derive(Debug, Clone)]
 pub struct Function {
     declaration: FunctionStatement,
-    closure: Env,
+    closure: Environment,
 }
 
 impl Function {
-    pub fn new(declaration: FunctionStatement, closure: Env) -> Self {
+    pub fn new(declaration: FunctionStatement, closure: Environment) -> Self {
         Self {
             declaration,
             closure,
@@ -53,8 +69,8 @@ impl CallableClone for Function {
 }
 
 impl Callable for Function {
-    fn call(&self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value> {
-        let mut local_env = Environment::new(Some(self.closure.clone()));
+    fn call(&mut self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value> {
+        let mut local_env = Environment::new(Some(self.closure.clone().into()));
         for (param, arg) in self.declaration.params.iter().zip(args.iter()) {
             local_env.define(param.lexeme.clone(), arg.clone());
         }
@@ -79,7 +95,7 @@ impl CallableClone for NativeFunction {
 }
 
 impl Callable for NativeFunction {
-    fn call(&self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value> {
+    fn call(&mut self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value> {
         (self.func)(interpreter.get_current_env(), args)
     }
 
@@ -93,7 +109,7 @@ pub trait CallableClone {
 }
 
 pub trait Callable: CallableClone + Debug {
-    fn call(&self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value>;
+    fn call(&mut self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value>;
     fn get_arity(&self) -> usize;
 }
 

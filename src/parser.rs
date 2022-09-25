@@ -1,5 +1,5 @@
 use core::panic;
-use std::{fmt::Display, iter::Peekable};
+use std::iter::Peekable;
 
 use crate::{
     error::{get_err_handler, Result, RuntimeError},
@@ -12,25 +12,10 @@ use crate::{
         ReturnStatement, Statement, VarStatement, WhileStatement,
     },
     token::{Token, TokenType},
-    value::Value,
+    value::{FunctionKind, Value},
 };
 
 const MAX_FUNC_ARG_COUNT: usize = 255;
-
-enum FunctionKind {
-    Function,
-    Method,
-}
-
-impl Display for FunctionKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let text = match self {
-            Self::Function => "Function",
-            Self::Method => "Method",
-        };
-        f.write_str(text)
-    }
-}
 
 pub struct Parser<I: Iterator<Item = Token>> {
     tokens: Peekable<I>,
@@ -115,6 +100,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         if self.match_next(&[TokenType::Identifier]) {
             Ok(Expression::Variable(Box::new(VariableExpression {
                 name: self.previous().clone(),
+                scope_depth: None,
             })))
         } else if self.match_next(&[TokenType::False]) {
             Ok(Expression::Literal(Box::new(LiteralExpression {
@@ -164,6 +150,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                             value: Value::Number(1.0),
                         })),
                     })),
+                    scope_depth: None,
                 }));
                 return Ok(start);
             }
@@ -190,6 +177,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             callee,
             args,
             paren,
+            scope_depth: None,
         })))
     }
 
@@ -317,6 +305,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 return Ok(Expression::Assign(Box::new(AssignExpression {
                     name,
                     value,
+                    scope_depth: None,
                 })));
             }
 
@@ -336,10 +325,14 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 return Ok(Expression::Assign(Box::new(AssignExpression {
                     name: name.clone(),
                     value: Expression::Binary(Box::new(BinaryExpression {
-                        left: Expression::Variable(Box::new(VariableExpression { name })),
+                        left: Expression::Variable(Box::new(VariableExpression {
+                            name,
+                            scope_depth: None,
+                        })),
                         operator,
                         right: value,
                     })),
+                    scope_depth: None,
                 })));
             }
         }

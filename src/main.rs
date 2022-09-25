@@ -4,14 +4,18 @@ mod expression;
 mod interpreter;
 mod lexer;
 mod parser;
+mod resolver;
 mod statement;
 mod token;
 mod utils;
 mod value;
 
+use error::get_err_handler;
 use interpreter::Interpreter;
 use lexer::Lexer;
 use parser::Parser;
+use resolver::Resolver;
+use statement::Statement;
 use std::{
     env::args,
     fs::{canonicalize, File},
@@ -36,7 +40,15 @@ fn run(source: String, interpreter: &mut Interpreter) -> Result<()> {
 
     let lexer = Lexer::new(source);
     let parser = Parser::new(lexer);
-    interpreter.interpret(parser);
+    let mut statements = parser.collect::<Vec<Statement>>();
+    let mut resolver = Resolver::new(interpreter);
+    resolver.resolve(statements.iter_mut());
+
+    if get_err_handler().had_error() {
+        return Ok(());
+    }
+
+    interpreter.interpret(statements.into_iter());
     Ok(())
 }
 

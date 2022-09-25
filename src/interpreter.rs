@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    environment::{Env, Environment},
+    environment::{EnvPtr, Environment, GetDeep},
     error::{get_err_handler, Result},
     expression::{
         AssignExpression, BinaryExpression, CallExpression, Expression, LogicalExpression,
@@ -27,8 +27,8 @@ impl From<()> for MaybeReturn {
 }
 
 pub struct Interpreter {
-    globals: Env,
-    env: Env,
+    globals: EnvPtr,
+    env: EnvPtr,
 }
 
 impl Interpreter {
@@ -45,12 +45,25 @@ impl Interpreter {
         env.define(func.get_name().to_owned(), Value::Callable(Box::new(func)));
     }
 
-    pub fn get_global_env(&self) -> Env {
+    pub fn get_global_env(&self) -> EnvPtr {
         self.globals.clone()
     }
 
-    pub fn get_current_env(&self) -> Env {
+    pub fn get_current_env(&self) -> EnvPtr {
         self.env.clone()
+    }
+
+    pub fn resolve(&self, expression: &mut Expression, depth: u32) {
+        expression.set_scope_depth(depth);
+    }
+
+    pub fn look_up_variable(&self, name: &Token, expr: &VariableExpression) -> Result<Value> {
+        let distance = expr.scope_depth;
+        if let Some(x) = distance {
+            Ok(self.env.get_at(x, &name.lexeme))
+        } else {
+            self.globals.borrow().get(name)
+        }
     }
 
     fn is_truthy(val: &Value) -> bool {
@@ -309,12 +322,19 @@ impl Interpreter {
     }
 
     fn eval_variable(&self, expr: &VariableExpression) -> Result<Value> {
-        self.env.borrow().get(&expr.name)
+        self.look_up_variable(&expr.name, expr)
     }
 
     fn eval_assign(&mut self, expr: &AssignExpression) -> Result<Value> {
         let value = self.evaluate(&expr.value)?;
-        self.env.borrow_mut().assign(&expr.name, value.clone())?;
+        let distance = expr.scope_depth;
+        if let Some(x) = distance {
+            self.env.assign_at(x, &expr.name, value.clone());
+        } else {
+            self.globals
+                .borrow_mut()
+                .assign(&expr.name, value.clone())?;
+        }
         Ok(value)
     }
 
@@ -338,7 +358,7 @@ impl Interpreter {
         for arg in &expr.args {
             args.push(self.evaluate(arg)?);
         }
-        let callable = match callee {
+        let mut callable = match callee {
             Value::Callable(x) => x,
             _ => return Self::error(expr.paren.clone(), "Expected callable object."),
         };
@@ -392,7 +412,7 @@ impl Interpreter {
     }
 
     fn execute_function_statement(&mut self, statement: &FunctionStatement) -> Result<MaybeReturn> {
-        let function = Function::new(statement.clone(), self.env.clone());
+        let function = Function::new(statement.clone(), self.env.borrow().clone());
         self.env.borrow_mut().define(
             statement.name.lexeme.clone(),
             Value::Callable(Box::new(function)),
@@ -400,7 +420,7 @@ impl Interpreter {
         Ok(().into())
     }
 
-    pub fn execute_block(&mut self, statements: &[Statement], env: Env) -> Result<MaybeReturn> {
+    pub fn execute_block(&mut self, statements: &[Statement], env: EnvPtr) -> Result<MaybeReturn> {
         let previous = self.env.clone();
         self.env = env;
         for statement in statements {

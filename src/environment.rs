@@ -6,22 +6,62 @@ use crate::{
     value::Value,
 };
 
-pub type Env = Rc<RefCell<Environment>>;
+pub type EnvPtr = Rc<RefCell<Environment>>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Environment {
-    enclosing: Option<Env>,
+    enclosing: Option<EnvPtr>,
     values: HashMap<String, Value>,
 }
 
-impl Into<Env> for Environment {
-    fn into(self) -> Env {
+impl Into<EnvPtr> for Environment {
+    fn into(self) -> EnvPtr {
         Rc::new(RefCell::new(self))
     }
 }
 
+pub trait GetDeep {
+    fn get_ancestor(&self, distance: u32) -> Self;
+
+    fn get_at(&self, distance: u32, name: &str) -> Value;
+
+    fn assign_at(&self, distance: u32, name: &Token, value: Value);
+}
+
+impl GetDeep for EnvPtr {
+    fn get_ancestor(&self, distance: u32) -> Self {
+        let mut environment = self.clone();
+        for _ in 0..distance {
+            if let Some(x) = environment.clone().borrow().enclosing.clone() {
+                environment = x;
+            }
+        }
+        environment
+    }
+
+    fn get_at(&self, distance: u32, name: &str) -> Value {
+        self.get_ancestor(distance)
+            .borrow()
+            .values
+            .get(name)
+            .cloned()
+            .expect(&format!(
+                "Variable {} at scope {} not found! (internal error)",
+                &name, distance
+            ))
+    }
+
+    fn assign_at(&self, distance: u32, name: &Token, value: Value) {
+        let ancestor = self.get_ancestor(distance);
+        ancestor
+            .borrow_mut()
+            .values
+            .insert(name.lexeme.clone(), value);
+    }
+}
+
 impl<'a> Environment {
-    pub fn new(enclosing: Option<Env>) -> Self {
+    pub fn new(enclosing: Option<EnvPtr>) -> Self {
         Self {
             enclosing: enclosing,
             values: HashMap::new(),

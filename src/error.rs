@@ -69,7 +69,8 @@ impl ErrorHandler for StdErrorHandler {
         self.had_error
     }
 
-    fn report(&self, line: usize, msg: &str) {
+    fn report(&self, mut line: usize, msg: &str) {
+        line += 1;
         stderr()
             .write_fmt(format_args!("{msg} at line {line}\n"))
             .ok();
