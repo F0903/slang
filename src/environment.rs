@@ -8,6 +8,7 @@ use crate::{
 
 pub type Env = Rc<RefCell<Environment>>;
 
+#[derive(Debug)]
 pub struct Environment {
     enclosing: Option<Env>,
     values: HashMap<String, Value>,

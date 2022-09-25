@@ -34,11 +34,15 @@ impl NativeFunction {
 #[derive(Debug, Clone)]
 pub struct Function {
     declaration: FunctionStatement,
+    closure: Env,
 }
 
 impl Function {
-    pub fn new(declaration: FunctionStatement) -> Self {
-        Self { declaration }
+    pub fn new(declaration: FunctionStatement, closure: Env) -> Self {
+        Self {
+            declaration,
+            closure,
+        }
     }
 }
 
@@ -50,7 +54,7 @@ impl CallableClone for Function {
 
 impl Callable for Function {
     fn call(&self, interpreter: &mut Interpreter, args: Vec<Value>) -> Result<Value> {
-        let mut local_env = Environment::new(Some(interpreter.get_global_env()));
+        let mut local_env = Environment::new(Some(self.closure.clone()));
         for (param, arg) in self.declaration.params.iter().zip(args.iter()) {
             local_env.define(param.lexeme.clone(), arg.clone());
         }

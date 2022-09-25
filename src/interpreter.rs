@@ -392,7 +392,7 @@ impl Interpreter {
     }
 
     fn execute_function_statement(&mut self, statement: &FunctionStatement) -> Result<MaybeReturn> {
-        let function = Function::new(statement.clone());
+        let function = Function::new(statement.clone(), self.env.clone());
         self.env.borrow_mut().define(
             statement.name.lexeme.clone(),
             Value::Callable(Box::new(function)),
@@ -421,16 +421,20 @@ impl Interpreter {
 
     fn execute_if_statement(&mut self, statement: &IfStatement) -> Result<MaybeReturn> {
         if Self::is_truthy(&self.evaluate(&statement.condition)?) {
-            self.execute_block_statement(&statement.then_branch)?;
+            self.execute_block_statement(&statement.then_branch)
         } else if let Some(x) = &statement.else_branch {
-            self.execute_block_statement(&x)?;
+            self.execute_block_statement(&x)
+        } else {
+            Ok(().into())
         }
-        Ok(().into())
     }
 
     fn execute_while_statement(&mut self, statement: &WhileStatement) -> Result<MaybeReturn> {
         while Self::is_truthy(&self.evaluate(&statement.condition)?) {
-            self.execute_block_statement(&statement.body)?;
+            match self.execute_block_statement(&statement.body)? {
+                MaybeReturn::Return(x) => return Ok(MaybeReturn::Return(x)),
+                _ => (),
+            };
         }
         Ok(().into())
     }
