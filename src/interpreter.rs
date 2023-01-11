@@ -8,11 +8,11 @@ use crate::{
         UnaryExpression, VariableExpression,
     },
     statement::{
-        BlockStatement, ExpressionStatement, FunctionStatement, IfStatement, PrintStatement,
-        ReturnStatement, Statement, VarStatement, WhileStatement,
+        BlockStatement, ExpressionStatement, FunctionStatement, IfStatement, ReturnStatement,
+        Statement, VarStatement, WhileStatement,
     },
     token::{Token, TokenType},
-    value::{Function, NativeFunction, Value},
+    value::{Function, FunctionResult, NativeFunction, RuntimeOrNativeError, Value},
 };
 
 pub enum MaybeReturn {
@@ -370,7 +370,16 @@ impl Interpreter {
                 format!("Exptected {} arguments, but got {}", arg_needed, arg_num),
             );
         }
-        callable.call(self, args)
+        match callable.call(self, args) {
+            FunctionResult::Ok(x) => Ok(x),
+            FunctionResult::Err(e) => match e {
+                RuntimeOrNativeError::Runtime(e) => Err(e),
+                RuntimeOrNativeError::Native(e) => {
+                    get_err_handler().report_native(callable.get_name(), e, expr.paren.line);
+                    Ok(Value::None)
+                }
+            },
+        }
     }
 
     fn evaluate(&mut self, expr: &Expression) -> Result<Value> {
@@ -384,12 +393,6 @@ impl Interpreter {
             Expression::Logical(x) => self.eval_logical(&*x),
             Expression::Call(x) => self.eval_call(&*x),
         }
-    }
-
-    fn execute_print_statement(&mut self, statement: &PrintStatement) -> Result<MaybeReturn> {
-        let val = self.evaluate(&statement.expr)?;
-        println!("{}", val);
-        Ok(().into())
     }
 
     fn execute_expression_statement(
@@ -470,7 +473,6 @@ impl Interpreter {
 
     fn execute(&mut self, statement: &Statement) -> Result<MaybeReturn> {
         match statement {
-            Statement::Print(x) => self.execute_print_statement(x),
             Statement::Expression(x) => self.execute_expression_statement(x),
             Statement::Var(x) => self.execute_var_statement(x),
             Statement::Function(x) => self.execute_function_statement(x),

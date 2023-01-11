@@ -8,8 +8,8 @@ use crate::{
     },
     interpreter::Interpreter,
     statement::{
-        BlockStatement, ExpressionStatement, FunctionStatement, IfStatement, PrintStatement,
-        ReturnStatement, Statement, VarStatement, WhileStatement,
+        BlockStatement, ExpressionStatement, FunctionStatement, IfStatement, ReturnStatement,
+        Statement, VarStatement, WhileStatement,
     },
     token::Token,
     value::FunctionKind,
@@ -104,10 +104,6 @@ impl<'a> Resolver<'a> {
         if let Some(x) = &mut statement.else_branch {
             self.resolve_block_statement(x);
         }
-    }
-
-    fn resolve_print_statement(&mut self, statement: &mut PrintStatement) {
-        self.resolve_expression(&mut statement.expr);
     }
 
     fn resolve_return_statement(&mut self, statement: &mut ReturnStatement) {
@@ -219,7 +215,6 @@ impl<'a> Resolver<'a> {
             Statement::Function(x) => self.resolve_function_statement(x),
             Statement::Expression(x) => self.resolve_expression_statement(x),
             Statement::If(x) => self.resolve_if_statement(x),
-            Statement::Print(x) => self.resolve_print_statement(x),
             Statement::Return(x) => self.resolve_return_statement(x),
             Statement::While(x) => self.resolve_while_statement(x),
         }

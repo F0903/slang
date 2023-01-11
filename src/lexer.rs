@@ -245,16 +245,6 @@ impl Lexer {
             '*' => self.make_token(TokenType::Multiply),
             '/' => self.make_token(TokenType::Divide),
             '=' => self.make_token(TokenType::Equal),
-            '$' => {
-                let token = if self.matches_next('>') {
-                    TokenType::DollarGreater
-                } else if self.matches_next('<') {
-                    TokenType::DollarLess
-                } else {
-                    return self.lex_token();
-                };
-                self.make_token(token)
-            }
             '<' => {
                 let token = match self.matches_next('=') {
                     true => TokenType::LessEqual,

@@ -8,8 +8,8 @@ use crate::{
         LiteralExpression, LogicalExpression, UnaryExpression, VariableExpression,
     },
     statement::{
-        BlockStatement, ExpressionStatement, FunctionStatement, IfStatement, PrintStatement,
-        ReturnStatement, Statement, VarStatement, WhileStatement,
+        BlockStatement, ExpressionStatement, FunctionStatement, IfStatement, ReturnStatement,
+        Statement, VarStatement, WhileStatement,
     },
     token::{Token, TokenType},
     value::{FunctionKind, Value},
@@ -74,14 +74,12 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     }
 
     fn synchronize(&mut self) {
-        self.advance();
         while !self.at_end() {
-            if self.previous().token_type == TokenType::StatementEnd {
+            let previous = self.advance();
+            // Advance until a statement end is found.
+            if previous.token_type == TokenType::StatementEnd {
                 return;
-            }
-
-            // Skip through untill a statement end is hit, then advance.
-            if self.peek().token_type == TokenType::StatementEnd {
+            } else if self.peek().token_type == TokenType::StatementEnd {
                 self.advance();
                 return;
             }
@@ -343,15 +341,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         self.handle_assignment()
     }
 
-    fn handle_print_statement(&mut self) -> Result<Statement> {
-        let expr = self.handle_expression()?;
-        self.consume_if(
-            TokenType::StatementEnd,
-            "Expected statement end after expression.",
-        )?;
-        Ok(Statement::Print(PrintStatement { expr }))
-    }
-
     fn handle_expression_statement(&mut self) -> Result<Statement> {
         let expr = self.handle_expression()?;
         self.consume_if(
@@ -426,9 +415,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     }
 
     fn handle_statement(&mut self) -> Result<Statement> {
-        if self.match_next(&[TokenType::DollarLess]) {
-            self.handle_print_statement()
-        } else if self.match_next(&[TokenType::BraceOpen]) {
+        if self.match_next(&[TokenType::BraceOpen]) {
             self.handle_block_statement()
         } else if self.match_next(&[TokenType::If]) {
             self.handle_if_statement()
@@ -507,7 +494,6 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             }
         }
 
-        //TODO: Test that his works when expected
         if had_err {
             self.synchronize();
             // Dont throw error, so just return a None expr statement

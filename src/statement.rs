@@ -6,11 +6,6 @@ pub struct ExpressionStatement {
 }
 
 #[derive(Debug, Clone)]
-pub struct PrintStatement {
-    pub expr: Expression,
-}
-
-#[derive(Debug, Clone)]
 pub struct VarStatement {
     pub name: Token,
     pub initializer: Option<Expression>,
@@ -50,7 +45,6 @@ pub struct ReturnStatement {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expression(ExpressionStatement),
-    Print(PrintStatement),
     Var(VarStatement),
     Function(FunctionStatement),
     Block(BlockStatement),

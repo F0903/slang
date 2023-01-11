@@ -8,8 +8,8 @@ ritual thing() {
     return a
 }
 
-ritual test(x) {
-    $< "Got the following value: " + x
+ritual test(x) { 
+    print_line("Got the following value: " + x)
 }
 
 test(thing())

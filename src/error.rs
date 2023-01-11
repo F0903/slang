@@ -54,6 +54,7 @@ pub fn get_err_handler<'a>() -> MutexGuard<'a, Box<(dyn ErrorHandler + Send + Sy
 
 pub trait ErrorHandler {
     fn had_error(&self) -> bool;
+    fn report_native(&self, func_name: &str, err: Box<dyn Error>, call_line: usize);
     fn report(&self, line: usize, msg: &str);
     fn error(&mut self, token: Token, msg: &str);
     fn runtime_error(&mut self, err: RuntimeError);
@@ -69,10 +70,18 @@ impl ErrorHandler for StdErrorHandler {
         self.had_error
     }
 
+    fn report_native(&self, func_name: &str, err: Box<dyn Error>, call_line: usize) {
+        stderr()
+            .write_fmt(format_args!(
+                "\nError from <{func_name}>:\n{err}\ncalled at line {call_line}\n\n"
+            ))
+            .ok();
+    }
+
     fn report(&self, mut line: usize, msg: &str) {
         line += 1;
         stderr()
-            .write_fmt(format_args!("{msg} at line {line}\n"))
+            .write_fmt(format_args!("\n{msg} at line {line}\n\n"))
             .ok();
     }
 

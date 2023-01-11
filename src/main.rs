@@ -6,6 +6,7 @@ mod lexer;
 mod parser;
 mod resolver;
 mod statement;
+mod stdlib;
 mod token;
 mod utils;
 mod value;
@@ -33,6 +34,7 @@ fn get_source_path() -> Option<String> {
 }
 
 fn run(source: String, interpreter: &mut Interpreter) -> Result<()> {
+    stdlib::register(interpreter);
     interpreter.register_native(NativeFunction::new("hello_world".to_owned(), 0, |_, _| {
         println!("Hello world!");
         Ok(Value::None)

@@ -22,8 +22,6 @@ pub enum TokenType {
     // Two characters
     LessEqual,
     GreaterEqual,
-    DollarGreater,
-    DollarLess,
     PlusPlus,
     MinusMinus,
     PlusEqual,
