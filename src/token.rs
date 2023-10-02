@@ -34,9 +34,9 @@ pub enum TokenType {
 
     // Keywords
     Let,
-    Ritual,
+    Fn, // Function
     End,
-    Return,
+    Ret, // Return
     Is,
     Not,
     And,

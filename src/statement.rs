@@ -43,6 +43,12 @@ pub struct ReturnStatement {
 }
 
 #[derive(Debug, Clone)]
+pub struct ClassStatement {
+    pub name: Token,
+    pub methods: Vec<FunctionStatement>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
     Expression(ExpressionStatement),
     Var(VarStatement),

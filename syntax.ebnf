@@ -1,0 +1,33 @@
+letter = "a".."z" | "A".."Z";
+digit = "0".."9";
+character = letter | digit;
+
+comment = "?", { character | "_" };
+
+identifier = (character | "_"), { (character | "_") };
+
+number = digit, { digit };
+string = letter, { letter };
+
+literal = number | string | "true" | "false" | "none";
+grouping = "(", expression, ")";
+unary = ( "-" | "not" ), expression;
+binary = expression, operator, expression;
+
+operator
+    = "is"
+    | "not"
+    | "<"
+    | "<="
+    | ">"
+    | ">="
+    | "+"
+    | "-"
+    | "*"
+    | "/";
+
+expression
+    = literal
+    | unary
+    | binary
+    | grouping;

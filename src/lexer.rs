@@ -5,24 +5,24 @@ use std::collections::HashMap;
 
 static KEYWORDS: Lazy<HashMap<String, TokenType>> = Lazy::new(|| {
     create_string_map!(
-        "and"      => TokenType::And,
-        "class"    => TokenType::Class,
-        "else"     => TokenType::Else,
-        "false"    => TokenType::False,
-        "true"     => TokenType::True,
-        "for"      => TokenType::For,
-        "if"       => TokenType::If,
-        "none"     => TokenType::None,
-        "or"       => TokenType::Or,
-        "is"       => TokenType::Is,
-        "not"      => TokenType::Not,
-        "return"   => TokenType::Return,
-        "super"    => TokenType::Super,
-        "this"     => TokenType::This,
-        "let"      => TokenType::Let,
-        "ritual"   => TokenType::Ritual,
-        "end"      => TokenType::End,
-        "while"    => TokenType::While
+        "and"       => TokenType::And,
+        "class"     => TokenType::Class,
+        "else"      => TokenType::Else,
+        "false"     => TokenType::False,
+        "true"      => TokenType::True,
+        "for"       => TokenType::For,
+        "if"        => TokenType::If,
+        "none"      => TokenType::None,
+        "or"        => TokenType::Or,
+        "is"        => TokenType::Is,
+        "not"       => TokenType::Not,
+        "ret"       => TokenType::Ret,
+        "super"     => TokenType::Super,
+        "this"      => TokenType::This,
+        "let"       => TokenType::Let,
+        "fn"    => TokenType::Fn,
+        "end"       => TokenType::End,
+        "while"     => TokenType::While
     )
 });
 

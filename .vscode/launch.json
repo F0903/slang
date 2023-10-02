@@ -1,46 +1,38 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug executable 'cahlang' with debug file.",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=cahlang",
-                    "--package=cahlang"
-                ],
-                "filter": {
-                    "name": "cahlang",
-                    "kind": "bin"
-                }
-            },
-            "args": ["./test.cah"],
-            "cwd": "${workspaceFolder}",
-            "console": "externalTerminal"
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug executable 'cahlang' with REPL",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=cahlang",
-                    "--package=cahlang"
-                ],
-                "filter": {
-                    "name": "cahlang",
-                    "kind": "bin"
-                }
-            },
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "console": "externalTerminal"
-        },
-    ]
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'slang' with debug file.",
+      "cargo": {
+        "args": ["build", "--bin=slang", "--package=slang"],
+        "filter": {
+          "name": "slang",
+          "kind": "bin"
+        }
+      },
+      "args": ["./test.slang"],
+      "cwd": "${workspaceFolder}",
+      "console": "externalTerminal"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'slang' with REPL",
+      "cargo": {
+        "args": ["build", "--bin=slang", "--package=slang"],
+        "filter": {
+          "name": "slang",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "console": "externalTerminal"
+    }
+  ]
 }

@@ -409,7 +409,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         };
         self.consume_if(
             TokenType::StatementEnd,
-            "Expected newline after return value.",
+            "Expected newline after offer value.",
         )?;
         Ok(Statement::Return(ReturnStatement { expr, keyword }))
     }
@@ -421,7 +421,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             self.handle_if_statement()
         } else if self.match_next(&[TokenType::While]) {
             self.handle_while_statement()
-        } else if self.match_next(&[TokenType::Return]) {
+        } else if self.match_next(&[TokenType::Ret]) {
             self.handle_return_statement()
         } else {
             self.handle_expression_statement()
@@ -475,6 +475,14 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         }))
     }
 
+    fn handle_class_declaration(&mut self) -> Result<Statement> {
+        let name = self.consume_if(TokenType::Identifier, &format!("Expected {} name", kind))?;
+        self.consume_if(
+            TokenType::BraceOpen,
+            &format!("Expected '{' after {} name.", kind),
+        )?;
+    }
+
     fn handle_declaration(&mut self) -> Result<Statement> {
         let had_err;
         if self.match_next(&[TokenType::Let]) {
@@ -482,8 +490,13 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                 Ok(x) => return Ok(x),
                 Err(_) => had_err = true,
             }
-        } else if self.match_next(&[TokenType::Ritual]) {
+        } else if self.match_next(&[TokenType::Fn]) {
             match self.handle_function_declaration(FunctionKind::Function) {
+                Ok(x) => return Ok(x),
+                Err(_) => had_err = true,
+            }
+        } else if self.match_next(&[TokenType::Class]) {
+            match self.handle_class_declaration() {
                 Ok(x) => return Ok(x),
                 Err(_) => had_err = true,
             }

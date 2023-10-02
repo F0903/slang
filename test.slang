@@ -2,13 +2,13 @@
 
 hello_world()
 
-ritual thing() {
+fn thing() {
     let a = 55
     a += 20
-    return a
+    ret a
 }
 
-ritual test(x) { 
+fn test(x) {
     print_line("Got the following value: " + x)
 }
 

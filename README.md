@@ -1,3 +1,3 @@
-# Cahlang
+# Slang
 
-An interpreter for a joke programming language made for educational purposes.
+A simple interpreter for a custom scripting language called Slang (simple-language).
