@@ -1,3 +1,5 @@
+(* THIS DOCUMENT IS INCOMPLETE *)
+
 letter = "a".."z" | "A".."Z";
 digit = "0".."9";
 character = letter | digit;
