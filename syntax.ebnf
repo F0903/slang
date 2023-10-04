@@ -1,20 +1,28 @@
 (* THIS DOCUMENT IS INCOMPLETE *)
 
+program = { declaration }, ?EOF?;
+
+declaration = variable-declaration | statement;
+variable-declaration = "let", identifier, [ "=", expression ];
+statement = expression, "\n";
+expression
+    = equality;
+
+equality = comparison, { ( "not" | "is" ), comparison };
+comparison = term, { ( ">" | ">=" | "<" | "<=" ), term };
+term = factor, { ( "-" | "+" ), factor };
+factor = unary, { ( "/" | "*" ), unary };
+unary = ( "!" | "-" ), unary | primary;
+primary = number | string | "true" | "false" | "none" | "(", expression, ")";
+
 letter = "a".."z" | "A".."Z";
 digit = "0".."9";
 character = letter | digit;
 
-comment = "?", { character | "_" };
-
-identifier = (character | "_"), { (character | "_") };
+identifier = ( character | "_" ), { ( character | "_" ) };
 
 number = digit, { digit };
-string = letter, { letter };
-
-literal = number | string | "true" | "false" | "none";
-grouping = "(", expression, ")";
-unary = ( "-" | "not" ), expression;
-binary = expression, operator, expression;
+string = '"', letter, { letter }, '"';
 
 operator
     = "is"
@@ -28,8 +36,4 @@ operator
     | "*"
     | "/";
 
-expression
-    = literal
-    | unary
-    | binary
-    | grouping;
+comment = "?", { character | "_" };
