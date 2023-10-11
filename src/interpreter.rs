@@ -8,11 +8,11 @@ use crate::{
         UnaryExpression, VariableExpression,
     },
     statement::{
-        BlockStatement, ExpressionStatement, FunctionStatement, IfStatement, ReturnStatement,
-        Statement, VarStatement, WhileStatement,
+        BlockStatement, ClassStatement, ExpressionStatement, FunctionStatement, IfStatement,
+        ReturnStatement, Statement, VarStatement, WhileStatement,
     },
     token::{Token, TokenType},
-    value::{Function, FunctionResult, NativeFunction, RuntimeOrNativeError, Value},
+    value::{Class, Function, FunctionResult, NativeFunction, RuntimeOrNativeError, Value},
 };
 
 pub enum MaybeReturn {
@@ -122,7 +122,8 @@ impl Interpreter {
                 Value::String(y) => x == y,
                 _ => false,
             },
-            Value::Callable(_) => false,
+            Value::Callable(_) => false, //TODO
+            Value::Class(_) => false,    //TODO
         }
     }
 
@@ -471,6 +472,14 @@ impl Interpreter {
         Ok(MaybeReturn::Return(value))
     }
 
+    fn execute_class_statement(&mut self, statement: &ClassStatement) -> Result<MaybeReturn> {
+        let mut env = self.env.borrow_mut();
+        env.define(statement.name.lexeme.clone(), Value::None);
+        let class = Class::new(statement.name.lexeme.clone());
+        env.assign(&statement.name, Value::Class(class))?;
+        Ok(MaybeReturn::Normal(Value::None))
+    }
+
     fn execute(&mut self, statement: &Statement) -> Result<MaybeReturn> {
         match statement {
             Statement::Expression(x) => self.execute_expression_statement(x),
@@ -480,6 +489,7 @@ impl Interpreter {
             Statement::If(x) => self.execute_if_statement(x),
             Statement::While(x) => self.execute_while_statement(x),
             Statement::Return(x) => self.execute_return_statement(x),
+            Statement::Class(x) => self.execute_class_statement(x),
         }
     }
 

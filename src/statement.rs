@@ -57,4 +57,5 @@ pub enum Statement {
     If(IfStatement),
     While(WhileStatement),
     Return(ReturnStatement),
+    Class(ClassStatement),
 }

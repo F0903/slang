@@ -8,8 +8,8 @@ use crate::{
     },
     interpreter::Interpreter,
     statement::{
-        BlockStatement, ExpressionStatement, FunctionStatement, IfStatement, ReturnStatement,
-        Statement, VarStatement, WhileStatement,
+        BlockStatement, ClassStatement, ExpressionStatement, FunctionStatement, IfStatement,
+        ReturnStatement, Statement, VarStatement, WhileStatement,
     },
     token::Token,
     value::FunctionKind,
@@ -124,6 +124,11 @@ impl<'a> Resolver<'a> {
         self.resolve_block_statement(&mut statement.body);
     }
 
+    fn resolve_class_statement(&mut self, statement: &mut ClassStatement) {
+        self.declare(&statement.name);
+        self.define(&statement.name);
+    }
+
     fn resolve_local(&mut self, expression: &mut Expression, name: &Token) {
         for (i, scope) in self.scopes.iter().rev().enumerate() {
             if scope.contains_key(&name.lexeme) {
@@ -217,6 +222,7 @@ impl<'a> Resolver<'a> {
             Statement::If(x) => self.resolve_if_statement(x),
             Statement::Return(x) => self.resolve_return_statement(x),
             Statement::While(x) => self.resolve_while_statement(x),
+            Statement::Class(x) => self.resolve_class_statement(x),
         }
     }
 

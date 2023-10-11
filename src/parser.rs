@@ -8,8 +8,8 @@ use crate::{
         LiteralExpression, LogicalExpression, UnaryExpression, VariableExpression,
     },
     statement::{
-        BlockStatement, ExpressionStatement, FunctionStatement, IfStatement, ReturnStatement,
-        Statement, VarStatement, WhileStatement,
+        BlockStatement, ClassStatement, ExpressionStatement, FunctionStatement, IfStatement,
+        ReturnStatement, Statement, VarStatement, WhileStatement,
     },
     token::{Token, TokenType},
     value::{FunctionKind, Value},
@@ -63,7 +63,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         return ret;
     }
 
-    fn match_next(&mut self, types: &[TokenType]) -> bool {
+    fn match_next_token(&mut self, types: &[TokenType]) -> bool {
         for typ in types {
             if self.check(*typ) {
                 self.advance();
@@ -95,28 +95,28 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     }
 
     fn handle_primary(&mut self) -> Result<Expression> {
-        if self.match_next(&[TokenType::Identifier]) {
+        if self.match_next_token(&[TokenType::Identifier]) {
             Ok(Expression::Variable(Box::new(VariableExpression {
                 name: self.previous().clone(),
                 scope_depth: None,
             })))
-        } else if self.match_next(&[TokenType::False]) {
+        } else if self.match_next_token(&[TokenType::False]) {
             Ok(Expression::Literal(Box::new(LiteralExpression {
                 value: Value::Boolean(false),
             })))
-        } else if self.match_next(&[TokenType::True]) {
+        } else if self.match_next_token(&[TokenType::True]) {
             Ok(Expression::Literal(Box::new(LiteralExpression {
                 value: Value::Boolean(true),
             })))
-        } else if self.match_next(&[TokenType::None]) {
+        } else if self.match_next_token(&[TokenType::None]) {
             Ok(Expression::Literal(Box::new(LiteralExpression {
                 value: Value::None,
             })))
-        } else if self.match_next(&[TokenType::Number, TokenType::String]) {
+        } else if self.match_next_token(&[TokenType::Number, TokenType::String]) {
             Ok(Expression::Literal(Box::new(LiteralExpression {
                 value: self.previous().literal,
             })))
-        } else if self.match_next(&[TokenType::ParenOpen]) {
+        } else if self.match_next_token(&[TokenType::ParenOpen]) {
             let expr = self.handle_expression()?;
             self.consume_if(TokenType::ParenClose, "Expected ')' after expression.")?;
             Ok(Expression::Grouping(Box::new(GroupingExpression { expr })))
@@ -128,7 +128,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     fn handle_postfix(&mut self) -> Result<Expression> {
         let primary = self.handle_primary()?;
         if let Expression::Variable(x) = primary {
-            if self.match_next(&[TokenType::MinusMinus, TokenType::PlusPlus]) {
+            if self.match_next_token(&[TokenType::MinusMinus, TokenType::PlusPlus]) {
                 let prev_token = self.previous();
                 let op_type = match prev_token.token_type {
                     TokenType::MinusMinus => TokenType::Minus,
@@ -165,7 +165,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                     return Self::error(self.peek(), "Can't have more that 255 arguments.");
                 }
                 args.push(self.handle_expression()?);
-                if !self.match_next(&[TokenType::Comma]) {
+                if !self.match_next_token(&[TokenType::Comma]) {
                     break;
                 }
             }
@@ -182,7 +182,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     fn handle_call(&mut self) -> Result<Expression> {
         let mut expr = self.handle_postfix()?;
         loop {
-            if self.match_next(&[TokenType::ParenOpen]) {
+            if self.match_next_token(&[TokenType::ParenOpen]) {
                 expr = self.finish_call(expr)?;
             } else {
                 break;
@@ -193,7 +193,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     }
 
     fn handle_unary(&mut self) -> Result<Expression> {
-        if self.match_next(&[TokenType::Not, TokenType::Minus]) {
+        if self.match_next_token(&[TokenType::Not, TokenType::Minus]) {
             let operator = self.previous();
             let right = self.handle_unary()?;
             return Ok(Expression::Unary(Box::new(UnaryExpression {
@@ -206,7 +206,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
     fn handle_factor(&mut self) -> Result<Expression> {
         let mut expr = self.handle_unary()?;
-        while self.match_next(&[TokenType::Divide, TokenType::Multiply]) {
+        while self.match_next_token(&[TokenType::Divide, TokenType::Multiply]) {
             let operator = self.previous();
             let right = self.handle_unary()?;
             expr = Expression::Binary(Box::new(BinaryExpression {
@@ -220,7 +220,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
     fn handle_term(&mut self) -> Result<Expression> {
         let mut expr = self.handle_factor()?;
-        while self.match_next(&[TokenType::Minus, TokenType::Plus]) {
+        while self.match_next_token(&[TokenType::Minus, TokenType::Plus]) {
             let operator = self.previous();
             let right = self.handle_factor()?;
             expr = Expression::Binary(Box::new(BinaryExpression {
@@ -234,7 +234,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
     fn handle_comparison(&mut self) -> Result<Expression> {
         let mut expr = self.handle_term()?;
-        while self.match_next(&[
+        while self.match_next_token(&[
             TokenType::Greater,
             TokenType::GreaterEqual,
             TokenType::Less,
@@ -253,7 +253,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
     fn handle_equality(&mut self) -> Result<Expression> {
         let mut expr = self.handle_comparison()?;
-        while self.match_next(&[TokenType::Is, TokenType::Not]) {
+        while self.match_next_token(&[TokenType::Is, TokenType::Not]) {
             let operator = self.previous();
             let right = self.handle_comparison()?;
             expr = Expression::Binary(Box::new(BinaryExpression {
@@ -267,7 +267,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
     fn handle_and(&mut self) -> Result<Expression> {
         let mut expr = self.handle_equality()?;
-        while self.match_next(&[TokenType::And]) {
+        while self.match_next_token(&[TokenType::And]) {
             let operator = self.previous();
             let right = self.handle_equality()?;
             expr = Expression::Logical(Box::new(LogicalExpression {
@@ -281,7 +281,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
     fn handle_or(&mut self) -> Result<Expression> {
         let mut expr = self.handle_and()?;
-        while self.match_next(&[TokenType::And]) {
+        while self.match_next_token(&[TokenType::And]) {
             let operator = self.previous();
             let right = self.handle_and()?;
             expr = Expression::Logical(Box::new(LogicalExpression {
@@ -295,7 +295,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
     fn handle_assignment(&mut self) -> Result<Expression> {
         let expr = self.handle_or()?;
-        if self.match_next(&[TokenType::Equal]) {
+        if self.match_next_token(&[TokenType::Equal]) {
             let equals = self.previous();
             let value = self.handle_assignment()?;
             if let Expression::Variable(x) = expr {
@@ -309,7 +309,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
 
             // Dont throw, just report
             Self::error::<RuntimeError>(&equals, "Invalid assignment target.").ok();
-        } else if self.match_next(&[TokenType::PlusEqual, TokenType::MinusEqual]) {
+        } else if self.match_next_token(&[TokenType::PlusEqual, TokenType::MinusEqual]) {
             let prev = self.previous();
             let token_type = match prev.token_type {
                 TokenType::PlusEqual => TokenType::Plus,
@@ -376,7 +376,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
             _ => return Self::error(&self.previous(), "Expected a block statement after if."),
         };
         let mut else_branch = None;
-        if self.match_next(&[TokenType::Else]) {
+        if self.match_next_token(&[TokenType::Else]) {
             else_branch = match self.handle_statement()? {
                 Statement::Block(x) => Some(x),
                 _ => {
@@ -409,19 +409,19 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         };
         self.consume_if(
             TokenType::StatementEnd,
-            "Expected newline after offer value.",
+            "Expected newline after return value.",
         )?;
         Ok(Statement::Return(ReturnStatement { expr, keyword }))
     }
 
     fn handle_statement(&mut self) -> Result<Statement> {
-        if self.match_next(&[TokenType::BraceOpen]) {
+        if self.match_next_token(&[TokenType::BraceOpen]) {
             self.handle_block_statement()
-        } else if self.match_next(&[TokenType::If]) {
+        } else if self.match_next_token(&[TokenType::If]) {
             self.handle_if_statement()
-        } else if self.match_next(&[TokenType::While]) {
+        } else if self.match_next_token(&[TokenType::While]) {
             self.handle_while_statement()
-        } else if self.match_next(&[TokenType::Ret]) {
+        } else if self.match_next_token(&[TokenType::Ret]) {
             self.handle_return_statement()
         } else {
             self.handle_expression_statement()
@@ -431,7 +431,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     fn handle_var_declaration(&mut self) -> Result<Statement> {
         let name = self.consume_if(TokenType::Identifier, "Expected variable name.")?;
         let mut initializer = None;
-        if self.match_next(&[TokenType::Equal]) {
+        if self.match_next_token(&[TokenType::Equal]) {
             initializer = Some(self.handle_expression()?);
         }
         self.consume_if(
@@ -457,7 +457,7 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                     );
                 }
                 params.push(self.consume_if(TokenType::Identifier, "Expected paramter name.")?);
-                if !self.match_next(&[TokenType::Comma]) {
+                if !self.match_next_token(&[TokenType::Comma]) {
                     break;
                 }
             }
@@ -476,26 +476,44 @@ impl<I: Iterator<Item = Token>> Parser<I> {
     }
 
     fn handle_class_declaration(&mut self) -> Result<Statement> {
-        let name = self.consume_if(TokenType::Identifier, &format!("Expected {} name", kind))?;
+        let name = self.consume_if(TokenType::Identifier, &format!("Expected class name."))?;
         self.consume_if(
             TokenType::BraceOpen,
-            &format!("Expected '{' after {} name.", kind),
+            &format!("Expected '{{' after class name."),
         )?;
+
+        let mut methods = vec![];
+        while !self.check(TokenType::BraceClose) && !self.at_end() {
+            if self.match_next_token(&[TokenType::Fn]) {
+                let func = match self.handle_function_declaration(FunctionKind::Method)? {
+                    Statement::Function(x) => x,
+                    _ => return Self::error(&name, "Expected function declaration in class."),
+                };
+                methods.push(func);
+            }
+        }
+
+        self.consume_if(TokenType::BraceClose, "Expected '}}' after class body.")?;
+        self.consume_if(
+            TokenType::StatementEnd,
+            "Expected newline after class ending brace.",
+        )?;
+        Ok(Statement::Class(ClassStatement { methods, name }))
     }
 
     fn handle_declaration(&mut self) -> Result<Statement> {
         let had_err;
-        if self.match_next(&[TokenType::Let]) {
+        if self.match_next_token(&[TokenType::Let]) {
             match self.handle_var_declaration() {
                 Ok(x) => return Ok(x),
                 Err(_) => had_err = true,
             }
-        } else if self.match_next(&[TokenType::Fn]) {
+        } else if self.match_next_token(&[TokenType::Fn]) {
             match self.handle_function_declaration(FunctionKind::Function) {
                 Ok(x) => return Ok(x),
                 Err(_) => had_err = true,
             }
-        } else if self.match_next(&[TokenType::Class]) {
+        } else if self.match_next_token(&[TokenType::Class]) {
             match self.handle_class_declaration() {
                 Ok(x) => return Ok(x),
                 Err(_) => had_err = true,

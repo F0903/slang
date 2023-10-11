@@ -1,18 +1,29 @@
-(* THIS DOCUMENT IS INCOMPLETE *)
-
 program = { declaration }, ?EOF?;
 
-declaration = variable-declaration | statement;
+declaration = class-declaration | function-declaration | variable-declaration | statement;
+class-declaration = "class", identifier, "{", { function-declaration }, "}";
+function-declaration = "fn", identifier, "(", [ parameters ], ")", block;
+parameters = identifier, { ",", identifier };
 variable-declaration = "let", identifier, [ "=", expression ];
-statement = expression, "\n";
-expression
-    = equality;
 
+statement = ( expression | block | if-statement | while-statement | return-statement ), "\n";
+return-statement = "return", [ expression ];
+while-statement = "while", "(", expression, ")", statement;
+if-statement = "if", "(", expression, ")", statement, [ "else", statement ];
+block = "{", declaration, "}";
+
+expression = assignment;
+
+assignment = identifier, "=", assignment | logic-or;
+logic-or = logic-and, { "or", logic-and };
+logic-and = equality, { "and", equality };
 equality = comparison, { ( "not" | "is" ), comparison };
 comparison = term, { ( ">" | ">=" | "<" | "<=" ), term };
 term = factor, { ( "-" | "+" ), factor };
 factor = unary, { ( "/" | "*" ), unary };
-unary = ( "!" | "-" ), unary | primary;
+unary = ( "!" | "-" ), unary | call;
+call = primary, { "(", { arguments }, ")" };
+arguments = expression, { ",", expression };
 primary = number | string | "true" | "false" | "none" | "(", expression, ")";
 
 letter = "a".."z" | "A".."Z";

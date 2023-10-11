@@ -1,5 +1,6 @@
 # TODO
 
 - Classes
-- Have a go at implementing bytecode.
+- Reduce amount of cloning.
 - Better error reporting.
+- Have a go at implementing bytecode.

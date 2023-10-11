@@ -141,6 +141,7 @@ pub enum Value {
     Number(f64),
     Boolean(bool),
     Callable(Box<dyn Callable>),
+    Class(Class),
     None,
 }
 
@@ -151,6 +152,7 @@ impl Clone for Value {
             Self::Number(x) => Self::Number(x.clone()),
             Self::Boolean(x) => Self::Boolean(x.clone()),
             Self::Callable(x) => Self::Callable(x.clone_box()),
+            Self::Class(x) => Self::Class(x.clone()),
             Self::None => Self::None,
         }
     }
@@ -163,7 +165,25 @@ impl Display for Value {
             Value::Number(x) => f.write_fmt(format_args!("{x}")),
             Value::Boolean(x) => f.write_fmt(format_args!("{x}")),
             Value::Callable(_) => f.write_str("<function>"),
+            Value::Class(x) => Debug::fmt(x, f),
             Value::None => f.write_str("none"),
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Class {
+    pub name: String,
+}
+
+impl Class {
+    pub fn new(name: String) -> Self {
+        Self { name }
+    }
+}
+
+impl Display for Class {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.name)
     }
 }
