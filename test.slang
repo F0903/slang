@@ -7,4 +7,6 @@ class Test {
     }
 }
 
-print(Test)
+let class_instance = Test()
+
+print(class_instance)
