@@ -12,6 +12,8 @@ pub enum Expression {
     Variable(Box<VariableExpression>),
     Assign(Box<AssignExpression>),
     Logical(Box<LogicalExpression>),
+    Get(Box<GetExpression>),
+    Set(Box<SetExpression>),
 }
 
 impl Expression {

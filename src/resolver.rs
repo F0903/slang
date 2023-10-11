@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::{
     error::get_err_handler,
     expression::{
-        BinaryExpression, CallExpression, Expression, GroupingExpression, LogicalExpression,
-        UnaryExpression,
+        BinaryExpression, CallExpression, Expression, GetExpression, GroupingExpression,
+        LogicalExpression, SetExpression, UnaryExpression,
     },
     interpreter::Interpreter,
     statement::{
@@ -200,6 +200,15 @@ impl<'a> Resolver<'a> {
         self.resolve_expression(&mut expression.right);
     }
 
+    fn resolve_get_expression(&mut self, expression: &mut GetExpression) {
+        self.resolve_expression(&mut expression.object);
+    }
+
+    fn resolve_set_expression(&mut self, expression: &mut SetExpression) {
+        self.resolve_expression(&mut expression.value);
+        self.resolve_expression(&mut expression.object);
+    }
+
     fn resolve_expression(&mut self, expression: &mut Expression) {
         match expression {
             Expression::Variable(_) => self.resolve_var_expression(expression),
@@ -210,6 +219,8 @@ impl<'a> Resolver<'a> {
             Expression::Literal(_) => return,
             Expression::Unary(x) => self.resolve_unary_expression(&mut *x),
             Expression::Logical(x) => self.resolve_logical_expression(&mut *x),
+            Expression::Get(x) => self.resolve_get_expression(&mut *x),
+            Expression::Set(x) => self.resolve_set_expression(&mut *x),
         }
     }
 

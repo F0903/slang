@@ -2,6 +2,19 @@ use super::Expression;
 use crate::{token::Token, value::Value};
 
 #[derive(Debug, Clone)]
+pub struct SetExpression {
+    pub object: Expression,
+    pub name: Token,
+    pub value: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub struct GetExpression {
+    pub object: Expression,
+    pub name: Token,
+}
+
+#[derive(Debug, Clone)]
 pub struct BinaryExpression {
     pub left: Expression,
     pub operator: Token,

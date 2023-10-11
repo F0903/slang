@@ -14,7 +14,7 @@ block = "{", declaration, "}";
 
 expression = assignment;
 
-assignment = identifier, "=", assignment | logic-or;
+assignment = [ call, "." ], identifier, "=", assignment | logic-or;
 logic-or = logic-and, { "or", logic-and };
 logic-and = equality, { "and", equality };
 equality = comparison, { ( "not" | "is" ), comparison };
@@ -22,7 +22,7 @@ comparison = term, { ( ">" | ">=" | "<" | "<=" ), term };
 term = factor, { ( "-" | "+" ), factor };
 factor = unary, { ( "/" | "*" ), unary };
 unary = ( "!" | "-" ), unary | call;
-call = primary, { "(", { arguments }, ")" };
+call = primary, { ( "(", { arguments }, ")" ) | ( ".", identifier ) };
 arguments = expression, { ",", expression };
 primary = number | string | "true" | "false" | "none" | "(", expression, ")";
 

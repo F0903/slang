@@ -4,8 +4,9 @@ use std::iter::Peekable;
 use crate::{
     error::{get_err_handler, Result, RuntimeError},
     expression::{
-        AssignExpression, BinaryExpression, CallExpression, Expression, GroupingExpression,
-        LiteralExpression, LogicalExpression, UnaryExpression, VariableExpression,
+        AssignExpression, BinaryExpression, CallExpression, Expression, GetExpression,
+        GroupingExpression, LiteralExpression, LogicalExpression, SetExpression, UnaryExpression,
+        VariableExpression,
     },
     statement::{
         BlockStatement, ClassStatement, ExpressionStatement, FunctionStatement, IfStatement,
@@ -184,6 +185,10 @@ impl<I: Iterator<Item = Token>> Parser<I> {
         loop {
             if self.match_next_token(&[TokenType::ParenOpen]) {
                 expr = self.finish_call(expr)?;
+            } else if self.match_next_token(&[TokenType::Dot]) {
+                let name =
+                    self.consume_if(TokenType::Identifier, "Expected property name after '.'")?;
+                expr = Expression::Get(Box::new(GetExpression { object: expr, name }));
             } else {
                 break;
             }
@@ -333,6 +338,13 @@ impl<I: Iterator<Item = Token>> Parser<I> {
                     scope_depth: None,
                 })));
             }
+        } else if let Expression::Get(x) = expr {
+            let value = self.handle_assignment()?;
+            return Ok(Expression::Set(Box::new(SetExpression {
+                name: x.name,
+                object: x.object,
+                value,
+            })));
         }
         Ok(expr)
     }

@@ -1,4 +1,4 @@
-use super::{callable::CallableClone, Callable};
+use super::{callable::CallableResult, Callable};
 use crate::{
     environment::{EnvPtr, Environment},
     error::RuntimeError,
@@ -20,7 +20,6 @@ pub enum RuntimeOrNativeError {
 }
 
 pub type NativeFunctionResult = Result<Value, Box<dyn Error>>;
-pub type FunctionResult = Result<Value, RuntimeOrNativeError>;
 
 impl Display for FunctionKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -72,14 +71,8 @@ impl Function {
     }
 }
 
-impl CallableClone for Function {
-    fn clone_box(&self) -> Box<dyn Callable> {
-        Box::new(self.clone())
-    }
-}
-
-impl Callable for Function {
-    fn call(&mut self, interpreter: &mut Interpreter, args: Vec<Value>) -> FunctionResult {
+impl<'a> Callable<'a> for Function {
+    fn call(&mut self, interpreter: &mut Interpreter, args: Vec<Value>) -> CallableResult {
         let mut local_env = Environment::new(Some(self.closure.clone().into()));
         for (param, arg) in self.declaration.params.iter().zip(args.iter()) {
             local_env.define(param.lexeme.clone(), arg.clone());
@@ -98,19 +91,13 @@ impl Callable for Function {
         self.declaration.params.len()
     }
 
-    fn get_name(&self) -> &str {
-        &self.declaration.name.lexeme
+    fn get_name(&self) -> String {
+        self.declaration.name.lexeme.clone()
     }
 }
 
-impl CallableClone for NativeFunction {
-    fn clone_box(&self) -> Box<dyn Callable> {
-        Box::new(self.clone())
-    }
-}
-
-impl Callable for NativeFunction {
-    fn call(&mut self, interpreter: &mut Interpreter, args: Vec<Value>) -> FunctionResult {
+impl<'a> Callable<'a> for NativeFunction {
+    fn call(&mut self, interpreter: &mut Interpreter, args: Vec<Value>) -> CallableResult {
         let func_result = (self.func)(interpreter.get_current_env(), args);
         func_result.map_err(|e| RuntimeOrNativeError::Native(e))
     }
@@ -119,7 +106,7 @@ impl Callable for NativeFunction {
         self.arg_count
     }
 
-    fn get_name(&self) -> &str {
-        &self.name
+    fn get_name(&self) -> String {
+        self.name.clone()
     }
 }

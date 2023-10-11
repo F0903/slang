@@ -4,15 +4,18 @@ use crate::{
     environment::{EnvPtr, Environment, GetDeep},
     error::{get_err_handler, Result},
     expression::{
-        AssignExpression, BinaryExpression, CallExpression, Expression, LogicalExpression,
-        UnaryExpression, VariableExpression,
+        AssignExpression, BinaryExpression, CallExpression, Expression, GetExpression,
+        LogicalExpression, SetExpression, UnaryExpression, VariableExpression,
     },
     statement::{
         BlockStatement, ClassStatement, ExpressionStatement, FunctionStatement, IfStatement,
         ReturnStatement, Statement, VarStatement, WhileStatement,
     },
     token::{Token, TokenType},
-    value::{Class, Function, FunctionResult, NativeFunction, RuntimeOrNativeError, Value},
+    value::{
+        Callable, CallableResult, Class, Function, NativeFunction, RuntimeOrNativeError, SharedPtr,
+        Value,
+    },
 };
 
 pub enum MaybeReturn {
@@ -42,7 +45,10 @@ impl Interpreter {
 
     pub fn register_native(&self, func: NativeFunction) {
         let mut env = self.env.borrow_mut();
-        env.define(func.get_name().to_owned(), Value::Callable(Box::new(func)));
+        env.define(
+            func.get_name().to_owned(),
+            Value::NativeFunction(SharedPtr::new(func)),
+        );
     }
 
     pub fn get_global_env(&self) -> EnvPtr {
@@ -122,8 +128,10 @@ impl Interpreter {
                 Value::String(y) => x == y,
                 _ => false,
             },
-            Value::Callable(_) => false, //TODO
-            Value::Class(_) => false,    //TODO
+            Value::NativeFunction(_) => false, //TODO
+            Value::Function(_) => false,       //TODO
+            Value::Class(_) => false,          //TODO
+            Value::Instance(_) => false,       //TODO
         }
     }
 
@@ -359,10 +367,15 @@ impl Interpreter {
         for arg in &expr.args {
             args.push(self.evaluate(arg)?);
         }
-        let mut callable = match callee {
-            Value::Callable(x) => x,
+
+        // Wrapping an Rc in a Box feels a little cursed.
+        let mut callable: Box<dyn Callable> = match callee {
+            Value::NativeFunction(x) => Box::new(x),
+            Value::Function(x) => Box::new(x),
+            Value::Class(x) => Box::new(SharedPtr::new(x)),
             _ => return Self::error(expr.paren.clone(), "Expected callable object."),
         };
+
         let arg_num = args.len();
         let arg_needed = callable.get_arity();
         if arg_num != arg_needed {
@@ -372,14 +385,38 @@ impl Interpreter {
             );
         }
         match callable.call(self, args) {
-            FunctionResult::Ok(x) => Ok(x),
-            FunctionResult::Err(e) => match e {
+            CallableResult::Ok(x) => Ok(x),
+            CallableResult::Err(e) => match e {
                 RuntimeOrNativeError::Runtime(e) => Err(e),
                 RuntimeOrNativeError::Native(e) => {
-                    get_err_handler().report_native(callable.get_name(), e, expr.paren.line);
+                    get_err_handler().report_native(
+                        callable.get_name().as_ref(),
+                        e,
+                        expr.paren.line,
+                    );
                     Ok(Value::None)
                 }
             },
+        }
+    }
+
+    fn eval_get(&mut self, expr: &GetExpression) -> Result<Value> {
+        let object = self.evaluate(&expr.object)?;
+        match object {
+            Value::Instance(x) => x.borrow().get(&expr.name),
+            _ => Self::error(expr.name.clone(), "Only instances have properties."),
+        }
+    }
+
+    fn eval_set(&mut self, expr: &SetExpression) -> Result<Value> {
+        let object = self.evaluate(&expr.object)?;
+        match object {
+            Value::Instance(x) => {
+                let value = self.evaluate(&expr.value)?;
+                x.borrow_mut().set(&expr.name, value.clone());
+                Ok(value)
+            }
+            _ => Self::error(expr.name.clone(), "Only instances have fields."),
         }
     }
 
@@ -393,6 +430,8 @@ impl Interpreter {
             Expression::Assign(x) => self.eval_assign(&*x),
             Expression::Logical(x) => self.eval_logical(&*x),
             Expression::Call(x) => self.eval_call(&*x),
+            Expression::Get(x) => self.eval_get(&*x),
+            Expression::Set(x) => self.eval_set(&*x),
         }
     }
 
@@ -419,7 +458,7 @@ impl Interpreter {
         let function = Function::new(statement.clone(), self.env.borrow().clone());
         self.env.borrow_mut().define(
             statement.name.lexeme.clone(),
-            Value::Callable(Box::new(function)),
+            Value::Function(SharedPtr::new(function)),
         );
         Ok(().into())
     }
