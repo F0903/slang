@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     chunk.write_opcode(OpCode::Return, 4);
     chunk.write_opcode(OpCode::Return, 3);
 
-    chunk.line_numbers_map.encode();
+    chunk.line_numbers_map.encode_all();
 
     disassemble_chunk(&mut chunk, "TEST");
     Ok(())
