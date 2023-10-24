@@ -22,7 +22,7 @@ fn handle_constant_long_instr(instruction: &OpCode, chunk: &mut Chunk, offset: u
     offset + 5
 }
 
-fn disassemble_instruction(chunk: &mut Chunk, offset: usize) -> usize {
+pub fn disassemble_instruction(chunk: &mut Chunk, offset: usize) -> usize {
     print!("{:0>4} ", offset);
 
     let line = chunk.get_line_number(offset);

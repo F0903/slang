@@ -71,12 +71,6 @@ impl Encoding for RLE {
             .get_raw_ptr()
             .copy_to_nonoverlapping(values, new_count);
 
-        println!("ENCODE END: ");
-        for i in 0..new_count {
-            print!("{}", values.add(i).read());
-        }
-        println!();
-
         values
     }
 
@@ -114,12 +108,6 @@ impl Encoding for RLE {
         workspace
             .get_raw_ptr()
             .copy_to_nonoverlapping(values, new_count);
-
-        println!("DECODE END: ");
-        for i in 0..new_count {
-            print!("{}", values.add(i).read());
-        }
-        println!();
 
         values
     }
@@ -159,12 +147,7 @@ where
     }
 
     pub fn write_ptr(&mut self, val: *const u8, count: usize) {
-        //TODO: Probably not the most efficient to be decoding and encoding all the time. Might find a better place to call these later on.
-        if self.encoded {
-            self.decode_all();
-        }
         self.array.write_ptr(val, count);
-        self.encode_all();
     }
 
     pub fn encode_all(&mut self) {
@@ -174,7 +157,8 @@ where
 
         unsafe {
             let mut new_count = self.get_count();
-            let new_data = E::encode_replace(self.array.get_raw_ptr(), &mut new_count);
+            let old_data = self.array.get_raw_ptr();
+            let new_data = E::encode_replace(old_data, &mut new_count);
             self.array.set_backing_data(new_data, new_count, new_count);
             self.encoded = true;
         }
@@ -187,7 +171,8 @@ where
 
         unsafe {
             let mut new_count = self.get_count();
-            let new_data = E::decode_replace(self.array.get_raw_ptr(), &mut new_count);
+            let old_data = self.array.get_raw_ptr();
+            let new_data = E::decode_replace(old_data, &mut new_count);
             self.array.set_backing_data(new_data, new_count, new_count);
             self.encoded = false;
         }

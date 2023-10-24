@@ -9,7 +9,12 @@
       "request": "launch",
       "name": "Debug executable 'slang' with debug file.",
       "cargo": {
-        "args": ["build", "--bin=slang", "--package=slang"],
+        "args": [
+          "build",
+          "--bin=slang",
+          "--package=slang",
+          "--features=debug_trace_execution"
+        ],
         "filter": {
           "name": "slang",
           "kind": "bin"

@@ -11,7 +11,7 @@ use crate::{
 pub struct Chunk {
     code: DynArray<u8>,
     constants: DynArray<Value>,
-    pub line_numbers_map: EncodedDynArray<encoding::RLE>, //DEBUG
+    line_numbers_map: EncodedDynArray<encoding::RLE>,
 }
 
 impl Chunk {
@@ -21,6 +21,10 @@ impl Chunk {
             constants: DynArray::new(),
             line_numbers_map: EncodedDynArray::new(), // Change this to some kind of encoding.
         }
+    }
+
+    pub(crate) const fn get_code_ptr(&self) -> *mut u8 {
+        self.code.get_raw_ptr()
     }
 
     pub fn write_opcode(&mut self, opcode: OpCode, line_number: u32) {
