@@ -2,7 +2,6 @@ use crate::{chunk::Chunk, opcode::OpCode};
 
 fn handle_simple_instr(instruction: &OpCode, offset: usize) -> usize {
     print!("{:?}", instruction);
-    println!();
     offset + 1
 }
 
@@ -10,7 +9,6 @@ fn handle_constant_instr(instruction: &OpCode, chunk: &mut Chunk, offset: usize)
     let constant_index = chunk.read(offset + 1);
     let constant_value = chunk.get_constant(constant_index as u32);
     print!("{:?} {} = {}", instruction, constant_index, constant_value);
-    println!();
     offset + 2
 }
 
@@ -18,7 +16,6 @@ fn handle_constant_long_instr(instruction: &OpCode, chunk: &mut Chunk, offset: u
     let constant_index = chunk.read_long(offset + 1);
     let constant_value = chunk.get_constant(constant_index);
     print!("{:?} {} = {}", instruction, constant_index, constant_value);
-    println!();
     offset + 5
 }
 
@@ -34,11 +31,18 @@ pub fn disassemble_instruction(chunk: &mut Chunk, offset: usize) -> usize {
 
     let instruction = chunk.read(offset);
     let opcode = instruction.into();
-    match opcode {
+    let val = match opcode {
         OpCode::ConstantLong => handle_constant_long_instr(&opcode, chunk, offset),
         OpCode::Constant => handle_constant_instr(&opcode, chunk, offset),
-        OpCode::Return => handle_simple_instr(&opcode, offset),
-    }
+        OpCode::Return
+        | OpCode::Negate
+        | OpCode::Add
+        | OpCode::Subtract
+        | OpCode::Multiply
+        | OpCode::Divide => handle_simple_instr(&opcode, offset),
+    };
+    println!();
+    val
 }
 
 pub fn disassemble_chunk(chunk: &mut Chunk, name: &str) {
@@ -52,4 +56,5 @@ pub fn disassemble_chunk(chunk: &mut Chunk, name: &str) {
         }
         offset = disassemble_instruction(chunk, offset);
     }
+    println!()
 }

@@ -21,12 +21,6 @@ impl Encoding for RLE {
     unsafe fn encode(values: *const u8, count: usize) -> DynArray<u8> {
         // First byte is sequence count, next four is the number. And so on.
 
-        println!("ENCODE START: ");
-        for i in 0..count {
-            print!("{}", values.add(i).read());
-        }
-        println!();
-
         let count_u32 = count / 4;
         let values_u32 = values.cast::<u32>();
 
@@ -50,12 +44,6 @@ impl Encoding for RLE {
         }
         workspace.write(current_num_count);
         workspace.write_ptr(addr_of!(current_num).cast(), 4);
-
-        println!("ENCODE END: ");
-        for i in 0..workspace.get_count() {
-            print!("{}", workspace.get_raw_ptr().add(i).read());
-        }
-        println!();
 
         workspace
     }
@@ -88,12 +76,6 @@ impl Encoding for RLE {
                 workspace.write_ptr(num.cast(), 4);
             }
         }
-
-        println!("DECODE END: ");
-        for i in 0..workspace.get_count() {
-            print!("{}", workspace.get_raw_ptr().add(i).read());
-        }
-        println!();
 
         workspace
     }
@@ -147,6 +129,9 @@ where
     }
 
     pub fn write_ptr(&mut self, val: *const u8, count: usize) {
+        if self.encoded {
+            self.decode_all();
+        }
         self.array.write_ptr(val, count);
     }
 

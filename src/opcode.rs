@@ -3,6 +3,11 @@
 pub enum OpCode {
     Constant,
     ConstantLong,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Negate,
     Return,
 }
 

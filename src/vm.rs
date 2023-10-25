@@ -3,6 +3,7 @@ use std::{error::Error, fmt::Display};
 use crate::{
     chunk::Chunk,
     debug::{disassemble_chunk, disassemble_instruction},
+    light_stack::LightStack,
     opcode::OpCode,
     value::Value,
 };
@@ -26,14 +27,25 @@ impl Error for InterpretError {}
 
 type InterpretResult = Result<(), InterpretError>;
 
+macro_rules! binary_op {
+    ($stack: expr, $op: tt) => {{
+        let b = $stack.pop();
+        let a = $stack.pop();
+        println!("BINARY_OP: {} {} {}", a, stringify!($op), b);
+        $stack.push(a $op b);
+    }};
+}
+
 pub struct VM {
     ip: *mut u8,
+    stack: LightStack<Value>,
 }
 
 impl VM {
     pub fn new() -> Self {
         Self {
             ip: std::ptr::null_mut(),
+            stack: LightStack::new(),
         }
     }
 
@@ -65,29 +77,44 @@ impl VM {
 
     fn run(&mut self, chunk: &mut Chunk) -> InterpretResult {
         loop {
-            //#[cfg(feature = "debug_trace_execution")]
-            unsafe {
-                let offset = self.ip.offset_from(chunk.get_code_ptr());
-                disassemble_instruction(chunk, offset as usize);
+            #[cfg(feature = "debug_trace_execution")]
+            {
+                print!("{:?}", &self.stack);
+                unsafe {
+                    let offset = self.ip.offset_from(chunk.get_code_ptr());
+                    disassemble_instruction(chunk, offset as usize);
+                }
             }
 
             let instruction = self.read_byte();
             match instruction.into() {
                 OpCode::ConstantLong => {
                     let constant = self.read_constant_long(chunk);
-                    println!("{}", constant);
+                    self.stack.push(constant);
                 }
                 OpCode::Constant => {
                     let constant = self.read_constant(chunk);
-                    println!("{}", constant);
+                    self.stack.push(constant);
                 }
-                OpCode::Return => return Ok(()),
+                OpCode::Add => binary_op!(self.stack, +),
+                OpCode::Subtract => binary_op!(self.stack, -),
+                OpCode::Multiply => binary_op!(self.stack, *),
+                OpCode::Divide => binary_op!(self.stack, /),
+                OpCode::Negate => {
+                    let val = self.stack.get_top_mut_ref();
+                    *val = -*val;
+                }
+                OpCode::Return => {
+                    println!("{}", self.stack.pop());
+                    return Ok(());
+                }
             }
         }
     }
 
     pub fn interpret(&mut self, chunk: &mut Chunk) -> InterpretResult {
         self.ip = chunk.get_code_ptr();
+        self.stack.init();
         self.run(chunk)
     }
 }

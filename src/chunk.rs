@@ -86,4 +86,8 @@ impl Chunk {
     pub fn get_line_number(&mut self, index: usize) -> u32 {
         self.line_numbers_map.read(index)
     }
+
+    pub fn encode(&mut self) {
+        self.line_numbers_map.encode_all();
+    }
 }
