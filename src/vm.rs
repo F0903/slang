@@ -1,24 +1,24 @@
 use std::{error::Error, fmt::Display};
 
+#[cfg(debug_assertions)]
+use crate::debug::{disassemble_chunk, disassemble_instruction};
 use crate::{
-    chunk::Chunk,
-    debug::{disassemble_chunk, disassemble_instruction},
-    light_stack::LightStack,
-    opcode::OpCode,
-    value::Value,
+    chunk::Chunk, compiler::Compiler, light_stack::LightStack, opcode::OpCode, value::Value,
 };
 
 #[derive(Debug)]
 pub enum InterpretError {
-    CompileTime,
-    Runtime,
+    CompileTime(String),
+    Runtime(String),
 }
 
 impl Display for InterpretError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::CompileTime => f.write_str("Encountered compile-time error."),
-            Self::Runtime => f.write_str("Encountered runtime error."),
+            Self::CompileTime(msg) => {
+                f.write_fmt(format_args!("Encountered compile-time error.\n{}", msg))
+            }
+            Self::Runtime(msg) => f.write_fmt(format_args!("Encountered runtime error.\n{}", msg)),
         }
     }
 }
@@ -75,25 +75,34 @@ impl VM {
         chunk.get_constant(index as u32)
     }
 
-    fn run(&mut self, chunk: &mut Chunk) -> InterpretResult {
+    pub fn interpret(&mut self, source: &[u8]) -> InterpretResult {
+        self.stack.init();
+
+        let mut compiler = Compiler::new();
+        let chunk = compiler
+            .compile(source)
+            .map_err(|e| InterpretError::CompileTime(e.to_string()))?;
+
+        self.ip = chunk.borrow().get_code_ptr();
+
         loop {
-            #[cfg(feature = "debug_trace_execution")]
+            #[cfg(debug_assertions)]
             {
                 print!("{:?}", &self.stack);
                 unsafe {
-                    let offset = self.ip.offset_from(chunk.get_code_ptr());
-                    disassemble_instruction(chunk, offset as usize);
+                    let offset = self.ip.offset_from(chunk.borrow().get_code_ptr());
+                    disassemble_instruction(&mut chunk.borrow_mut(), offset as usize);
                 }
             }
 
             let instruction = self.read_byte();
             match instruction.into() {
                 OpCode::ConstantLong => {
-                    let constant = self.read_constant_long(chunk);
+                    let constant = self.read_constant_long(&mut chunk.borrow_mut());
                     self.stack.push(constant);
                 }
                 OpCode::Constant => {
-                    let constant = self.read_constant(chunk);
+                    let constant = self.read_constant(&mut chunk.borrow_mut());
                     self.stack.push(constant);
                 }
                 OpCode::Add => binary_op!(self.stack, +),
@@ -111,14 +120,4 @@ impl VM {
             }
         }
     }
-
-    pub fn interpret(&mut self, chunk: &mut Chunk) -> InterpretResult {
-        self.ip = chunk.get_code_ptr();
-        self.stack.init();
-        self.run(chunk)
-    }
-}
-
-impl Drop for VM {
-    fn drop(&mut self) {}
 }

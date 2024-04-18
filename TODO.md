@@ -1,5 +1,6 @@
 # TODO
 
 - Finish basic implementation.
+- String interpolation
 - Language test suite.
-- Try using more memory safe stuff.
+- Look into using more memory safe stuff including cost and such.

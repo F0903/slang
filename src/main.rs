@@ -1,48 +1,73 @@
+use std::{
+    env::args,
+    fs,
+    io::{BufRead, Read, Write},
+    path::Path,
+};
+
 use chunk::Chunk;
-use opcode::OpCode;
+use compiler::Compiler;
 use vm::VM;
 
 mod chunk;
+mod compiler;
 mod debug;
 mod dynarray;
 mod encoding;
 mod light_stack;
 mod memory;
 mod opcode;
+mod parser;
+mod scanner;
+mod token;
+mod utils;
 mod value;
 mod vm;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+fn print_usage() {
+    println!("Usage: slang for REPL or slang <path> to run a file.");
+}
+
+fn repl(vm: &mut VM) -> Result<()> {
+    let mut input = std::io::stdin().lock();
+    let mut line_buf = String::new();
+    loop {
+        fprint!("> ");
+        let read = input.read_line(&mut line_buf)?;
+        if read < 1 {
+            println!();
+            break;
+        }
+        interpret(vm, line_buf.as_bytes())?;
+        line_buf.clear();
+        println!();
+    }
+    Ok(())
+}
+
+fn run_file(vm: &mut VM, path: String) -> Result<()> {
+    let mut buf = vec![];
+    std::fs::File::open(path)?.read_to_end(&mut buf)?;
+    interpret(vm, &buf)
+}
+
+fn interpret(vm: &mut VM, buf: &[u8]) -> Result<()> {
+    vm.interpret(buf)?;
+    Ok(())
+}
+
 fn main() -> Result<()> {
+    let mut args = args();
     let mut vm = VM::new();
 
-    let chunk_start = std::time::Instant::now();
-    let mut chunk = Chunk::new();
-    chunk.write_constant(1234.0, 2);
-    chunk.write_constant(1634.0, 2);
-    chunk.write_opcode(OpCode::Add, 2);
-    chunk.write_constant(2.0, 2);
-    chunk.write_opcode(OpCode::Multiply, 2);
-    chunk.write_constant(1000.0, 2);
-    chunk.write_opcode(OpCode::Subtract, 2);
-    chunk.write_constant(3.0, 2);
-    chunk.write_opcode(OpCode::Divide, 2);
-    chunk.write_opcode(OpCode::Negate, 2);
-    chunk.write_opcode(OpCode::Return, 3);
-    chunk.encode();
-    let chunk_end = std::time::Instant::now();
-
-    let vm_start = std::time::Instant::now();
-    vm.interpret(&mut chunk)?;
-    let vm_end = std::time::Instant::now();
-
-    println!();
-    println!(
-        "Chunk writing took: {}us",
-        (chunk_end - chunk_start).as_micros()
-    );
-    println!("Vm interpret took: {}us", (vm_end - vm_start).as_micros());
-
-    Ok(())
+    match args.len() {
+        1 => repl(&mut vm),
+        2 => run_file(&mut vm, args.nth(1).unwrap()),
+        _ => {
+            print_usage();
+            return Err("ERROR: Invalid usage.".into());
+        }
+    }
 }

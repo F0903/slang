@@ -16,3 +16,9 @@ impl From<u8> for OpCode {
         unsafe { std::mem::transmute(value) }
     }
 }
+
+impl From<OpCode> for u8 {
+    fn from(value: OpCode) -> Self {
+        unsafe { std::mem::transmute(value) }
+    }
+}

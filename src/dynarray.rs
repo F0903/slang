@@ -46,10 +46,24 @@ impl<T> DynArray<T> {
         }
     }
 
-    pub fn grow_array(&mut self) {
+    pub fn grow_array_to(&mut self, to: usize) {
         let old_cap = self.capacity;
-        self.capacity = self.grow_capacity();
+        self.capacity = to;
         self.data = reallocate::<T>(self.data.cast(), old_cap, self.capacity).cast();
+    }
+
+    pub fn grow_array(&mut self) {
+        self.grow_array_to(self.grow_capacity())
+    }
+
+    pub fn insert(&mut self, index: usize, val: T) {
+        if self.capacity < index + 1 {
+            self.grow_array_to(index + 1);
+        }
+
+        unsafe {
+            self.data.add(index).write(val);
+        }
     }
 
     pub fn write(&mut self, val: T) {
@@ -80,10 +94,18 @@ impl<T> DynArray<T> {
         unsafe { self.data.add(offset).read() }
     }
 
-    fn free(&mut self) {
-        self.data = reallocate::<T>(self.data.cast(), self.capacity, 0).cast();
-        self.capacity = 0;
-        self.count = 0;
+    //TODO: mark as const when const as_ref() is stable
+    pub fn get(&self, offset: usize) -> Option<&T> {
+        unsafe { self.data.add(offset).as_ref() }
+    }
+}
+
+impl<T> DynArray<T>
+where
+    T: Clone,
+{
+    pub fn read_copy(&self, offset: usize) -> T {
+        self.read(offset).clone()
     }
 }
 
@@ -95,6 +117,8 @@ impl DynArray<u8> {
 
 impl<T> Drop for DynArray<T> {
     fn drop(&mut self) {
-        self.free();
+        self.data = reallocate::<T>(self.data.cast(), self.capacity, 0).cast();
+        self.capacity = 0;
+        self.count = 0;
     }
 }
