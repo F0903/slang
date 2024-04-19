@@ -1,8 +1,4 @@
-use std::{
-    error::Error,
-    fmt::Display,
-    ptr::{null, slice_from_raw_parts},
-};
+use std::{error::Error, fmt::Display, ptr::null};
 
 use crate::token::{Token, TokenType};
 
@@ -62,6 +58,12 @@ impl Scanner {
             current: null(),
             line: 1,
         }
+    }
+
+    /// SOURCE MUST BE NULL TERMINATED
+    pub fn set_source(&mut self, source: &[u8]) {
+        self.start = source.as_ptr();
+        self.current = self.start;
     }
 
     pub const fn get_current_line(&self) -> u32 {
@@ -177,8 +179,8 @@ impl Scanner {
             let token_type = keyword.1;
             unsafe {
                 if self.current.offset_from(self.start) == (start + length) as isize
-                    && (slice_from_raw_parts(self.start.add(start as usize), length as usize)
-                        == slice_from_raw_parts(name, length as usize))
+                    && std::slice::from_raw_parts(self.start.add(start as usize), length as usize)
+                        == std::slice::from_raw_parts(name, length as usize)
                 {
                     return token_type;
                 }
@@ -273,10 +275,5 @@ impl Scanner {
         }
 
         error("Unexpected character.")
-    }
-
-    pub fn set_source(&mut self, source: &[u8]) {
-        self.start = source.as_ptr();
-        self.current = self.start;
     }
 }

@@ -42,7 +42,7 @@ pub enum TokenType {
     EOF,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Token {
     typ: TokenType,
     name: String,
@@ -89,7 +89,7 @@ pub enum Precedence {
 }
 
 impl Precedence {
-    pub fn Add(self, num: usize) -> Precedence {
-        unsafe { std::mem::transmute((self as usize + num)) }
+    pub fn add(self, num: usize) -> Precedence {
+        unsafe { std::mem::transmute(self as usize + num) }
     }
 }

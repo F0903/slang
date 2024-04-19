@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display};
+use std::{error::Error, ffi::CString, fmt::Display};
 
 #[cfg(debug_assertions)]
 use crate::debug::{disassemble_chunk, disassemble_instruction};
@@ -75,12 +75,16 @@ impl VM {
         chunk.get_constant(index as u32)
     }
 
-    pub fn interpret(&mut self, source: &[u8]) -> InterpretResult {
+    pub fn interpret(&mut self, source: impl Into<Vec<u8>>) -> InterpretResult {
         self.stack.init();
+
+        let source = CString::new(source).map_err(|_| {
+            InterpretError::CompileTime("Could not create a CString from source!".to_owned())
+        })?;
 
         let mut compiler = Compiler::new();
         let chunk = compiler
-            .compile(source)
+            .compile(source.as_bytes())
             .map_err(|e| InterpretError::CompileTime(e.to_string()))?;
 
         self.ip = chunk.borrow().get_code_ptr();

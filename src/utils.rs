@@ -2,6 +2,6 @@
 macro_rules! fprint {
     ($args:tt) => {{
         print!($args);
-        std::io::stdout().flush();
+        _ = std::io::stdout().flush();
     }};
 }

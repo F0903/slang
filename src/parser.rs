@@ -152,6 +152,10 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn advance(&mut self) {
+        println!(
+            "Advancing... last: {:?}, current: {:?}",
+            &self.previous, &self.current
+        );
         self.previous = self.current.clone();
         self.current = loop {
             match self.scanner.scan() {
@@ -221,7 +225,7 @@ impl<'a> Parser<'a> {
             .expect("Previous token was null!")
             .get_type();
         let parse_rule = self.get_rule(operator_type);
-        self.parse_precedence(parse_rule.precedence.Add(1));
+        self.parse_precedence(parse_rule.precedence.add(1));
         match operator_type {
             TokenType::Plus => self.emit_op(OpCode::Add),
             TokenType::Minus => self.emit_op(OpCode::Subtract),
