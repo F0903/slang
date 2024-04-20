@@ -31,12 +31,12 @@ impl Chunk {
     }
 
     pub fn write(&mut self, byte: u8, line_number: u32) {
-        self.code.write(byte);
+        self.code.push(byte);
         self.line_numbers_map.write(line_number);
     }
 
     pub fn write_long(&mut self, bytes: *const u8, count: usize, line_number: u32) {
-        self.code.write_ptr(bytes, count);
+        self.code.push_ptr(bytes, count);
         for _ in 0..count {
             self.line_numbers_map.write(line_number);
         }
@@ -56,7 +56,7 @@ impl Chunk {
 
     /// Returns index of the added constant.
     fn add_constant(&mut self, value: Value) -> usize {
-        self.constants.write(value);
+        self.constants.push(value);
         self.constants.get_count() - 1
     }
 

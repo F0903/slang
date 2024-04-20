@@ -64,7 +64,7 @@ impl<T> DynArray<T> {
         }
     }
 
-    pub fn write(&mut self, val: T) {
+    pub fn push(&mut self, val: T) {
         if self.capacity < self.count + 1 {
             self.grow_array();
         }
@@ -75,7 +75,7 @@ impl<T> DynArray<T> {
         }
     }
 
-    pub fn write_ptr(&mut self, val: *const T, count: usize) {
+    pub fn push_ptr(&mut self, val: *const T, count: usize) {
         if self.capacity < self.count + count {
             self.grow_array();
         }

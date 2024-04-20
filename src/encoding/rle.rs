@@ -20,8 +20,8 @@ impl Encoding for RLE {
         for i in 1..count_u32 {
             let num = values_u32.add(i).read();
             if num as u32 != current_num {
-                workspace.write(current_num_count);
-                workspace.write_ptr(addr_of!(current_num).cast(), 4);
+                workspace.push(current_num_count);
+                workspace.push_ptr(addr_of!(current_num).cast(), 4);
 
                 current_num = num as u32;
                 current_num_count = 1;
@@ -30,13 +30,13 @@ impl Encoding for RLE {
 
             current_num_count += 1;
         }
-        workspace.write(current_num_count);
-        workspace.write_ptr(addr_of!(current_num).cast(), 4);
+        workspace.push(current_num_count);
+        workspace.push_ptr(addr_of!(current_num).cast(), 4);
 
         workspace
     }
 
-    unsafe fn encode_realloc(values: *mut u8, count: &mut usize) -> *mut u8 {
+    unsafe fn encode_replace(values: *mut u8, count: &mut usize) -> *mut u8 {
         let workspace = Self::encode(values, *count);
 
         // Resize value array to the new encoded values.
@@ -61,14 +61,14 @@ impl Encoding for RLE {
             let seq_num = values.add(base).read();
             let num = values.add(base + 1).cast::<u32>();
             for _ in 0..seq_num {
-                workspace.write_ptr(num.cast(), 4);
+                workspace.push_ptr(num.cast(), 4);
             }
         }
 
         workspace
     }
 
-    unsafe fn decode_realloc(values: *mut u8, count: &mut usize) -> *mut u8 {
+    unsafe fn decode_replace(values: *mut u8, count: &mut usize) -> *mut u8 {
         let workspace = Self::decode(values, *count);
 
         // Resize value array to the new decoded values.

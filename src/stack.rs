@@ -2,12 +2,12 @@ use std::fmt::Debug;
 
 const STACK_MAX: usize = 1024;
 
-pub struct LightStack<T> {
+pub struct Stack<T> {
     stack: [T; STACK_MAX],
     stack_top: *mut T,
 }
 
-impl<T> LightStack<T>
+impl<T> Stack<T>
 where
     T: Default + Copy,
 {
@@ -53,7 +53,7 @@ where
     }
 }
 
-impl<T> Debug for LightStack<T>
+impl<T> Debug for Stack<T>
 where
     T: Default + Copy + Debug,
 {

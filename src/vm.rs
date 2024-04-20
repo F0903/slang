@@ -1,9 +1,7 @@
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
 use {
-    crate::{
-        chunk::Chunk, compiler::Compiler, light_stack::LightStack, opcode::OpCode, value::Value,
-    },
+    crate::{chunk::Chunk, compiler::Compiler, opcode::OpCode, stack::Stack, value::Value},
     std::{error::Error, ffi::CString, fmt::Display},
 };
 
@@ -39,14 +37,14 @@ macro_rules! binary_op {
 
 pub struct VM {
     ip: *mut u8,
-    stack: LightStack<Value>,
+    stack: Stack<Value>,
 }
 
 impl VM {
     pub fn new() -> Self {
         Self {
             ip: std::ptr::null_mut(),
-            stack: LightStack::new(),
+            stack: Stack::new(),
         }
     }
 
