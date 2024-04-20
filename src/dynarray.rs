@@ -1,6 +1,4 @@
-use std::ptr::null_mut;
-
-use crate::memory::reallocate;
+use {crate::memory::reallocate, std::ptr::null_mut};
 
 pub struct DynArray<T> {
     data: *mut T,

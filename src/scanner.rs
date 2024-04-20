@@ -1,6 +1,7 @@
-use std::{error::Error, fmt::Display, ptr::null};
-
-use crate::token::{Token, TokenType};
+use {
+    crate::token::{Token, TokenType},
+    std::{error::Error, fmt::Display, ptr::null},
+};
 
 #[derive(Debug)]
 pub struct ScannerError {

@@ -1,9 +1,10 @@
-use std::{error::Error, ffi::CString, fmt::Display};
-
 #[cfg(debug_assertions)]
-use crate::debug::{disassemble_chunk, disassemble_instruction};
-use crate::{
-    chunk::Chunk, compiler::Compiler, light_stack::LightStack, opcode::OpCode, value::Value,
+use crate::debug::disassemble_instruction;
+use {
+    crate::{
+        chunk::Chunk, compiler::Compiler, light_stack::LightStack, opcode::OpCode, value::Value,
+    },
+    std::{error::Error, ffi::CString, fmt::Display},
 };
 
 #[derive(Debug)]

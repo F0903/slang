@@ -1,5 +1,4 @@
-use core::panic;
-use std::ptr::addr_of;
+use {core::panic, std::ptr::addr_of};
 
 use crate::{
     dynarray::DynArray,

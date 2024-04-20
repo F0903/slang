@@ -48,7 +48,7 @@ where
         unsafe {
             let mut new_count = self.get_count();
             let old_data = self.array.get_raw_ptr();
-            let new_data = E::encode_replace(old_data, &mut new_count); // Will dealloc old data
+            let new_data = E::encode_realloc(old_data, &mut new_count); // Will dealloc old data
             self.array.set_backing_data(new_data, new_count, new_count);
             self.encoded = true;
         }
@@ -62,7 +62,7 @@ where
         unsafe {
             let mut new_count = self.get_count();
             let old_data = self.array.get_raw_ptr();
-            let new_data = E::decode_replace(old_data, &mut new_count); // Will dealloc old data
+            let new_data = E::decode_realloc(old_data, &mut new_count); // Will dealloc old data
             self.array.set_backing_data(new_data, new_count, new_count);
             self.encoded = false;
         }

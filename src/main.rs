@@ -1,12 +1,8 @@
 use std::{
     env::args,
-    fs,
     io::{BufRead, Read, Write},
-    path::Path,
 };
 
-use chunk::Chunk;
-use compiler::Compiler;
 use vm::VM;
 
 mod chunk;

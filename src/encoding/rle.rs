@@ -36,7 +36,7 @@ impl Encoding for RLE {
         workspace
     }
 
-    unsafe fn encode_replace(values: *mut u8, count: &mut usize) -> *mut u8 {
+    unsafe fn encode_realloc(values: *mut u8, count: &mut usize) -> *mut u8 {
         let workspace = Self::encode(values, *count);
 
         // Resize value array to the new encoded values.
@@ -68,7 +68,7 @@ impl Encoding for RLE {
         workspace
     }
 
-    unsafe fn decode_replace(values: *mut u8, count: &mut usize) -> *mut u8 {
+    unsafe fn decode_realloc(values: *mut u8, count: &mut usize) -> *mut u8 {
         let workspace = Self::decode(values, *count);
 
         // Resize value array to the new decoded values.

@@ -1,11 +1,12 @@
-use std::{cell::RefCell, rc::Rc};
-
-use crate::{
-    chunk::Chunk,
-    dynarray::DynArray,
-    opcode::OpCode,
-    scanner::Scanner,
-    token::{Precedence, Token, TokenType},
+use {
+    crate::{
+        chunk::Chunk,
+        dynarray::DynArray,
+        opcode::OpCode,
+        scanner::Scanner,
+        token::{Precedence, Token, TokenType},
+    },
+    std::{cell::RefCell, rc::Rc},
 };
 
 // Make concrete error type for parser.

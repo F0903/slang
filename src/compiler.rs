@@ -1,10 +1,9 @@
-use std::rc::Rc;
-
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_chunk;
 use {
     crate::{chunk::Chunk, opcode::OpCode, parser::Parser, scanner::Scanner, token::TokenType},
     std::cell::RefCell,
+    std::rc::Rc,
 };
 
 // Make concrete error type for compiler.
