@@ -98,15 +98,6 @@ impl<T> DynArray<T> {
     }
 }
 
-impl<T> DynArray<T>
-where
-    T: Clone,
-{
-    pub fn read_copy(&self, offset: usize) -> T {
-        self.read(offset).clone()
-    }
-}
-
 impl DynArray<u8> {
     pub const fn read_cast<A>(&self, offset: usize) -> A {
         unsafe { self.data.cast::<A>().add(offset).read() }

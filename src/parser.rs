@@ -5,6 +5,7 @@ use {
         opcode::OpCode,
         scanner::Scanner,
         token::{Precedence, Token, TokenType},
+        value::Value,
     },
     std::{cell::RefCell, rc::Rc},
 };
@@ -74,16 +75,16 @@ impl<'a> Parser<'a> {
                 TokenType::And          => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::Class        => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::Else         => {prefix: None, infix: None, precedence: Precedence::None},
-                TokenType::False        => {prefix: None, infix: None, precedence: Precedence::None},
+                TokenType::False        => {prefix: Some(Self::literal), infix: None, precedence: Precedence::None},
                 TokenType::For          => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::Fn           => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::If           => {prefix: None, infix: None, precedence: Precedence::None},
-                TokenType::None         => {prefix: None, infix: None, precedence: Precedence::None},
+                TokenType::None         => {prefix: Some(Self::literal), infix: None, precedence: Precedence::None},
                 TokenType::Or           => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::Return       => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::Super        => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::This         => {prefix: None, infix: None, precedence: Precedence::None},
-                TokenType::True         => {prefix: None, infix: None, precedence: Precedence::None},
+                TokenType::True         => {prefix: Some(Self::literal), infix: None, precedence: Precedence::None},
                 TokenType::Let          => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::While        => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::EOF          => {prefix: None, infix: None, precedence: Precedence::None}
@@ -117,11 +118,11 @@ impl<'a> Parser<'a> {
             return;
         }
         self.panic_mode = true;
-        print!("[line {}] Error!", token.get_line());
+        print!("[line {}] Error!", token.line);
 
-        match token.get_type() {
+        match token.token_type {
             TokenType::EOF => print!(" at end."),
-            _ => print!(" at {}", token.get_name()),
+            _ => print!(" at {}", token.name),
         }
         print!("{}", msg);
         print!("\n");
@@ -175,7 +176,7 @@ impl<'a> Parser<'a> {
                 self.previous
                     .as_ref()
                     .expect("Previous token as null!")
-                    .get_type(),
+                    .token_type,
             )
             .prefix;
         match prefix_rule {
@@ -188,14 +189,23 @@ impl<'a> Parser<'a> {
 
         while precedence
             <= self
-                .get_rule(self.current.as_ref().unwrap().get_type())
+                .get_rule(self.current.as_ref().unwrap().token_type)
                 .precedence
         {
             self.advance();
             let infix_rule = self
-                .get_rule(self.previous.as_ref().unwrap().get_type())
+                .get_rule(self.previous.as_ref().unwrap().token_type)
                 .infix;
             infix_rule.unwrap()(self);
+        }
+    }
+
+    fn literal(&mut self) {
+        match self.previous.as_ref().unwrap().token_type {
+            TokenType::False => self.emit_op(OpCode::False),
+            TokenType::True => self.emit_op(OpCode::True),
+            TokenType::None => self.emit_op(OpCode::None),
+            _ => unreachable!(),
         }
     }
 
@@ -204,7 +214,7 @@ impl<'a> Parser<'a> {
             .previous
             .as_ref()
             .expect("Previous token was null!")
-            .get_type();
+            .token_type;
 
         self.parse_precedence(Precedence::Unary);
 
@@ -224,9 +234,11 @@ impl<'a> Parser<'a> {
             .previous
             .as_ref()
             .expect("Previous token was null!")
-            .get_type();
+            .token_type;
+
         let parse_rule = self.get_rule(operator_type);
         self.parse_precedence(parse_rule.precedence.add(1));
+
         match operator_type {
             TokenType::Plus => self.emit_op(OpCode::Add),
             TokenType::Minus => self.emit_op(OpCode::Subtract),
@@ -245,15 +257,17 @@ impl<'a> Parser<'a> {
     }
 
     fn number(&mut self) {
-        let value: f64 = self
+        let num: f64 = self
             .previous
             .as_ref()
             .expect("Previous token was null!")
-            .get_name()
+            .name
             .parse()
             .expect("Could not parse number!");
         let line = self.get_current_line();
-        self.current_chunk.borrow_mut().write_constant(value, line);
+        self.current_chunk
+            .borrow_mut()
+            .write_constant(Value::number(num), line);
     }
 
     pub(crate) fn expression(&mut self) {
@@ -265,7 +279,7 @@ impl<'a> Parser<'a> {
             .current
             .as_ref()
             .expect("Current token was not set!")
-            .get_type()
+            .token_type
             == token_type
         {
             self.advance();

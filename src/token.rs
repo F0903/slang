@@ -44,30 +44,18 @@ pub enum TokenType {
 
 #[derive(Clone, Debug)]
 pub struct Token {
-    typ: TokenType,
-    name: String,
-    line: u32,
+    pub token_type: TokenType,
+    pub name: String,
+    pub line: u32,
 }
 
 impl Token {
     pub fn new(typ: TokenType, name: impl Into<String>, line: u32) -> Self {
         Self {
-            typ,
+            token_type: typ,
             name: name.into(),
             line,
         }
-    }
-
-    pub const fn get_type(&self) -> TokenType {
-        self.typ
-    }
-
-    pub fn get_name(&self) -> &str {
-        &self.name
-    }
-
-    pub const fn get_line(&self) -> u32 {
-        self.line
     }
 }
 

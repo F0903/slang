@@ -31,7 +31,7 @@ macro_rules! binary_op {
         let b = $stack.pop();
         let a = $stack.pop();
         println!("BINARY_OP: {} {} {}", a, stringify!($op), b);
-        $stack.push(a $op b);
+        $stack.push((a $op b)?);
     }};
 }
 
@@ -75,8 +75,6 @@ impl VM {
     }
 
     pub fn interpret(&mut self, source: impl Into<Vec<u8>>) -> InterpretResult {
-        self.stack.init();
-
         let source = CString::new(source).map_err(|_| {
             InterpretError::CompileTime("Could not create a CString from source!".to_owned())
         })?;
@@ -108,13 +106,16 @@ impl VM {
                     let constant = self.read_constant(&mut chunk.borrow_mut());
                     self.stack.push(constant);
                 }
+                OpCode::None => self.stack.push(Value::none()),
+                OpCode::True => self.stack.push(Value::boolean(true)),
+                OpCode::False => self.stack.push(Value::boolean(false)),
                 OpCode::Add => binary_op!(self.stack, +),
                 OpCode::Subtract => binary_op!(self.stack, -),
                 OpCode::Multiply => binary_op!(self.stack, *),
                 OpCode::Divide => binary_op!(self.stack, /),
                 OpCode::Negate => {
                     let val = self.stack.get_top_mut_ref();
-                    *val = -*val;
+                    *val = (-(*val).clone())?;
                 }
                 OpCode::Return => {
                     println!("{}", self.stack.pop());

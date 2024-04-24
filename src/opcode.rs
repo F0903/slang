@@ -3,6 +3,9 @@
 pub enum OpCode {
     Constant,
     ConstantLong,
+    None,
+    True,
+    False,
     Add,
     Subtract,
     Multiply,

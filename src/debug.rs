@@ -35,6 +35,9 @@ pub fn disassemble_instruction(chunk: &mut Chunk, offset: usize) -> usize {
         OpCode::ConstantLong => handle_constant_long_instr(&opcode, chunk, offset),
         OpCode::Constant => handle_constant_instr(&opcode, chunk, offset),
         OpCode::Return
+        | OpCode::False
+        | OpCode::True
+        | OpCode::None
         | OpCode::Negate
         | OpCode::Add
         | OpCode::Subtract
