@@ -26,12 +26,26 @@ impl Error for InterpretError {}
 
 type InterpretResult = Result<(), InterpretError>;
 
-macro_rules! binary_op {
+macro_rules! binary_op_result {
     ($stack: expr, $op: tt) => {{
         let b = $stack.pop();
         let a = $stack.pop();
         println!("BINARY_OP: {} {} {}", a, stringify!($op), b);
-        $stack.push((a $op b)?);
+        a $op b
+    }};
+}
+
+macro_rules! binary_op_try {
+    ($stack: expr, $op: tt) => {{
+        let val = binary_op_result!($stack, $op)?;
+        $stack.push(val);
+    }};
+}
+
+macro_rules! binary_op_from_bool {
+    ($stack: expr, $op: tt) => {{
+        let val = binary_op_result!($stack, $op);
+        $stack.push(Value::boolean(val));
     }};
 }
 
@@ -109,10 +123,20 @@ impl VM {
                 OpCode::None => self.stack.push(Value::none()),
                 OpCode::True => self.stack.push(Value::boolean(true)),
                 OpCode::False => self.stack.push(Value::boolean(false)),
-                OpCode::Add => binary_op!(self.stack, +),
-                OpCode::Subtract => binary_op!(self.stack, -),
-                OpCode::Multiply => binary_op!(self.stack, *),
-                OpCode::Divide => binary_op!(self.stack, /),
+                OpCode::Is => binary_op_from_bool!(self.stack, ==),
+                OpCode::IsNot => binary_op_from_bool!(self.stack, !=),
+                OpCode::Greater => binary_op_from_bool!(self.stack, >),
+                OpCode::GreaterEqual => binary_op_from_bool!(self.stack, >=),
+                OpCode::Less => binary_op_from_bool!(self.stack, <),
+                OpCode::LessEqual => binary_op_from_bool!(self.stack, <=),
+                OpCode::Add => binary_op_try!(self.stack, +),
+                OpCode::Subtract => binary_op_try!(self.stack, -),
+                OpCode::Multiply => binary_op_try!(self.stack, *),
+                OpCode::Divide => binary_op_try!(self.stack, /),
+                OpCode::Not => {
+                    let val = self.stack.pop();
+                    self.stack.push(Value::boolean(val.is_falsey()));
+                }
                 OpCode::Negate => {
                     let val = self.stack.get_top_mut_ref();
                     *val = (-(*val).clone())?;

@@ -1,16 +1,23 @@
 #[repr(u8)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum OpCode {
     Constant,
     ConstantLong,
     None,
     True,
     False,
+    Is,
+    IsNot,
+    Greater,
+    GreaterEqual,
+    Less,
+    LessEqual,
     Add,
     Subtract,
     Multiply,
     Divide,
     Negate,
+    Not,
     Return,
 }
 

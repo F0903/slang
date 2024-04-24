@@ -178,6 +178,7 @@ impl Scanner {
             let length = name.len();
             let name = name.as_ptr();
             let token_type = keyword.1;
+
             unsafe {
                 if self.current.offset_from(self.start) == (start + length) as isize
                     && std::slice::from_raw_parts(self.start.add(start as usize), length as usize)
@@ -255,7 +256,6 @@ impl Scanner {
             b'+' => return self.make_token(TokenType::Plus),
             b'/' => return self.make_token(TokenType::Slash),
             b'*' => return self.make_token(TokenType::Star),
-            b'!' => return self.make_token(TokenType::Bang),
             b'=' => return self.make_token(TokenType::Equal),
             b'<' => {
                 if self.match_current(b'=') {

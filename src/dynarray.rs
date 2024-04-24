@@ -87,9 +87,12 @@ impl<T> DynArray<T> {
         }
     }
 
-    /// RETURNS VALUE POINTING INTO THE ARRAY
-    pub const fn read(&self, offset: usize) -> T {
-        unsafe { self.data.add(offset).read() }
+    pub const fn read(&self, index: usize) -> T {
+        unsafe { self.data.add(index).read() }
+    }
+
+    pub fn replace(&self, index: usize, new_val: T) {
+        unsafe { self.data.add(index).write(new_val) }
     }
 
     //TODO: mark as const when const as_ref() is stable

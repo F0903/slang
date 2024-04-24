@@ -42,12 +42,16 @@ impl Chunk {
         }
     }
 
-    pub const fn read(&self, offset: usize) -> u8 {
-        self.code.read(offset)
+    pub const fn read(&self, index: usize) -> u8 {
+        self.code.read(index)
     }
 
-    pub const fn read_long(&self, offset: usize) -> u32 {
-        self.code.read_cast(offset)
+    pub fn replace_last_op(&self, new_op: OpCode) {
+        self.code.replace(self.code.get_count() - 1, new_op.into())
+    }
+
+    pub const fn read_long(&self, index: usize) -> u32 {
+        self.code.read_cast(index)
     }
 
     pub const fn get_instruction_count(&self) -> usize {

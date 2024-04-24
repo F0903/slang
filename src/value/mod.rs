@@ -46,6 +46,11 @@ impl Value {
     pub fn as_boolean(&self) -> bool {
         unsafe { self.casts.boolean }
     }
+
+    pub fn is_falsey(&self) -> bool {
+        self.value_type == ValueType::None
+            || (self.value_type == ValueType::Bool && unsafe { !self.casts.boolean })
+    }
 }
 
 impl Add for Value {
@@ -122,6 +127,93 @@ impl Neg for Value {
             ValueType::None => Err(InterpretError::Runtime(
                 "Cannot negate None types!".to_owned(),
             )),
+        }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        if self.value_type != other.value_type {
+            return false;
+        }
+        unsafe {
+            match self.value_type {
+                ValueType::Bool => self.casts.boolean == other.casts.boolean,
+                ValueType::Number => self.casts.number == other.casts.number,
+                ValueType::None => other.value_type == ValueType::None,
+            }
+        }
+    }
+}
+
+impl PartialOrd for Value {
+    fn gt(&self, other: &Self) -> bool {
+        if self.value_type != other.value_type {
+            return false;
+        }
+        unsafe {
+            match self.value_type {
+                ValueType::Bool => self.casts.boolean && !other.casts.boolean,
+                ValueType::Number => self.casts.number > other.casts.number,
+                ValueType::None => false,
+            }
+        }
+    }
+
+    fn ge(&self, other: &Self) -> bool {
+        if self.value_type != other.value_type {
+            return false;
+        }
+        unsafe {
+            match self.value_type {
+                ValueType::Bool => {
+                    (self.casts.boolean && !other.casts.boolean)
+                        || self.casts.boolean == other.casts.boolean
+                }
+                ValueType::Number => self.casts.number >= other.casts.number,
+                ValueType::None => false,
+            }
+        }
+    }
+
+    fn lt(&self, other: &Self) -> bool {
+        if self.value_type != other.value_type {
+            return false;
+        }
+        unsafe {
+            match self.value_type {
+                ValueType::Bool => !self.casts.boolean && other.casts.boolean,
+                ValueType::Number => self.casts.number < other.casts.number,
+                ValueType::None => false,
+            }
+        }
+    }
+
+    fn le(&self, other: &Self) -> bool {
+        if self.value_type != other.value_type {
+            return false;
+        }
+        unsafe {
+            match self.value_type {
+                ValueType::Bool => {
+                    (!self.casts.boolean && other.casts.boolean)
+                        || self.casts.boolean == other.casts.boolean
+                }
+                ValueType::Number => self.casts.number <= other.casts.number,
+                ValueType::None => false,
+            }
+        }
+    }
+
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        if self.value_type != other.value_type {
+            return None;
+        } else if self.gt(other) {
+            Some(std::cmp::Ordering::Greater)
+        } else if self.eq(other) {
+            Some(std::cmp::Ordering::Equal)
+        } else {
+            Some(std::cmp::Ordering::Less)
         }
     }
 }
