@@ -1,3 +1,4 @@
+mod object;
 mod value_casts;
 mod value_type;
 
@@ -18,6 +19,10 @@ pub struct Value {
 }
 
 impl Value {
+    pub fn object() -> Self {
+        todo!()
+    }
+
     pub fn boolean(value: bool) -> Self {
         Self {
             value_type: ValueType::Bool,
@@ -53,6 +58,16 @@ impl Value {
     }
 }
 
+impl Drop for Value {
+    fn drop(&mut self) {
+        unsafe {
+            if self.value_type == ValueType::Object {
+                self.casts.object.dealloc();
+            }
+        }
+    }
+}
+
 impl Add for Value {
     type Output = Result<Value, InterpretError>;
 
@@ -61,6 +76,9 @@ impl Add for Value {
             ValueType::Number => Ok(Value::number(self.as_number() + rhs.as_number())),
             ValueType::Bool => Err(InterpretError::Runtime(
                 "Cannot add boolean values!".to_owned(),
+            )),
+            ValueType::Object => Err(InterpretError::Runtime(
+                "Cannot add Object types!".to_owned(),
             )),
             ValueType::None => Err(InterpretError::Runtime("Cannot add None types!".to_owned())),
         }
@@ -75,6 +93,9 @@ impl Sub for Value {
             ValueType::Number => Ok(Value::number(self.as_number() - rhs.as_number())),
             ValueType::Bool => Err(InterpretError::Runtime(
                 "Cannot subtract boolean values!".to_owned(),
+            )),
+            ValueType::Object => Err(InterpretError::Runtime(
+                "Cannot subtract Object types!".to_owned(),
             )),
             ValueType::None => Err(InterpretError::Runtime(
                 "Cannot subtract None types!".to_owned(),
@@ -92,6 +113,9 @@ impl Mul for Value {
             ValueType::Bool => Err(InterpretError::Runtime(
                 "Cannot multiply boolean values!".to_owned(),
             )),
+            ValueType::Object => Err(InterpretError::Runtime(
+                "Cannot multiply Object types!".to_owned(),
+            )),
             ValueType::None => Err(InterpretError::Runtime(
                 "Cannot multiply None types!".to_owned(),
             )),
@@ -107,6 +131,9 @@ impl Div for Value {
             ValueType::Number => Ok(Value::number(self.as_number() / rhs.as_number())),
             ValueType::Bool => Err(InterpretError::Runtime(
                 "Cannot divide boolean values!".to_owned(),
+            )),
+            ValueType::Object => Err(InterpretError::Runtime(
+                "Cannot divide Object types!".to_owned(),
             )),
             ValueType::None => Err(InterpretError::Runtime(
                 "Cannot divide None types!".to_owned(),
@@ -124,6 +151,9 @@ impl Neg for Value {
             ValueType::Bool => Err(InterpretError::Runtime(
                 "Cannot negate boolean values!".to_owned(),
             )),
+            ValueType::Object => Err(InterpretError::Runtime(
+                "Cannot negate Object types!".to_owned(),
+            )),
             ValueType::None => Err(InterpretError::Runtime(
                 "Cannot negate None types!".to_owned(),
             )),
@@ -140,6 +170,7 @@ impl PartialEq for Value {
             match self.value_type {
                 ValueType::Bool => self.casts.boolean == other.casts.boolean,
                 ValueType::Number => self.casts.number == other.casts.number,
+                ValueType::Object => self.casts.object == other.casts.object,
                 ValueType::None => other.value_type == ValueType::None,
             }
         }
@@ -155,6 +186,7 @@ impl PartialOrd for Value {
             match self.value_type {
                 ValueType::Bool => self.casts.boolean && !other.casts.boolean,
                 ValueType::Number => self.casts.number > other.casts.number,
+                ValueType::Object => self.casts.object > other.casts.object,
                 ValueType::None => false,
             }
         }
@@ -171,6 +203,7 @@ impl PartialOrd for Value {
                         || self.casts.boolean == other.casts.boolean
                 }
                 ValueType::Number => self.casts.number >= other.casts.number,
+                ValueType::Object => self.casts.object >= other.casts.object,
                 ValueType::None => false,
             }
         }
@@ -184,6 +217,7 @@ impl PartialOrd for Value {
             match self.value_type {
                 ValueType::Bool => !self.casts.boolean && other.casts.boolean,
                 ValueType::Number => self.casts.number < other.casts.number,
+                ValueType::Object => self.casts.object < other.casts.object,
                 ValueType::None => false,
             }
         }
@@ -200,6 +234,7 @@ impl PartialOrd for Value {
                         || self.casts.boolean == other.casts.boolean
                 }
                 ValueType::Number => self.casts.number <= other.casts.number,
+                ValueType::Object => self.casts.object <= other.casts.object,
                 ValueType::None => false,
             }
         }
@@ -208,12 +243,12 @@ impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         if self.value_type != other.value_type {
             return None;
-        } else if self.gt(other) {
+        } else if self > other {
             Some(std::cmp::Ordering::Greater)
-        } else if self.eq(other) {
-            Some(std::cmp::Ordering::Equal)
-        } else {
+        } else if self < other {
             Some(std::cmp::Ordering::Less)
+        } else {
+            Some(std::cmp::Ordering::Equal)
         }
     }
 }
@@ -229,6 +264,9 @@ impl Display for Value {
             ValueType::Number => {
                 f.write_fmt(format_args!("[{}] = {}", self.value_type, self.as_number()))
             }
+            ValueType::Object => f.write_fmt(format_args!("{:?} object", unsafe {
+                self.casts.object.get_type()
+            })),
             ValueType::None => f.write_str("None"),
         }
     }

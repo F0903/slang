@@ -5,6 +5,7 @@ pub enum ValueType {
     Bool,
     None,
     Number,
+    Object,
 }
 
 impl Display for ValueType {
@@ -12,6 +13,7 @@ impl Display for ValueType {
         f.write_str(match self {
             Self::Bool => "Bool",
             Self::Number => "Number",
+            Self::Object => "Object",
             Self::None => "None",
         })
     }

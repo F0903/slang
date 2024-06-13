@@ -1,8 +1,7 @@
 # TODO
 
-- Implement not-equal, greater-or-equal and less-or-equal instructions and parse "is not" as the first
-- Finish basic implementation.
-- String interpolation
+- Finish basic rough implementation through the book.
+- String interpolation.
+- Error handling.
 - Language test suite.
-- Error handling
-- Look into using more memory safe stuff including cost and such.
+- Look into switching to using memory safe options and benchmark difference.

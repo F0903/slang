@@ -1,8 +1,11 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, mem::ManuallyDrop};
+
+use super::object::ObjectPtr;
 
 pub(super) union ValueCasts {
     pub(super) boolean: bool,
     pub(super) number: f64,
+    pub(super) object: ManuallyDrop<ObjectPtr>,
 }
 
 impl Debug for ValueCasts {
