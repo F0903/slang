@@ -1,5 +1,4 @@
-use super::{raw_string::RawString, Object, ObjectType};
-use crate::memory::reallocate;
+use super::{Object, ObjectType, RawString};
 use std::ffi::CStr;
 
 pub struct ObjectPtr {
@@ -8,6 +7,10 @@ pub struct ObjectPtr {
 
 // Prepare your body for wild unsafetiness
 impl ObjectPtr {
+    pub fn new(obj: *mut Object) -> Self {
+        Self { obj }
+    }
+
     pub fn as_str(&self) -> &CStr {
         unsafe { CStr::from_ptr(self.obj.cast()) }
     }
@@ -17,14 +20,15 @@ impl ObjectPtr {
     }
 
     pub fn dealloc(&self) {
-        unsafe {
+        //TODO GC
+        /* unsafe {
             match self.obj.read().obj_type {
                 ObjectType::RawString => {
                     let str = self.as_str();
                     reallocate::<RawString>(self.obj.cast(), str.count_bytes(), 0);
                 }
             };
-        }
+        } */
     }
 }
 
@@ -36,7 +40,16 @@ impl Drop for ObjectPtr {
 
 impl PartialEq for ObjectPtr {
     fn eq(&self, other: &Self) -> bool {
-        unsafe { self.obj.read().obj_type == other.obj.read().obj_type && self.obj == other.obj }
+        unsafe {
+            match self.obj.read().obj_type {
+                ObjectType::RawString => {
+                    let a = self.obj.cast::<RawString>().read();
+                    let b = other.obj.cast::<RawString>().read();
+                    a == b
+                }
+                _ => self.obj.read().obj_type == other.obj.read().obj_type && self.obj == other.obj,
+            }
+        }
     }
 }
 

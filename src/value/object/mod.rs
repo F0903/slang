@@ -2,6 +2,7 @@ mod object_ptr;
 mod raw_string;
 
 pub use object_ptr::ObjectPtr;
+pub use raw_string::RawString;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ObjectType {

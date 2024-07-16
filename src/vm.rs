@@ -1,5 +1,6 @@
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
+use crate::value::ValueType;
 use {
     crate::{chunk::Chunk, compiler::Compiler, opcode::OpCode, stack::Stack, value::Value},
     std::{error::Error, ffi::CString, fmt::Display},
@@ -129,7 +130,16 @@ impl VM {
                 OpCode::GreaterEqual => binary_op_from_bool!(self.stack, >=),
                 OpCode::Less => binary_op_from_bool!(self.stack, <),
                 OpCode::LessEqual => binary_op_from_bool!(self.stack, <=),
-                OpCode::Add => binary_op_try!(self.stack, +),
+                OpCode::Add => {
+                    let first = self.stack.peek(0);
+                    let second = self.stack.peek(1);
+                    if first.get_type() == ValueType::String
+                        && second.get_type() == ValueType::String
+                    {
+                    } else {
+                        binary_op_try!(self.stack, +)
+                    }
+                }
                 OpCode::Subtract => binary_op_try!(self.stack, -),
                 OpCode::Multiply => binary_op_try!(self.stack, *),
                 OpCode::Divide => binary_op_try!(self.stack, /),

@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum ValueType {
     Bool,
     None,

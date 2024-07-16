@@ -5,7 +5,7 @@ use {
         opcode::OpCode,
         scanner::Scanner,
         token::{Precedence, Token, TokenType},
-        value::Value,
+        value::{ObjectPtr, RawString, Value},
     },
     std::{cell::RefCell, rc::Rc},
 };
@@ -70,7 +70,7 @@ impl<'a> Parser<'a> {
                 TokenType::Less         => {prefix: None, infix: Some(Self::binary), precedence: Precedence::Comparison},
                 TokenType::LessEqual    => {prefix: None, infix: Some(Self::binary), precedence: Precedence::Comparison},
                 TokenType::Identifier   => {prefix: None, infix: None, precedence: Precedence::None},
-                TokenType::String       => {prefix: None, infix: None, precedence: Precedence::None},
+                TokenType::String       => {prefix: Some(Self::string), infix: None, precedence: Precedence::None},
                 TokenType::Number       => {prefix: Some(Self::number), infix: None, precedence: Precedence::None},
                 TokenType::And          => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::Class        => {prefix: None, infix: None, precedence: Precedence::None},
@@ -192,6 +192,14 @@ impl<'a> Parser<'a> {
             let infix_rule = self.get_rule(previous_token_type).infix;
             infix_rule.unwrap()(self);
         }
+    }
+
+    fn string(&mut self) {
+        let token = self.previous.as_ref().unwrap();
+        let name = &token.name;
+        self.current_chunk
+            .borrow_mut()
+            .write_constant(Value::object(RawString::alloc_from_str(name)), token.line);
     }
 
     fn literal(&mut self) {

@@ -2,11 +2,15 @@ mod object;
 mod value_casts;
 mod value_type;
 
+pub use object::ObjectPtr;
+pub use object::RawString;
+
 use value_casts::*;
 use value_type::*;
 
 use std::{
     fmt::{Debug, Display},
+    mem::ManuallyDrop,
     ops::{Add, Div, Mul, Neg, Sub},
 };
 
@@ -19,8 +23,13 @@ pub struct Value {
 }
 
 impl Value {
-    pub fn object() -> Self {
-        todo!()
+    pub fn object(value: ObjectPtr) -> Self {
+        Self {
+            value_type: ValueType::Object,
+            casts: ValueCasts {
+                object: ManuallyDrop::new(value),
+            },
+        }
     }
 
     pub fn boolean(value: bool) -> Self {
@@ -55,6 +64,10 @@ impl Value {
     pub fn is_falsey(&self) -> bool {
         self.value_type == ValueType::None
             || (self.value_type == ValueType::Bool && unsafe { !self.casts.boolean })
+    }
+
+    pub fn get_type(&self) -> ValueType {
+        self.value_type
     }
 }
 
