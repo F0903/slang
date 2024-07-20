@@ -5,7 +5,7 @@ use {
         opcode::OpCode,
         scanner::Scanner,
         token::{Precedence, Token, TokenType},
-        value::{ObjectPtr, RawString, Value},
+        value::{RawString, Value},
     },
     std::{cell::RefCell, rc::Rc},
 };
@@ -197,9 +197,10 @@ impl<'a> Parser<'a> {
     fn string(&mut self) {
         let token = self.previous.as_ref().unwrap();
         let name = &token.name;
-        self.current_chunk
-            .borrow_mut()
-            .write_constant(Value::object(RawString::alloc_from_str(name)), token.line);
+        self.current_chunk.borrow_mut().write_constant(
+            Value::object(RawString::alloc_from_str(name).cast()),
+            token.line,
+        );
     }
 
     fn literal(&mut self) {

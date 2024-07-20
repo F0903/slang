@@ -1,10 +1,17 @@
+use {
+    crate::{
+        chunk::Chunk,
+        compiler::Compiler,
+        memory::reallocate,
+        opcode::OpCode,
+        stack::Stack,
+        value::{Object, ObjectType, RawString, Value},
+    },
+    std::{cell::LazyCell, error::Error, ffi::CString, fmt::Display, ptr::null_mut},
+};
+
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
-use crate::value::ValueType;
-use {
-    crate::{chunk::Chunk, compiler::Compiler, opcode::OpCode, stack::Stack, value::Value},
-    std::{error::Error, ffi::CString, fmt::Display},
-};
 
 #[derive(Debug)]
 pub enum InterpretError {
@@ -50,17 +57,29 @@ macro_rules! binary_op_from_bool {
     }};
 }
 
+pub static mut GLOBAL_VM: VM = VM::new(); // forgive me for i have sinned
+
 pub struct VM {
     ip: *mut u8,
     stack: Stack<Value>,
+    objects_head: *mut Object,
 }
 
 impl VM {
-    pub fn new() -> Self {
+    pub(self) const fn new() -> Self {
         Self {
-            ip: std::ptr::null_mut(),
+            ip: null_mut(),
             stack: Stack::new(),
+            objects_head: null_mut(),
         }
+    }
+
+    pub fn get_objects_head(&self) -> *mut Object {
+        self.objects_head
+    }
+
+    pub fn set_objects_head(&mut self, objects: *mut Object) {
+        self.objects_head = objects;
     }
 
     fn read_byte(&mut self) -> u8 {
@@ -131,11 +150,19 @@ impl VM {
                 OpCode::Less => binary_op_from_bool!(self.stack, <),
                 OpCode::LessEqual => binary_op_from_bool!(self.stack, <=),
                 OpCode::Add => {
-                    let first = self.stack.peek(0);
-                    let second = self.stack.peek(1);
-                    if first.get_type() == ValueType::String
-                        && second.get_type() == ValueType::String
-                    {
+                    let first = self.stack.pop();
+                    let second = self.stack.pop();
+                    if first.is_object() && second.is_object() {
+                        let first = first.as_object();
+                        let second = second.as_object();
+                        if unsafe { first.read().get_type() } == ObjectType::String
+                            && unsafe { first.read().get_type() } == ObjectType::String
+                        {
+                            let first = first.cast::<RawString>();
+                            let second = second.cast::<RawString>();
+                            let concat = unsafe { first.read().concat(&second.read()) };
+                            self.stack.push(Value::object(concat.cast()))
+                        }
                     } else {
                         binary_op_try!(self.stack, +)
                     }
@@ -157,5 +184,30 @@ impl VM {
                 }
             }
         }
+    }
+
+    fn free_objects(&self) {
+        unsafe {
+            let mut obj_ptr = self.objects_head;
+            while obj_ptr != null_mut() {
+                let obj = obj_ptr.read();
+                let next = obj.get_next_object();
+                match obj.get_type() {
+                    ObjectType::String => {
+                        let string_ptr = obj_ptr.cast::<RawString>();
+                        let string = string_ptr.read();
+                        reallocate::<u8>(string.get_char_ptr(), string.get_len(), 0);
+                        reallocate::<RawString>(string_ptr.cast(), 1, 0);
+                    }
+                }
+                obj_ptr = next;
+            }
+        }
+    }
+}
+
+impl Drop for VM {
+    fn drop(&mut self) {
+        self.free_objects();
     }
 }

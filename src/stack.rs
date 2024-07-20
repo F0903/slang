@@ -8,7 +8,7 @@ pub struct Stack<T, const STACK_SIZE: usize = 1024> {
 impl<'a, T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
     const ARRAY_REPEAT_VALUE: MaybeUninit<T> = MaybeUninit::uninit();
 
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             stack: [Self::ARRAY_REPEAT_VALUE; STACK_SIZE],
             count: 0,

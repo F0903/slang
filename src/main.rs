@@ -3,7 +3,7 @@ use std::{
     io::{BufRead, Read, Write},
 };
 
-use vm::VM;
+use vm::GLOBAL_VM;
 
 mod chunk;
 mod compiler;
@@ -26,7 +26,7 @@ fn print_usage() {
     println!("Usage: slang for REPL or slang <path> to run a file.");
 }
 
-fn repl(vm: &mut VM) -> Result<()> {
+fn repl() -> Result<()> {
     let mut input = std::io::stdin().lock();
     let mut line_buf = String::new();
     loop {
@@ -36,31 +36,32 @@ fn repl(vm: &mut VM) -> Result<()> {
             println!();
             break;
         }
-        interpret(vm, line_buf.as_bytes())?;
+        interpret(line_buf.as_bytes())?;
         line_buf.clear();
         println!();
     }
     Ok(())
 }
 
-fn run_file(vm: &mut VM, path: String) -> Result<()> {
+fn run_file(path: String) -> Result<()> {
     let mut buf = vec![];
     std::fs::File::open(path)?.read_to_end(&mut buf)?;
-    interpret(vm, &buf)
+    interpret(&buf)
 }
 
-fn interpret(vm: &mut VM, buf: &[u8]) -> Result<()> {
-    vm.interpret(buf)?;
+fn interpret(buf: &[u8]) -> Result<()> {
+    unsafe {
+        GLOBAL_VM.interpret(buf)?;
+    }
     Ok(())
 }
 
 fn main() -> Result<()> {
     let mut args = args();
-    let mut vm = VM::new();
 
     match args.len() {
-        1 => repl(&mut vm),
-        2 => run_file(&mut vm, args.nth(1).unwrap()),
+        1 => repl(),
+        2 => run_file(args.nth(1).unwrap()),
         _ => {
             print_usage();
             return Err("ERROR: Invalid usage.".into());

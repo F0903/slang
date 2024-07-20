@@ -2,19 +2,17 @@ mod object;
 mod value_casts;
 mod value_type;
 
-pub use object::ObjectPtr;
-pub use object::RawString;
+pub use object::*;
 
 use value_casts::*;
 use value_type::*;
 
 use std::{
     fmt::{Debug, Display},
-    mem::ManuallyDrop,
     ops::{Add, Div, Mul, Neg, Sub},
 };
 
-use crate::vm::InterpretError;
+use crate::{memory::reallocate, vm::InterpretError};
 
 #[derive(Debug, Clone)]
 pub struct Value {
@@ -23,12 +21,10 @@ pub struct Value {
 }
 
 impl Value {
-    pub fn object(value: ObjectPtr) -> Self {
+    pub fn object(value: *mut Object) -> Self {
         Self {
             value_type: ValueType::Object,
-            casts: ValueCasts {
-                object: ManuallyDrop::new(value),
-            },
+            casts: ValueCasts { object: value },
         }
     }
 
@@ -61,9 +57,17 @@ impl Value {
         unsafe { self.casts.boolean }
     }
 
+    pub fn as_object(&self) -> *mut Object {
+        unsafe { self.casts.object }
+    }
+
     pub fn is_falsey(&self) -> bool {
         self.value_type == ValueType::None
             || (self.value_type == ValueType::Bool && unsafe { !self.casts.boolean })
+    }
+
+    pub fn is_object(&self) -> bool {
+        self.value_type == ValueType::Object
     }
 
     pub fn get_type(&self) -> ValueType {
@@ -75,7 +79,12 @@ impl Drop for Value {
     fn drop(&mut self) {
         unsafe {
             if self.value_type == ValueType::Object {
-                self.casts.object.dealloc();
+                let obj = self.as_object();
+                match obj.read().get_type() {
+                    ObjectType::String => {
+                        reallocate::<RawString>(obj.cast(), 1, 0);
+                    }
+                }
             }
         }
     }
@@ -278,7 +287,7 @@ impl Display for Value {
                 f.write_fmt(format_args!("[{}] = {}", self.value_type, self.as_number()))
             }
             ValueType::Object => f.write_fmt(format_args!("{:?} object", unsafe {
-                self.casts.object.get_type()
+                self.casts.object.read().get_type()
             })),
             ValueType::None => f.write_str("None"),
         }
