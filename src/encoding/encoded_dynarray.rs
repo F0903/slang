@@ -68,9 +68,8 @@ where
         }
     }
 
-    /// RETURNS VALUE POINTING INTO THE ARRAY
     pub fn read(&mut self, offset: usize) -> u32 {
         self.decode_all();
-        self.array.read_cast(offset)
+        *self.array.read_cast(offset)
     }
 }

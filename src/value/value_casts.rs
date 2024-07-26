@@ -1,19 +1,18 @@
+use super::ObjectContainer;
 use std::fmt::Debug;
-
-use super::object::Object;
 
 pub(super) union ValueCasts {
     pub(super) boolean: bool,
     pub(super) number: f64,
-    pub(super) object: *mut Object,
+    pub(super) object: ObjectContainer,
 }
 
 impl Debug for ValueCasts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         unsafe {
             f.write_fmt(format_args!(
-                "ValueCasts: bool=[{}] f64=[{:.5}]",
-                self.boolean, self.number
+                "ValueCasts: bool=[{}] f64=[{:.5}] object=[{:?}]",
+                self.boolean, self.number, self.object
             ))
         }
     }
@@ -21,10 +20,10 @@ impl Debug for ValueCasts {
 
 impl Clone for ValueCasts {
     fn clone(&self) -> Self {
-        // Might be wise to construct this with the largest field
+        // IMPORTANT: initialize with the largest value
         unsafe {
             ValueCasts {
-                number: self.number,
+                object: self.object,
             }
         }
     }

@@ -12,7 +12,7 @@ use std::{
     ops::{Add, Div, Mul, Neg, Sub},
 };
 
-use crate::{memory::reallocate, vm::InterpretError};
+use crate::vm::InterpretError;
 
 #[derive(Debug, Clone)]
 pub struct Value {
@@ -21,7 +21,7 @@ pub struct Value {
 }
 
 impl Value {
-    pub fn object(value: *mut Object) -> Self {
+    pub fn object(value: ObjectContainer) -> Self {
         Self {
             value_type: ValueType::Object,
             casts: ValueCasts { object: value },
@@ -57,7 +57,7 @@ impl Value {
         unsafe { self.casts.boolean }
     }
 
-    pub fn as_object(&self) -> *mut Object {
+    pub fn as_object_ptr(&self) -> ObjectContainer {
         unsafe { self.casts.object }
     }
 
@@ -72,21 +72,6 @@ impl Value {
 
     pub fn get_type(&self) -> ValueType {
         self.value_type
-    }
-}
-
-impl Drop for Value {
-    fn drop(&mut self) {
-        unsafe {
-            if self.value_type == ValueType::Object {
-                let obj = self.as_object();
-                match obj.read().get_type() {
-                    ObjectType::String => {
-                        reallocate::<RawString>(obj.cast(), 1, 0);
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -286,9 +271,15 @@ impl Display for Value {
             ValueType::Number => {
                 f.write_fmt(format_args!("[{}] = {}", self.value_type, self.as_number()))
             }
-            ValueType::Object => f.write_fmt(format_args!("{:?} object", unsafe {
-                self.casts.object.read().get_type()
-            })),
+            ValueType::Object => unsafe {
+                let obj_wrapper = self.casts.object;
+                let obj_ptr = obj_wrapper.get_object();
+                match &*obj_ptr {
+                    Object::String(s) => {
+                        f.write_fmt(format_args!("String object: {}", s.get_str()))
+                    }
+                }
+            },
             ValueType::None => f.write_str("None"),
         }
     }

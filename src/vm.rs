@@ -2,12 +2,12 @@ use {
     crate::{
         chunk::Chunk,
         compiler::Compiler,
-        memory::reallocate,
+        memory::{Dealloc, ManualPtr},
         opcode::OpCode,
         stack::Stack,
-        value::{Object, ObjectType, RawString, Value},
+        value::{Object, ObjectContainer, Value},
     },
-    std::{cell::LazyCell, error::Error, ffi::CString, fmt::Display, ptr::null_mut},
+    std::{error::Error, ffi::CString, fmt::Display, ptr::null_mut},
 };
 
 #[cfg(debug_assertions)]
@@ -57,12 +57,13 @@ macro_rules! binary_op_from_bool {
     }};
 }
 
-pub static mut GLOBAL_VM: VM = VM::new(); // forgive me for i have sinned
+// Figure ways around this global variable at some point.
+pub static mut GLOBAL_VM: VM = VM::new();
 
 pub struct VM {
     ip: *mut u8,
     stack: Stack<Value>,
-    objects_head: *mut Object,
+    objects_head: ManualPtr<ObjectContainer>,
 }
 
 impl VM {
@@ -70,21 +71,22 @@ impl VM {
         Self {
             ip: null_mut(),
             stack: Stack::new(),
-            objects_head: null_mut(),
+            objects_head: ManualPtr::null(),
         }
     }
 
-    pub fn get_objects_head(&self) -> *mut Object {
+    pub const fn get_objects_head(&self) -> ManualPtr<ObjectContainer> {
         self.objects_head
     }
 
-    pub fn set_objects_head(&mut self, objects: *mut Object) {
-        self.objects_head = objects;
+    //TODO: make const when stable
+    pub fn set_objects_head(&mut self, object: ManualPtr<ObjectContainer>) {
+        self.objects_head = object;
     }
 
     fn read_byte(&mut self) -> u8 {
         unsafe {
-            let val = self.ip.read();
+            let val = *self.ip;
             self.ip = self.ip.add(1);
             val
         }
@@ -92,18 +94,18 @@ impl VM {
 
     fn read_long(&mut self) -> u32 {
         unsafe {
-            let val = self.ip.cast::<u32>().read();
+            let val = *self.ip.cast::<u32>();
             self.ip = self.ip.add(4);
             val
         }
     }
 
-    fn read_constant_long(&mut self, chunk: &mut Chunk) -> Value {
+    fn read_constant_long<'a>(&mut self, chunk: &'a mut Chunk) -> &'a Value {
         let index = self.read_long();
         chunk.get_constant(index)
     }
 
-    fn read_constant(&mut self, chunk: &mut Chunk) -> Value {
+    fn read_constant<'a>(&mut self, chunk: &'a mut Chunk) -> &'a Value {
         let index = self.read_byte();
         chunk.get_constant(index as u32)
     }
@@ -133,12 +135,14 @@ impl VM {
             let instruction = self.read_byte();
             match instruction.into() {
                 OpCode::ConstantLong => {
-                    let constant = self.read_constant_long(&mut chunk.borrow_mut());
-                    self.stack.push(constant);
+                    let chunk = &mut chunk.borrow_mut();
+                    let constant = self.read_constant_long(chunk);
+                    self.stack.push(constant.clone());
                 }
                 OpCode::Constant => {
-                    let constant = self.read_constant(&mut chunk.borrow_mut());
-                    self.stack.push(constant);
+                    let chunk = &mut chunk.borrow_mut();
+                    let constant = self.read_constant(chunk);
+                    self.stack.push(constant.clone());
                 }
                 OpCode::None => self.stack.push(Value::none()),
                 OpCode::True => self.stack.push(Value::boolean(true)),
@@ -153,15 +157,19 @@ impl VM {
                     let first = self.stack.pop();
                     let second = self.stack.pop();
                     if first.is_object() && second.is_object() {
-                        let first = first.as_object();
-                        let second = second.as_object();
-                        if unsafe { first.read().get_type() } == ObjectType::String
-                            && unsafe { first.read().get_type() } == ObjectType::String
-                        {
-                            let first = first.cast::<RawString>();
-                            let second = second.cast::<RawString>();
-                            let concat = unsafe { first.read().concat(&second.read()) };
-                            self.stack.push(Value::object(concat.cast()))
+                        let first = first.as_object_ptr();
+                        let second = second.as_object_ptr();
+                        match &*first.get_object() {
+                            Object::String(a_str) => match &*second.get_object() {
+                                Object::String(b_str) => {
+                                    let concat = b_str.concat(&a_str);
+                                    self.stack.push(Value::object(
+                                        ObjectContainer::alloc(Object::String(concat)).take(),
+                                    )) // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
+                                }
+                                _ => (),
+                            },
+                            _ => (),
                         }
                     } else {
                         binary_op_try!(self.stack, +)
@@ -186,22 +194,16 @@ impl VM {
         }
     }
 
-    fn free_objects(&self) {
-        unsafe {
-            let mut obj_ptr = self.objects_head;
-            while obj_ptr != null_mut() {
-                let obj = obj_ptr.read();
-                let next = obj.get_next_object();
-                match obj.get_type() {
-                    ObjectType::String => {
-                        let string_ptr = obj_ptr.cast::<RawString>();
-                        let string = string_ptr.read();
-                        reallocate::<u8>(string.get_char_ptr(), string.get_len(), 0);
-                        reallocate::<RawString>(string_ptr.cast(), 1, 0);
-                    }
-                }
-                obj_ptr = next;
-            }
+    pub fn free_objects(&self) {
+        let mut obj_container_ptr = self.objects_head;
+        while !obj_container_ptr.is_null() {
+            let next_obj_container_ptr = obj_container_ptr.get().get_next_object_ptr();
+
+            let mut obj_container = obj_container_ptr.take();
+            obj_container.dealloc();
+            obj_container_ptr.dealloc();
+
+            obj_container_ptr = next_obj_container_ptr;
         }
     }
 }

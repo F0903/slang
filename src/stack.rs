@@ -1,16 +1,17 @@
 use std::{fmt::Debug, mem::MaybeUninit};
 
 pub struct Stack<T, const STACK_SIZE: usize = 1024> {
-    stack: [MaybeUninit<T>; STACK_SIZE], // Be careful
+    stack: [MaybeUninit<T>; STACK_SIZE],
     count: usize,
 }
 
-impl<'a, T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
-    const ARRAY_REPEAT_VALUE: MaybeUninit<T> = MaybeUninit::uninit();
-
+impl<'a, T, const STACK_SIZE: usize> Stack<T, STACK_SIZE>
+where
+    T: Debug,
+{
     pub const fn new() -> Self {
         Self {
-            stack: [Self::ARRAY_REPEAT_VALUE; STACK_SIZE],
+            stack: [const { MaybeUninit::uninit() }; STACK_SIZE],
             count: 0,
         }
     }
@@ -20,6 +21,7 @@ impl<'a, T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
     }
 
     pub fn push(&mut self, val: T) {
+        println!("STACK PUSH DEBUG: {:?}", val);
         self.stack[self.count].write(val);
         self.count += 1;
     }

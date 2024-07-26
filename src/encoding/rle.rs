@@ -12,13 +12,13 @@ impl Encoding for RLE {
         let count_u32 = count / 4;
         let values_u32 = values.cast::<u32>();
 
-        let mut current_num: u32 = values_u32.read();
+        let mut current_num: u32 = *values_u32;
         let mut current_num_count: u8 = 1;
 
         let mut workspace = DynArray::<u8>::new();
 
         for i in 1..count_u32 {
-            let num = values_u32.add(i).read();
+            let num = *values_u32.add(i);
             if num as u32 != current_num {
                 workspace.push(current_num_count);
                 workspace.push_ptr(addr_of!(current_num).cast(), 4);
@@ -58,7 +58,7 @@ impl Encoding for RLE {
         let loop_to = count / SEQ_NUM_VALUE_ALIGNMENT as usize;
         for i in 0..loop_to {
             let base = i * SEQ_NUM_VALUE_ALIGNMENT as usize;
-            let seq_num = values.add(base).read();
+            let seq_num = *values.add(base);
             let num = values.add(base + 1).cast::<u32>();
             for _ in 0..seq_num {
                 workspace.push_ptr(num.cast(), 4);

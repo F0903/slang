@@ -5,7 +5,7 @@ use {
         opcode::OpCode,
         scanner::Scanner,
         token::{Precedence, Token, TokenType},
-        value::{RawString, Value},
+        value::{Object, ObjectContainer, RawString, Value},
     },
     std::{cell::RefCell, rc::Rc},
 };
@@ -96,7 +96,7 @@ impl<'a> Parser<'a> {
         self.current_chunk = chunk;
     }
 
-    const fn get_rule(&self, token: TokenType) -> ParseRule<'a> {
+    fn get_rule(&self, token: TokenType) -> &ParseRule<'a> {
         self.parse_rule_table.read(token as usize)
     }
 
@@ -197,8 +197,9 @@ impl<'a> Parser<'a> {
     fn string(&mut self) {
         let token = self.previous.as_ref().unwrap();
         let name = &token.name;
+        let name = &name[1..name.len() - 1];
         self.current_chunk.borrow_mut().write_constant(
-            Value::object(RawString::alloc_from_str(name).cast()),
+            Value::object(ObjectContainer::alloc(Object::String(RawString::new(name))).take()), // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
             token.line,
         );
     }

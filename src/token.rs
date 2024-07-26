@@ -65,11 +65,11 @@ pub enum Precedence {
     Assignment, // =
     Or,         // or
     And,        // and
-    Equality,   // is not
+    Equality,   // is
     Comparison, // < > <= >=
     Term,       // + -
     Factor,     // * /
-    Unary,      // ! -
+    Unary,      // not -
     Call,       // . ()
     Primary,
 }

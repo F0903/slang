@@ -1,5 +1,9 @@
-use {crate::memory::reallocate, std::ptr::null_mut};
+use {
+    crate::memory::{reallocate, Dealloc},
+    std::ptr::null_mut,
+};
 
+#[derive(Debug)]
 pub struct DynArray<T> {
     data: *mut T,
     count: usize,
@@ -7,12 +11,18 @@ pub struct DynArray<T> {
 }
 
 impl<T> DynArray<T> {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             data: null_mut(),
             count: 0,
             capacity: 0,
         }
+    }
+
+    pub fn new_with_cap(cap: usize) -> Self {
+        let mut me = Self::new();
+        me.grow_array_to(cap);
+        me
     }
 
     pub(crate) const fn get_raw_ptr(&self) -> *mut T {
@@ -34,7 +44,7 @@ impl<T> DynArray<T> {
         self.capacity
     }
 
-    pub const fn grow_capacity(&self) -> usize {
+    const fn grow_capacity(&self) -> usize {
         const MIN_CAP: usize = 16;
         const GROW_FACTOR: usize = 2;
         if self.capacity < MIN_CAP {
@@ -87,8 +97,12 @@ impl<T> DynArray<T> {
         }
     }
 
-    pub const fn read(&self, index: usize) -> T {
-        unsafe { self.data.add(index).read() }
+    pub fn push_array(&mut self, other: &DynArray<T>) {
+        self.push_ptr(other.data, other.count)
+    }
+
+    pub fn read(&self, index: usize) -> &T {
+        unsafe { &*self.data.add(index) }
     }
 
     pub fn replace(&self, index: usize, new_val: T) {
@@ -102,15 +116,31 @@ impl<T> DynArray<T> {
 }
 
 impl DynArray<u8> {
-    pub const fn read_cast<A>(&self, offset: usize) -> A {
-        unsafe { self.data.cast::<A>().add(offset).read() }
+    pub fn read_cast<A>(&self, offset: usize) -> &A {
+        unsafe { &*self.data.cast::<A>().add(offset) }
+    }
+
+    pub fn from_str(str: &str) -> Self {
+        let mut me = Self::new_with_cap(str.len());
+        me.push_ptr(str.as_ptr(), str.len());
+        me
+    }
+
+    pub const fn as_str(&self) -> &str {
+        unsafe { std::str::from_raw_parts(self.data, self.count) }
+    }
+}
+
+impl<T> Dealloc for DynArray<T> {
+    fn dealloc(&mut self) {
+        self.data = reallocate::<T>(self.data.cast(), self.capacity, 0).cast();
+        self.capacity = 0;
+        self.count = 0;
     }
 }
 
 impl<T> Drop for DynArray<T> {
     fn drop(&mut self) {
-        self.data = reallocate::<T>(self.data.cast(), self.capacity, 0).cast();
-        self.capacity = 0;
-        self.count = 0;
+        self.dealloc()
     }
 }

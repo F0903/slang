@@ -1,3 +1,6 @@
+#![feature(str_from_raw_parts)]
+#![feature(layout_for_ptr)]
+
 use std::{
     env::args,
     io::{BufRead, Read, Write},
@@ -14,6 +17,7 @@ mod memory;
 mod opcode;
 mod parser;
 mod scanner;
+mod scanner_error;
 mod stack;
 mod token;
 mod utils;
@@ -52,13 +56,13 @@ fn run_file(path: String) -> Result<()> {
 fn interpret(buf: &[u8]) -> Result<()> {
     unsafe {
         GLOBAL_VM.interpret(buf)?;
+        GLOBAL_VM.free_objects(); //testing
     }
     Ok(())
 }
 
 fn main() -> Result<()> {
     let mut args = args();
-
     match args.len() {
         1 => repl(),
         2 => run_file(args.nth(1).unwrap()),

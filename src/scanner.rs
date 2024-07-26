@@ -1,40 +1,14 @@
 use {
-    crate::token::{Token, TokenType},
-    std::{error::Error, fmt::Display, ptr::null},
+    crate::{
+        scanner_error::ScannerError,
+        token::{Token, TokenType},
+    },
+    std::ptr::null,
 };
 
-#[derive(Debug)]
-pub struct ScannerError {
-    message: &'static str,
-}
+type ScannerResult = std::result::Result<Token, ScannerError>;
 
-impl ScannerError {
-    pub const fn new(message: &'static str) -> Self {
-        Self { message }
-    }
-
-    pub const fn get_message(&self) -> &'static str {
-        self.message
-    }
-}
-
-impl Error for ScannerError {}
-
-impl Display for ScannerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("SCANNER ERROR: {}", self.message))
-    }
-}
-
-impl From<&'static str> for ScannerError {
-    fn from(value: &'static str) -> Self {
-        Self::new(value)
-    }
-}
-
-type ScannerResult<'a> = std::result::Result<Token, ScannerError>;
-
-const fn error(message: &'static str) -> ScannerResult<'_> {
+fn error(message: impl ToString) -> ScannerResult {
     Err(ScannerError::new(message))
 }
 
@@ -72,10 +46,10 @@ impl Scanner {
     }
 
     const fn is_at_end(&self) -> bool {
-        unsafe { self.current.read() == b'\0' }
+        unsafe { *self.current == b'\0' }
     }
 
-    fn make_token(&self, typ: TokenType) -> ScannerResult<'_> {
+    fn make_token(&self, typ: TokenType) -> ScannerResult {
         let name = unsafe {
             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                 self.start,
@@ -87,7 +61,7 @@ impl Scanner {
 
     pub(crate) fn advance(&mut self) -> u8 {
         unsafe {
-            let ch = self.current.read();
+            let ch = *self.current;
             self.current = self.current.add(1);
             ch
         }
@@ -98,7 +72,7 @@ impl Scanner {
             return false;
         }
         unsafe {
-            if self.current.read() != expected {
+            if *self.current != expected {
                 return false;
             }
             self.current = self.current.add(1);
@@ -107,14 +81,14 @@ impl Scanner {
     }
 
     fn peek(&self) -> u8 {
-        unsafe { self.current.read() }
+        unsafe { *self.current }
     }
 
     fn peek_next(&self) -> Option<u8> {
         if self.is_at_end() {
             return None;
         }
-        unsafe { Some(self.current.add(1).read()) }
+        unsafe { Some(*self.current.add(1)) }
     }
 
     fn skip_whitespace(&mut self) {
@@ -140,7 +114,7 @@ impl Scanner {
         }
     }
 
-    fn string(&mut self) -> ScannerResult<'_> {
+    fn string(&mut self) -> ScannerResult {
         while self.peek() != b'"' && !self.is_at_end() {
             if self.peek() == b'\n' {
                 self.line += 1;
@@ -149,14 +123,14 @@ impl Scanner {
         }
 
         if self.is_at_end() {
-            return Err("Unterminated string".into());
+            return Err(format!("Unterminated string at {}", self.line).into());
         }
 
         self.advance();
         self.make_token(TokenType::String)
     }
 
-    fn number(&mut self) -> ScannerResult<'_> {
+    fn number(&mut self) -> ScannerResult {
         while is_digit(self.peek()) {
             self.advance();
         }
@@ -193,7 +167,7 @@ impl Scanner {
 
     fn identifier_type(&self) -> TokenType {
         unsafe {
-            match self.start.read() {
+            match *self.start {
                 b'a' => self.check_keywords(1, &[("nd", TokenType::And)]),
                 b'c' => self.check_keywords(1, &[("lass", TokenType::Class)]),
                 b'e' => self.check_keywords(1, &[("else", TokenType::Else)]),
@@ -220,7 +194,7 @@ impl Scanner {
         }
     }
 
-    fn identifier(&mut self) -> ScannerResult<'_> {
+    fn identifier(&mut self) -> ScannerResult {
         while is_alpha(self.peek()) || is_digit(self.peek()) {
             self.advance();
         }
@@ -228,7 +202,7 @@ impl Scanner {
         self.make_token(typ)
     }
 
-    pub fn scan(&mut self) -> ScannerResult<'_> {
+    pub fn scan(&mut self) -> ScannerResult {
         self.skip_whitespace();
         self.start = self.current;
 
