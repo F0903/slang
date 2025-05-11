@@ -1,17 +1,19 @@
 use {
     crate::{
         chunk::Chunk,
-        dynarray::DynArray,
+        collections::DynArray,
+        lexing::{
+            scanner::Scanner,
+            token::{Precedence, Token, TokenType},
+        },
         opcode::OpCode,
-        scanner::Scanner,
-        token::{Precedence, Token, TokenType},
-        value::{Object, ObjectContainer, RawString, Value},
+        value::{
+            Value,
+            object::{ObjectContainer, ObjectManager},
+        },
     },
     std::{cell::RefCell, rc::Rc},
 };
-
-// Make concrete error type for parser.
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 type ParseFn<'a> = fn(&mut Parser<'a>);
 
@@ -23,7 +25,7 @@ struct ParseRule<'a> {
 
 macro_rules! define_parse_rule_table {
     ($($token_val:expr => $rule_init:tt),*) => {{
-        let mut v = crate::dynarray::DynArray::new();
+        let mut v = crate::collections::DynArray::new();
         $(
             v.insert($token_val as usize, ParseRule $rule_init);
         )*
@@ -31,6 +33,7 @@ macro_rules! define_parse_rule_table {
     }};
 }
 pub struct Parser<'a> {
+    objects: Rc<ObjectManager>,
     scanner: Scanner,
     current_chunk: Rc<RefCell<Chunk>>,
     current: Option<Token>,
@@ -41,8 +44,9 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(scanner: Scanner, chunk: Rc<RefCell<Chunk>>) -> Self {
+    pub fn new(scanner: Scanner, objects: Rc<ObjectManager>, chunk: Rc<RefCell<Chunk>>) -> Self {
         Self {
+            objects,
             scanner,
             current_chunk: chunk,
             current: None,
@@ -199,7 +203,12 @@ impl<'a> Parser<'a> {
         let name = &token.name;
         let name = &name[1..name.len() - 1];
         self.current_chunk.borrow_mut().write_constant(
-            Value::object(ObjectContainer::alloc(Object::String(RawString::new(name))).take()), // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
+            Value::object(
+                ObjectContainer::alloc_string(name, unsafe {
+                    Rc::get_mut_unchecked(&mut self.objects)
+                })
+                .take(),
+            ), // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
             token.line,
         );
     }

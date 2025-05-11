@@ -1,40 +1,3 @@
-program = { declaration }, ?EOF?;
-
-declaration = class-declaration | function-declaration | variable-declaration | statement;
-class-declaration = "class", identifier, "{", { function-declaration }, "}";
-function-declaration = "fn", identifier, "(", [ parameters ], ")", block;
-parameters = identifier, { ",", identifier };
-variable-declaration = "let", identifier, [ "=", expression ];
-
-statement = ( expression | block | if-statement | while-statement | return-statement ), "\n";
-return-statement = "return", [ expression ];
-while-statement = "while", "(", expression, ")", statement;
-if-statement = "if", "(", expression, ")", statement, [ "else", statement ];
-block = "{", declaration, "}";
-
-expression = assignment;
-
-assignment = [ call, "." ], identifier, "=", assignment | logic-or;
-logic-or = logic-and, { "or", logic-and };
-logic-and = equality, { "and", equality };
-equality = comparison, { ( "not" | "is" ), comparison };
-comparison = term, { ( ">" | ">=" | "<" | "<=" ), term };
-term = factor, { ( "-" | "+" ), factor };
-factor = unary, { ( "/" | "*" ), unary };
-unary = ( "!" | "-" ), unary | call;
-call = primary, { ( "(", { arguments }, ")" ) | ( ".", identifier ) };
-arguments = expression, { ",", expression };
-primary = number | string | "true" | "false" | "none" | "(", expression, ")";
-
-letter = "a".."z" | "A".."Z";
-digit = "0".."9";
-character = letter | digit;
-
-identifier = ( character | "_" ), { ( character | "_" ) };
-
-number = digit, { digit };
-string = '"', letter, { letter }, '"';
-
 operator
     = "is"
     | "not"
@@ -47,4 +10,41 @@ operator
     | "*"
     | "/";
 
+letter = "a".."z" | "A".."Z";
+digit = "0".."9";
+character = letter | digit;
+
+identifier = ( character | "_" ), { ( character | "_" ) };
+
+number = digit, { digit };
+string = '"', letter, { letter }, '"';
+
 comment = "?", { character | "_" };
+
+primary = number | string | "true" | "false" | "none" | "(", expression, ")";
+equality = comparison, { ( "not" | "is" ), comparison };
+term = factor, { ( "-" | "+" ), factor };
+unary = ( "!" | "-" ), unary | call;
+comparison = term, { ( ">" | ">=" | "<" | "<=" ), term };
+factor = unary, { ( "/" | "*" ), unary };
+arguments = expression, { ",", expression };
+call = primary, { ( "(", { arguments }, ")" ) | ( ".", identifier ) };
+logic-and = equality, { "and", equality };
+logic-or = logic-and, { "or", logic-and };
+assignment = [ call, "." ], identifier, "=", assignment | logic-or;
+
+expression = assignment;
+
+variable-declaration = "let", identifier, [ "=", expression ];
+parameters = identifier, { ",", identifier };
+function-declaration = "fn", identifier, "(", [ parameters ], ")", block;
+class-declaration = "class", identifier, "{", { function-declaration }, "}";
+declaration = class-declaration | function-declaration | variable-declaration | statement;
+
+block = "{", declaration, "}";
+if-statement = "if", "(", expression, ")", statement, [ "else", statement ];
+while-statement = "while", "(", expression, ")", statement;
+return-statement = "return", [ expression ];
+statement = ( expression | block | if-statement | while-statement | return-statement ), "\n";
+
+program = { declaration }, ?EOF?;

@@ -1,8 +1,8 @@
 use {core::panic, std::ptr::addr_of};
 
 use crate::{
-    dynarray::DynArray,
-    encoding::{self, EncodedDynArray},
+    collections::{DynArray, EncodedDynArray},
+    encoding,
     opcode::OpCode,
     value::Value,
 };

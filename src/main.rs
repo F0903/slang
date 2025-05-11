@@ -1,25 +1,24 @@
 #![feature(str_from_raw_parts)]
 #![feature(layout_for_ptr)]
+#![feature(get_mut_unchecked)]
+#![feature(specialization)]
 
 use std::{
     env::args,
     io::{BufRead, Read, Write},
 };
 
-use vm::GLOBAL_VM;
+use vm::VM;
 
 mod chunk;
+mod collections;
 mod compiler;
 mod debug;
-mod dynarray;
 mod encoding;
+mod lexing;
 mod memory;
 mod opcode;
 mod parser;
-mod scanner;
-mod scanner_error;
-mod stack;
-mod token;
 mod utils;
 mod value;
 mod vm;
@@ -30,7 +29,7 @@ fn print_usage() {
     println!("Usage: slang for REPL or slang <path> to run a file.");
 }
 
-fn repl() -> Result<()> {
+fn repl(vm: &mut VM) -> Result<()> {
     let mut input = std::io::stdin().lock();
     let mut line_buf = String::new();
     loop {
@@ -40,32 +39,30 @@ fn repl() -> Result<()> {
             println!();
             break;
         }
-        interpret(line_buf.as_bytes())?;
+        interpret(line_buf.as_bytes(), vm)?;
         line_buf.clear();
         println!();
     }
     Ok(())
 }
 
-fn run_file(path: String) -> Result<()> {
+fn run_file(path: String, vm: &mut VM) -> Result<()> {
     let mut buf = vec![];
     std::fs::File::open(path)?.read_to_end(&mut buf)?;
-    interpret(&buf)
+    interpret(&buf, vm)
 }
 
-fn interpret(buf: &[u8]) -> Result<()> {
-    unsafe {
-        GLOBAL_VM.interpret(buf)?;
-        GLOBAL_VM.free_objects(); //testing
-    }
+fn interpret(buf: &[u8], vm: &mut VM) -> Result<()> {
+    vm.interpret(buf)?;
     Ok(())
 }
 
 fn main() -> Result<()> {
     let mut args = args();
+    let mut vm = VM::new();
     match args.len() {
-        1 => repl(),
-        2 => run_file(args.nth(1).unwrap()),
+        1 => repl(&mut vm),
+        2 => run_file(args.nth(1).unwrap(), &mut vm),
         _ => {
             print_usage();
             return Err("ERROR: Invalid usage.".into());

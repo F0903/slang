@@ -1,7 +1,11 @@
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_chunk;
+use crate::value::object::ObjectManager;
 use {
-    crate::{chunk::Chunk, opcode::OpCode, parser::Parser, scanner::Scanner, token::TokenType},
+    crate::{
+        chunk::Chunk, lexing::scanner::Scanner, lexing::token::TokenType, opcode::OpCode,
+        parser::Parser,
+    },
     std::cell::RefCell,
     std::rc::Rc,
 };
@@ -15,11 +19,11 @@ pub struct Compiler<'a> {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new() -> Self {
+    pub fn new(objects: Rc<ObjectManager>) -> Self {
         let chunk = Rc::new(RefCell::new(Chunk::new()));
         Self {
             current_chunk: chunk.clone(),
-            parser: Parser::new(Scanner::new(), chunk),
+            parser: Parser::new(Scanner::new(), objects, chunk),
         }
     }
 

@@ -1,5 +1,5 @@
 use {
-    crate::{
+    super::{
         scanner_error::ScannerError,
         token::{Token, TokenType},
     },

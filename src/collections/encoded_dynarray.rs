@@ -1,4 +1,4 @@
-use {super::Encoding, crate::dynarray::DynArray, std::ptr::addr_of};
+use {super::DynArray, crate::encoding::Encoding, std::ptr::addr_of};
 
 pub struct EncodedDynArray<E>
 where
@@ -45,13 +45,11 @@ where
             self.decode_all();
         }
 
-        unsafe {
-            let mut new_count = self.get_count();
-            let old_data = self.array.get_raw_ptr();
-            let new_data = E::encode_replace(old_data, &mut new_count); // Will dealloc old data
-            self.array.set_backing_data(new_data, new_count, new_count);
-            self.encoded = true;
-        }
+        let mut new_count = self.get_count();
+        let old_data = self.array.get_raw_ptr();
+        let new_data = E::encode_replace(old_data, &mut new_count); // Will dealloc old data
+        self.array.set_backing_data(new_data, new_count, new_count);
+        self.encoded = true;
     }
 
     pub fn decode_all(&mut self) {
@@ -59,13 +57,11 @@ where
             return;
         }
 
-        unsafe {
-            let mut new_count = self.get_count();
-            let old_data = self.array.get_raw_ptr();
-            let new_data = E::decode_replace(old_data, &mut new_count); // Will dealloc old data
-            self.array.set_backing_data(new_data, new_count, new_count);
-            self.encoded = false;
-        }
+        let mut new_count = self.get_count();
+        let old_data = self.array.get_raw_ptr();
+        let new_data = E::decode_replace(old_data, &mut new_count); // Will dealloc old data
+        self.array.set_backing_data(new_data, new_count, new_count);
+        self.encoded = false;
     }
 
     pub fn read(&mut self, offset: usize) -> u32 {

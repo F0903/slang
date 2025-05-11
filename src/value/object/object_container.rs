@@ -1,12 +1,11 @@
 use std::fmt::Display;
 
-use crate::{
-    memory::{Dealloc, ManualPtr},
-    vm::GLOBAL_VM,
-};
+use crate::memory::{Dealloc, ManualPtr};
 
-use super::Object;
+use super::{Object, ObjectManager, RawString};
 
+/// A container for objects that "links" them together as a linked list.
+/// This is used to keep track of all objects in the VM.
 #[derive(Clone, Copy, Debug)]
 pub struct ObjectContainer {
     obj: ManualPtr<Object>,
@@ -14,17 +13,23 @@ pub struct ObjectContainer {
 }
 
 impl ObjectContainer {
-    pub fn alloc(obj: Object) -> ManualPtr<Self> {
+    pub fn alloc(obj: Object, objects: &mut ObjectManager) -> ManualPtr<Self> {
         println!("DEBUG OBJECT ALLOC: {}", obj);
-        unsafe {
-            // Having an additional alloc here for this container type (which is essentially just two pointers) is not optimal, but rust does not allow recursive types without indirection (a pointer) so it cannot be avoided.
-            let me = ManualPtr::alloc(Self {
-                obj: ManualPtr::alloc(obj),
-                next: GLOBAL_VM.get_objects_head(),
-            });
-            GLOBAL_VM.set_objects_head(me.clone());
-            me
-        }
+
+        let head = objects.get_objects_head();
+
+        // Having an additional alloc here for this container type (which is essentially just two pointers) is not optimal, but rust does not allow recursive types without indirection (a pointer) so it cannot be avoided.
+        let me = ManualPtr::alloc(Self {
+            obj: ManualPtr::alloc(obj),
+            next: head,
+        });
+        objects.set_objects_head(me.clone());
+        me
+    }
+
+    // Convinience function to allocate a string object
+    pub fn alloc_string(str: &str, objects: &mut ObjectManager) -> ManualPtr<Self> {
+        Self::alloc(Object::String(RawString::new(str)), objects)
     }
 
     pub const fn get_object_ptr(&self) -> ManualPtr<Object> {
@@ -54,7 +59,7 @@ impl Display for ObjectContainer {
 impl Dealloc for ObjectContainer {
     fn dealloc(&mut self) {
         // Don't dealloc the next node
-        self.obj.take().dealloc();
+        self.obj.dealloc();
     }
 }
 

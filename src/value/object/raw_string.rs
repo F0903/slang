@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{dynarray::DynArray, memory::Dealloc};
+use crate::{collections::DynArray, memory::Dealloc};
 
 #[derive(Debug)]
 pub struct RawString {

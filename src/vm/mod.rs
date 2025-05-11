@@ -1,38 +1,27 @@
+mod interpret_error;
+
+use std::rc::Rc;
+
+pub use interpret_error::InterpretError;
+
 use {
     crate::{
         chunk::Chunk,
+        collections::Stack,
         compiler::Compiler,
-        memory::{Dealloc, ManualPtr},
+        memory::Dealloc,
         opcode::OpCode,
-        stack::Stack,
-        value::{Object, ObjectContainer, Value},
+        value::{
+            Value,
+            object::{Object, ObjectContainer, ObjectManager},
+        },
     },
-    std::{error::Error, ffi::CString, fmt::Display, ptr::null_mut},
+    interpret_error::InterpretResult,
+    std::{ffi::CString, ptr::null_mut},
 };
 
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
-
-#[derive(Debug)]
-pub enum InterpretError {
-    CompileTime(String),
-    Runtime(String),
-}
-
-impl Display for InterpretError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::CompileTime(msg) => {
-                f.write_fmt(format_args!("Encountered compile-time error.\n{}", msg))
-            }
-            Self::Runtime(msg) => f.write_fmt(format_args!("Encountered runtime error.\n{}", msg)),
-        }
-    }
-}
-
-impl Error for InterpretError {}
-
-type InterpretResult = Result<(), InterpretError>;
 
 macro_rules! binary_op_result {
     ($stack: expr, $op: tt) => {{
@@ -57,31 +46,19 @@ macro_rules! binary_op_from_bool {
     }};
 }
 
-// Figure ways around this global variable at some point.
-pub static mut GLOBAL_VM: VM = VM::new();
-
 pub struct VM {
     ip: *mut u8,
     stack: Stack<Value>,
-    objects_head: ManualPtr<ObjectContainer>,
+    object_manager: Rc<ObjectManager>,
 }
 
 impl VM {
-    pub(self) const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             ip: null_mut(),
             stack: Stack::new(),
-            objects_head: ManualPtr::null(),
+            object_manager: Rc::new(ObjectManager::new()),
         }
-    }
-
-    pub const fn get_objects_head(&self) -> ManualPtr<ObjectContainer> {
-        self.objects_head
-    }
-
-    //TODO: make const when stable
-    pub fn set_objects_head(&mut self, object: ManualPtr<ObjectContainer>) {
-        self.objects_head = object;
     }
 
     fn read_byte(&mut self) -> u8 {
@@ -115,7 +92,7 @@ impl VM {
             InterpretError::CompileTime("Could not create a CString from source!".to_owned())
         })?;
 
-        let mut compiler = Compiler::new();
+        let mut compiler = Compiler::new(self.object_manager.clone());
         let chunk = compiler
             .compile(source.as_bytes())
             .map_err(|e| InterpretError::CompileTime(e.to_string()))?;
@@ -163,9 +140,13 @@ impl VM {
                             Object::String(a_str) => match &*second.get_object() {
                                 Object::String(b_str) => {
                                     let concat = b_str.concat(&a_str);
-                                    self.stack.push(Value::object(
-                                        ObjectContainer::alloc(Object::String(concat)).take(),
-                                    )) // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
+                                    let new_string = Value::object(
+                                        ObjectContainer::alloc(Object::String(concat), unsafe {
+                                            Rc::get_mut_unchecked(&mut self.object_manager)
+                                        })
+                                        .take(),
+                                    );
+                                    self.stack.push(new_string) // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
                                 }
                                 _ => (),
                             },
@@ -195,13 +176,12 @@ impl VM {
     }
 
     pub fn free_objects(&self) {
-        let mut obj_container_ptr = self.objects_head;
+        let mut obj_container_ptr = self.object_manager.get_objects_head();
         while !obj_container_ptr.is_null() {
             let next_obj_container_ptr = obj_container_ptr.get().get_next_object_ptr();
 
             let mut obj_container = obj_container_ptr.take();
             obj_container.dealloc();
-            obj_container_ptr.dealloc();
 
             obj_container_ptr = next_obj_container_ptr;
         }

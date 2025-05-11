@@ -1,9 +1,8 @@
-mod object;
+pub mod object;
 mod value_casts;
 mod value_type;
 
-pub use object::*;
-
+use object::{Object, ObjectContainer};
 use value_casts::*;
 use value_type::*;
 
