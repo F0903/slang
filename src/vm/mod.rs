@@ -1,13 +1,15 @@
 mod interpret_error;
+mod vm_heap;
 
-use std::rc::Rc;
+use std::cell::RefCell;
 
 pub use interpret_error::InterpretError;
+pub use vm_heap::VmHeap;
 
 use {
     crate::{
         chunk::Chunk,
-        collections::Stack,
+        collections::{HashTable, Stack},
         compiler::Compiler,
         memory::Dealloc,
         opcode::OpCode,
@@ -17,7 +19,7 @@ use {
         },
     },
     interpret_error::InterpretResult,
-    std::{ffi::CString, ptr::null_mut},
+    std::{ffi::CString, ptr::null_mut, rc::Rc},
 };
 
 #[cfg(debug_assertions)]
@@ -46,18 +48,21 @@ macro_rules! binary_op_from_bool {
     }};
 }
 
-pub struct VM {
+pub struct Vm {
     ip: *mut u8,
     stack: Stack<Value>,
-    object_manager: Rc<ObjectManager>,
+    heap: Rc<RefCell<VmHeap>>,
 }
 
-impl VM {
+impl Vm {
     pub fn new() -> Self {
         Self {
             ip: null_mut(),
             stack: Stack::new(),
-            object_manager: Rc::new(ObjectManager::new()),
+            heap: Rc::new(RefCell::new(VmHeap {
+                objects: ObjectManager::new(),
+                interned_strings: HashTable::new(),
+            })),
         }
     }
 
@@ -92,7 +97,7 @@ impl VM {
             InterpretError::CompileTime("Could not create a CString from source!".to_owned())
         })?;
 
-        let mut compiler = Compiler::new(self.object_manager.clone());
+        let mut compiler = Compiler::new(self.heap.clone());
         let chunk = compiler
             .compile(source.as_bytes())
             .map_err(|e| InterpretError::CompileTime(e.to_string()))?;
@@ -140,10 +145,12 @@ impl VM {
                             Object::String(a_str) => match &*second.get_object() {
                                 Object::String(b_str) => {
                                     let concat = b_str.concat(&a_str);
+                                    let mut heap = self.heap.borrow_mut();
                                     let new_string = Value::object(
-                                        ObjectContainer::alloc(Object::String(concat), unsafe {
-                                            Rc::get_mut_unchecked(&mut self.object_manager)
-                                        })
+                                        ObjectContainer::alloc(
+                                            Object::String(concat),
+                                            &mut heap.objects,
+                                        )
                                         .take(),
                                     );
                                     self.stack.push(new_string) // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
@@ -175,8 +182,8 @@ impl VM {
         }
     }
 
-    pub fn free_objects(&self) {
-        let mut obj_container_ptr = self.object_manager.get_objects_head();
+    fn free_objects(&self) {
+        let mut obj_container_ptr = self.heap.borrow().objects.get_objects_head();
         while !obj_container_ptr.is_null() {
             let next_obj_container_ptr = obj_container_ptr.get().get_next_object_ptr();
 
@@ -188,7 +195,7 @@ impl VM {
     }
 }
 
-impl Drop for VM {
+impl Drop for Vm {
     fn drop(&mut self) {
         self.free_objects();
     }

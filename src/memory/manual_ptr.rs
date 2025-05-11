@@ -1,8 +1,9 @@
-use super::{Dealloc, allocate_t, free_t};
 use std::{
     fmt::{Debug, Display},
     ptr::{self, null_mut},
 };
+
+use super::dealloc::Dealloc;
 
 #[derive(PartialEq, PartialOrd, Debug)]
 pub struct ManualPtr<T> {
@@ -16,11 +17,8 @@ where
 {
     pub fn alloc(obj: T) -> Self {
         println!("DEBUG MANUALPTR: {:?}", obj);
-        unsafe {
-            let mem = allocate_t::<T>();
-            ptr::write(mem, obj);
-            Self { mem }
-        }
+        let mem = Box::leak(Box::new(obj));
+        Self { mem }
     }
 
     pub const fn from_raw(ptr: *mut T) -> Self {
@@ -57,12 +55,13 @@ where
         if self.is_null() {
             return;
         }
-        free_t(self.mem);
+        unsafe {
+            drop(Box::from_raw(self.mem));
+        }
         self.mem = ptr::null_mut();
     }
 }
 
-//TODO: Test that this specialization actually works
 impl<T> Dealloc for ManualPtr<T>
 where
     T: Dealloc + Debug,
@@ -71,8 +70,10 @@ where
         if self.is_null() {
             return;
         }
-        self.take().dealloc(); // Dealloc the object we are pointing to first.
-        free_t(self.mem);
+        self.take().dealloc(); // Run the dealloc method on the object we are pointing to first.
+        unsafe {
+            drop(Box::from_raw(self.mem));
+        }
         self.mem = ptr::null_mut();
     }
 }

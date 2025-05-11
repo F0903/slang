@@ -10,14 +10,22 @@ use std::{
     ptr::null_mut,
 };
 
+fn allocate<T>(layout: Layout) -> *mut T {
+    unsafe { System.alloc(layout).cast() }
+}
+
 fn allocate_t<T>() -> *mut T {
-    unsafe { System.alloc(Layout::new::<T>()).cast() }
+    allocate(Layout::new::<T>())
+}
+
+fn free<T>(ptr: *mut T, layout: Layout) {
+    unsafe {
+        System.dealloc(ptr.cast(), layout);
+    }
 }
 
 fn free_t<T>(ptr: *mut T) {
-    unsafe {
-        System.dealloc(ptr.cast(), Layout::new::<T>());
-    }
+    free(ptr, Layout::new::<T>());
 }
 
 pub fn reallocate<T>(mut ptr: *mut u8, old_cap: usize, new_cap: usize) -> *mut u8 {
@@ -25,14 +33,12 @@ pub fn reallocate<T>(mut ptr: *mut u8, old_cap: usize, new_cap: usize) -> *mut u
     let new_layout = Layout::array::<T>(new_cap).unwrap();
 
     if new_cap == 0 {
-        unsafe {
-            System.dealloc(ptr, old_layout);
-        }
+        free(ptr, old_layout);
         return null_mut();
     }
 
     if ptr.is_null() {
-        ptr = unsafe { System.alloc(new_layout) };
+        ptr = allocate(new_layout);
         if ptr.is_null() {
             handle_alloc_error(old_layout);
         }

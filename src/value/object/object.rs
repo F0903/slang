@@ -1,22 +1,10 @@
 use std::fmt::Display;
 
-use crate::memory::Dealloc;
-
 use super::RawString;
 
 #[derive(Debug)]
 pub enum Object {
     String(RawString),
-}
-
-impl Dealloc for Object {
-    fn dealloc(&mut self) {
-        match self {
-            Self::String(x) => {
-                x.dealloc();
-            }
-        }
-    }
 }
 
 impl PartialEq for Object {

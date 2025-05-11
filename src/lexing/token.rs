@@ -58,7 +58,7 @@ impl Token {
 }
 
 // Order is important!
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 #[repr(usize)]
 pub enum Precedence {
     None,

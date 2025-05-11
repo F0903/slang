@@ -1,8 +1,8 @@
 # TODO
 
+Current chapter: <https://craftinginterpreters.com/hash-tables.html> at string intern section
+
 - Finish basic rough implementation through the book.
 - String interpolation.
-- Try using custom global allocator and avoid calling alloc func directly.
-- Look into using memory safe options and benchmark difference.
-- Error handling.
+- Better error handling.
 - Language test suite.

@@ -1,16 +1,17 @@
-use {
-    crate::memory::{reallocate, Dealloc},
-    std::ptr::null_mut,
-};
+use {super::owned_ptr_iter::OwnedPtrIter, crate::memory::reallocate, std::ptr::null_mut};
+
+trait GrowArray {
+    fn grow_array_to(&mut self, to: usize);
+}
 
 #[derive(Debug)]
-pub struct DynArray<T> {
+pub struct DynArray<T: std::fmt::Debug> {
     data: *mut T,
     count: usize,
     capacity: usize,
 }
 
-impl<T> DynArray<T> {
+impl<T: std::fmt::Debug> DynArray<T> {
     pub const fn new() -> Self {
         Self {
             data: null_mut(),
@@ -36,6 +37,11 @@ impl<T> DynArray<T> {
         self.capacity = new_cap;
     }
 
+    /// BE CAREFUL
+    pub(crate) const fn set_count(&mut self, new_count: usize) {
+        self.count = new_count;
+    }
+
     pub const fn get_count(&self) -> usize {
         self.count
     }
@@ -44,7 +50,7 @@ impl<T> DynArray<T> {
         self.capacity
     }
 
-    const fn grow_capacity(&self) -> usize {
+    pub const fn next_growth_capacity(&self) -> usize {
         const MIN_CAP: usize = 16;
         const GROW_FACTOR: usize = 2;
         if self.capacity < MIN_CAP {
@@ -54,14 +60,8 @@ impl<T> DynArray<T> {
         }
     }
 
-    pub fn grow_array_to(&mut self, to: usize) {
-        let old_cap = self.capacity;
-        self.capacity = to;
-        self.data = reallocate::<T>(self.data.cast(), old_cap, self.capacity).cast();
-    }
-
     pub fn grow_array(&mut self) {
-        self.grow_array_to(self.grow_capacity())
+        self.grow_array_to(self.next_growth_capacity())
     }
 
     pub fn insert(&mut self, index: usize, val: T) {
@@ -109,9 +109,63 @@ impl<T> DynArray<T> {
         unsafe { self.data.add(index).write(new_val) }
     }
 
-    //TODO: mark as const when const as_ref() is stable
-    pub fn get(&self, offset: usize) -> Option<&T> {
+    pub const fn get(&self, offset: usize) -> Option<&T> {
         unsafe { self.data.add(offset).as_ref() }
+    }
+
+    pub const fn get_unchecked(&self, offset: usize) -> &T {
+        unsafe { self.data.add(offset).as_ref_unchecked() }
+    }
+
+    pub const fn get_mut(&mut self, offset: usize) -> Option<&mut T> {
+        unsafe { self.data.add(offset).as_mut() }
+    }
+
+    pub const fn get_mut_unchecked(&mut self, offset: usize) -> &mut T {
+        unsafe { self.data.add(offset).as_mut_unchecked() }
+    }
+
+    pub const fn as_slice(&self) -> &[T] {
+        unsafe { std::slice::from_raw_parts(self.data, self.count) }
+    }
+
+    pub const fn as_mut_slice(&mut self) -> &mut [T] {
+        unsafe { std::slice::from_raw_parts_mut(self.data, self.count) }
+    }
+}
+
+impl<T: std::fmt::Debug> Clone for DynArray<T> {
+    fn clone(&self) -> Self {
+        let mut new_array = Self::new_with_cap(self.count);
+        unsafe {
+            std::ptr::copy_nonoverlapping(self.data, new_array.data, self.count);
+        }
+        new_array.count = self.count;
+        new_array
+    }
+}
+
+impl<T: std::fmt::Debug> GrowArray for DynArray<T> {
+    default fn grow_array_to(&mut self, to: usize) {
+        let old_cap = self.capacity;
+        self.capacity = to;
+        self.data = reallocate::<T>(self.data.cast(), old_cap, self.capacity).cast();
+    }
+}
+
+// If T implements Default, we use it to initialize the new elements
+impl<T: Default + std::fmt::Debug> GrowArray for DynArray<T> {
+    fn grow_array_to(&mut self, to: usize) {
+        //TODO: test that this specialization actually works
+        let old_cap = self.capacity;
+        self.capacity = to;
+        self.data = reallocate::<T>(self.data.cast(), old_cap, self.capacity).cast();
+
+        for i in old_cap..to {
+            unsafe {
+                self.data.add(i).write(T::default());
+            }
+        }
     }
 }
 
@@ -131,16 +185,27 @@ impl DynArray<u8> {
     }
 }
 
-impl<T> Dealloc for DynArray<T> {
-    fn dealloc(&mut self) {
+impl<T: std::fmt::Debug> Drop for DynArray<T> {
+    fn drop(&mut self) {
+        if self.data.is_null() {
+            return;
+        }
+
+        println!("DEBUG DYNARRAY DROP: {:?}", self);
+        unsafe {
+            std::ptr::drop_in_place(self.as_mut_slice());
+        }
         self.data = reallocate::<T>(self.data.cast(), self.capacity, 0).cast();
         self.capacity = 0;
         self.count = 0;
     }
 }
 
-impl<T> Drop for DynArray<T> {
-    fn drop(&mut self) {
-        self.dealloc()
+impl<T: std::fmt::Debug> IntoIterator for DynArray<T> {
+    type Item = T;
+    type IntoIter = OwnedPtrIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        OwnedPtrIter::new(self.data, self.count)
     }
 }

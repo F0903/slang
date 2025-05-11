@@ -11,12 +11,14 @@ use {
             Value,
             object::{ObjectContainer, ObjectManager},
         },
+        vm::VmHeap,
     },
     std::{cell::RefCell, rc::Rc},
 };
 
 type ParseFn<'a> = fn(&mut Parser<'a>);
 
+#[derive(Debug)]
 struct ParseRule<'a> {
     prefix: Option<ParseFn<'a>>,
     infix: Option<ParseFn<'a>>,
@@ -33,8 +35,8 @@ macro_rules! define_parse_rule_table {
     }};
 }
 pub struct Parser<'a> {
-    objects: Rc<ObjectManager>,
     scanner: Scanner,
+    heap: Rc<RefCell<VmHeap>>,
     current_chunk: Rc<RefCell<Chunk>>,
     current: Option<Token>,
     previous: Option<Token>,
@@ -44,10 +46,10 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(scanner: Scanner, objects: Rc<ObjectManager>, chunk: Rc<RefCell<Chunk>>) -> Self {
+    pub fn new(scanner: Scanner, heap: Rc<RefCell<VmHeap>>, chunk: Rc<RefCell<Chunk>>) -> Self {
         Self {
-            objects,
             scanner,
+            heap,
             current_chunk: chunk,
             current: None,
             previous: None,
@@ -204,10 +206,7 @@ impl<'a> Parser<'a> {
         let name = &name[1..name.len() - 1];
         self.current_chunk.borrow_mut().write_constant(
             Value::object(
-                ObjectContainer::alloc_string(name, unsafe {
-                    Rc::get_mut_unchecked(&mut self.objects)
-                })
-                .take(),
+                ObjectContainer::alloc_string(name, &mut self.heap.borrow_mut().objects).take(),
             ), // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
             token.line,
         );

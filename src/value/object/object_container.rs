@@ -1,9 +1,8 @@
-use std::fmt::Display;
-
-use crate::memory::{Dealloc, ManualPtr};
-
-use super::{Object, ObjectManager, RawString};
-
+use {
+    super::{Object, ObjectManager, RawString},
+    crate::memory::{Dealloc, ManualPtr},
+    std::fmt::Display,
+};
 /// A container for objects that "links" them together as a linked list.
 /// This is used to keep track of all objects in the VM.
 #[derive(Clone, Copy, Debug)]

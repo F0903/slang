@@ -1,20 +1,15 @@
 #![feature(str_from_raw_parts)]
 #![feature(layout_for_ptr)]
 #![feature(get_mut_unchecked)]
+#![feature(ptr_as_ref_unchecked)]
 #![feature(specialization)]
-
-use std::{
-    env::args,
-    io::{BufRead, Read, Write},
-};
-
-use vm::VM;
 
 mod chunk;
 mod collections;
 mod compiler;
 mod debug;
 mod encoding;
+mod hashing;
 mod lexing;
 mod memory;
 mod opcode;
@@ -23,13 +18,20 @@ mod utils;
 mod value;
 mod vm;
 
+use vm::Vm;
+
+use std::{
+    env::args,
+    io::{BufRead, Read, Write},
+};
+
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn print_usage() {
     println!("Usage: slang for REPL or slang <path> to run a file.");
 }
 
-fn repl(vm: &mut VM) -> Result<()> {
+fn repl(vm: &mut Vm) -> Result<()> {
     let mut input = std::io::stdin().lock();
     let mut line_buf = String::new();
     loop {
@@ -46,20 +48,21 @@ fn repl(vm: &mut VM) -> Result<()> {
     Ok(())
 }
 
-fn run_file(path: String, vm: &mut VM) -> Result<()> {
+fn run_file(path: String, vm: &mut Vm) -> Result<()> {
     let mut buf = vec![];
     std::fs::File::open(path)?.read_to_end(&mut buf)?;
     interpret(&buf, vm)
 }
 
-fn interpret(buf: &[u8], vm: &mut VM) -> Result<()> {
+fn interpret(buf: &[u8], vm: &mut Vm) -> Result<()> {
+    let mut vm = Vm::new(); // Create a new VM each time to debug the drop implementations.
     vm.interpret(buf)?;
     Ok(())
 }
 
 fn main() -> Result<()> {
     let mut args = args();
-    let mut vm = VM::new();
+    let mut vm = Vm::new();
     match args.len() {
         1 => repl(&mut vm),
         2 => run_file(args.nth(1).unwrap(), &mut vm),
