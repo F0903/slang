@@ -1,6 +1,9 @@
 use {
-    super::{Object, ObjectManager, RawString},
-    crate::memory::{Dealloc, ManualPtr},
+    super::{Object, ObjectManager, StringObject},
+    crate::{
+        memory::{Dealloc, ManualPtr},
+        vm::VmHeap,
+    },
     std::fmt::Display,
 };
 /// A container for objects that "links" them together as a linked list.
@@ -26,9 +29,10 @@ impl ObjectContainer {
         me
     }
 
-    // Convinience function to allocate a string object
-    pub fn alloc_string(str: &str, objects: &mut ObjectManager) -> ManualPtr<Self> {
-        Self::alloc(Object::String(RawString::new(str)), objects)
+    pub fn alloc_interned_string(str: &str, heap: &mut VmHeap) -> ManualPtr<Self> {
+        let str = StringObject::new(str);
+        heap.interned_strings.insert(str.clone(), None); // We just care about the key.
+        Self::alloc(Object::String(str), &mut heap.objects)
     }
 
     pub const fn get_object_ptr(&self) -> ManualPtr<Object> {

@@ -1,4 +1,4 @@
-use crate::value::object::RawString;
+use crate::value::object::StringObject;
 
 use super::DynArray;
 
@@ -6,8 +6,8 @@ const TABLE_MAX_LOAD: f32 = 0.75;
 
 #[derive(Debug)]
 struct Entry<T> {
-    key: RawString,
-    value: T,
+    key: StringObject,
+    value: Option<T>,
 }
 
 #[derive(Debug)]
@@ -24,7 +24,10 @@ pub struct HashTable<T: std::fmt::Debug> {
 impl<T: std::fmt::Debug> HashTable<T> {
     pub fn new() -> Self {
         Self {
-            data: DynArray::new(),
+            data: DynArray::new(Some(Bucket {
+                tombstone: false,
+                entry: None,
+            })),
         }
     }
 
@@ -66,7 +69,13 @@ impl<T: std::fmt::Debug> HashTable<T> {
         let old_buckets = self.data.clone();
 
         // Reset data completely, but with increased capacity
-        self.data = DynArray::new_with_cap(new_capacity);
+        self.data = DynArray::new_with_cap(
+            new_capacity,
+            Some(Bucket {
+                tombstone: false,
+                entry: None,
+            }),
+        );
 
         // We need to count every entry from the beginning, since we are not copying over tombstones
         let mut count = 0;
@@ -82,13 +91,14 @@ impl<T: std::fmt::Debug> HashTable<T> {
     }
 
     // Returns true if the key was inserted, false if it was already present (thus overwritten)
-    pub fn insert(&mut self, key: RawString, value: T) -> bool {
+    pub fn insert(&mut self, key: StringObject, value: Option<T>) -> bool {
         if self.data.get_count() as f32 + 1_f32 > self.data.get_capacity() as f32 * TABLE_MAX_LOAD {
             self.grow();
         }
 
         let hash = key.get_hash();
         let bucket = self.find_bucket(hash);
+        let was_none = bucket.entry.is_none();
         let was_tombstone = bucket.tombstone;
 
         let entry = Entry { key, value };
@@ -96,15 +106,15 @@ impl<T: std::fmt::Debug> HashTable<T> {
         bucket.tombstone = false;
 
         // Only increase the count if we are inserting a new key (not replacing an existing one or tombstone)
-        let new_key = bucket.entry.is_none();
-        if new_key && !was_tombstone {
+        let new_key = was_none && !was_tombstone;
+        if new_key {
             self.data.set_count(self.data.get_count() + 1);
         }
 
         new_key
     }
 
-    pub fn get(&mut self, key: &RawString) -> Option<&T> {
+    pub fn get(&mut self, key: &StringObject) -> Option<&T> {
         if self.data.get_count() == 0 {
             return None;
         }
@@ -112,13 +122,13 @@ impl<T: std::fmt::Debug> HashTable<T> {
         let bucket = self.find_bucket(key.get_hash());
         if let Some(entry) = &bucket.entry {
             if entry.key == *key {
-                return Some(&entry.value);
+                return entry.value.as_ref();
             }
         }
         None
     }
 
-    pub fn delete(&mut self, key: &RawString) -> Option<T> {
+    pub fn delete(&mut self, key: &StringObject) -> Option<T> {
         if self.data.get_count() == 0 {
             return None;
         }
@@ -130,6 +140,6 @@ impl<T: std::fmt::Debug> HashTable<T> {
 
         // We don't decrease the count since we just mark the entry as a tombstone
 
-        entry.map(|x| x.value)
+        entry.map(|e| e.value).flatten()
     }
 }

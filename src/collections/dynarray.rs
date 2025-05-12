@@ -1,4 +1,8 @@
-use {super::owned_ptr_iter::OwnedPtrIter, crate::memory::reallocate, std::ptr::null_mut};
+use {
+    super::owned_ptr_iter::OwnedPtrIter,
+    crate::memory::reallocate,
+    std::{mem::MaybeUninit, ptr::null_mut},
+};
 
 trait GrowArray {
     fn grow_array_to(&mut self, to: usize);
@@ -9,19 +13,33 @@ pub struct DynArray<T: std::fmt::Debug> {
     data: *mut T,
     count: usize,
     capacity: usize,
+    init_value: Option<T>,
 }
 
-impl<T: std::fmt::Debug> DynArray<T> {
-    pub const fn new() -> Self {
+impl<T: std::fmt::Debug> Default for DynArray<T> {
+    fn default() -> Self {
         Self {
             data: null_mut(),
             count: 0,
             capacity: 0,
+            init_value: None,
+        }
+    }
+}
+
+/// SAFETY: This is a simple "dynamic array" with minimal safety. It is up to the user to ensure that the data inside is initialized and valid for reading.
+impl<T: std::fmt::Debug> DynArray<T> {
+    pub const fn new(init_value: Option<T>) -> Self {
+        Self {
+            data: null_mut(),
+            count: 0,
+            capacity: 0,
+            init_value,
         }
     }
 
-    pub fn new_with_cap(cap: usize) -> Self {
-        let mut me = Self::new();
+    pub fn new_with_cap(cap: usize, init_value: Option<T>) -> Self {
+        let mut me = Self::new(init_value);
         me.grow_array_to(cap);
         me
     }
@@ -136,7 +154,7 @@ impl<T: std::fmt::Debug> DynArray<T> {
 
 impl<T: std::fmt::Debug> Clone for DynArray<T> {
     fn clone(&self) -> Self {
-        let mut new_array = Self::new_with_cap(self.count);
+        let mut new_array = Self::new_with_cap(self.count, None);
         unsafe {
             std::ptr::copy_nonoverlapping(self.data, new_array.data, self.count);
         }
@@ -146,36 +164,32 @@ impl<T: std::fmt::Debug> Clone for DynArray<T> {
 }
 
 impl<T: std::fmt::Debug> GrowArray for DynArray<T> {
-    default fn grow_array_to(&mut self, to: usize) {
-        let old_cap = self.capacity;
-        self.capacity = to;
-        self.data = reallocate::<T>(self.data.cast(), old_cap, self.capacity).cast();
-    }
-}
-
-// If T implements Default, we use it to initialize the new elements
-impl<T: Default + std::fmt::Debug> GrowArray for DynArray<T> {
     fn grow_array_to(&mut self, to: usize) {
-        //TODO: test that this specialization actually works
         let old_cap = self.capacity;
         self.capacity = to;
         self.data = reallocate::<T>(self.data.cast(), old_cap, self.capacity).cast();
 
-        for i in old_cap..to {
+        // Copy init value to each new slot
+        // Yes, I know this is not the safest way, but it is faster that cloning each and easier.
+        if let Some(init) = &self.init_value {
+            let copy_start = old_cap;
+            let copy_end = self.capacity;
+            let count = copy_end - copy_start;
             unsafe {
-                self.data.add(i).write(T::default());
+                (init as *const T).copy_to_nonoverlapping(self.data.add(copy_start), count);
             }
         }
     }
 }
 
+// Specialization to make string conversion easier
 impl DynArray<u8> {
     pub fn read_cast<A>(&self, offset: usize) -> &A {
         unsafe { &*self.data.cast::<A>().add(offset) }
     }
 
     pub fn from_str(str: &str) -> Self {
-        let mut me = Self::new_with_cap(str.len());
+        let mut me = Self::new_with_cap(str.len(), None);
         me.push_ptr(str.as_ptr(), str.len());
         me
     }

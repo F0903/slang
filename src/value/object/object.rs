@@ -1,10 +1,10 @@
 use std::fmt::Display;
 
-use super::RawString;
+use super::StringObject;
 
 #[derive(Debug)]
 pub enum Object {
-    String(RawString),
+    String(StringObject),
 }
 
 impl PartialEq for Object {

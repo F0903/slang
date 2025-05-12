@@ -27,7 +27,7 @@ struct ParseRule<'a> {
 
 macro_rules! define_parse_rule_table {
     ($($token_val:expr => $rule_init:tt),*) => {{
-        let mut v = crate::collections::DynArray::new();
+        let mut v = crate::collections::DynArray::default();
         $(
             v.insert($token_val as usize, ParseRule $rule_init);
         )*
@@ -206,7 +206,7 @@ impl<'a> Parser<'a> {
         let name = &name[1..name.len() - 1];
         self.current_chunk.borrow_mut().write_constant(
             Value::object(
-                ObjectContainer::alloc_string(name, &mut self.heap.borrow_mut().objects).take(),
+                ObjectContainer::alloc_interned_string(name, &mut self.heap.borrow_mut()).take(),
             ), // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
             token.line,
         );

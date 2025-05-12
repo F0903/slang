@@ -3,6 +3,7 @@
 #![feature(get_mut_unchecked)]
 #![feature(ptr_as_ref_unchecked)]
 #![feature(specialization)]
+#![feature(negative_impls)]
 
 mod chunk;
 mod collections;

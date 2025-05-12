@@ -16,8 +16,8 @@ pub struct Chunk {
 impl Chunk {
     pub fn new() -> Self {
         Self {
-            code: DynArray::new(),
-            constants: DynArray::new(),
+            code: DynArray::new(None),
+            constants: DynArray::new(None),
             line_numbers_map: EncodedDynArray::new(), // Change this to some kind of encoding.
         }
     }

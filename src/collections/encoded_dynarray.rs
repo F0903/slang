@@ -16,7 +16,7 @@ where
     pub fn new() -> Self {
         Self {
             _encoding: std::marker::PhantomData,
-            array: DynArray::new(),
+            array: DynArray::new(None),
             encoded: false,
         }
     }
