@@ -1,8 +1,6 @@
 mod interpret_error;
 mod vm_heap;
 
-use std::cell::RefCell;
-
 pub use interpret_error::InterpretError;
 pub use vm_heap::VmHeap;
 
@@ -12,6 +10,7 @@ use {
         collections::{HashTable, Stack},
         compiler::Compiler,
         memory::Dealloc,
+        memory::HeapPtr,
         opcode::OpCode,
         value::{
             Value,
@@ -19,9 +18,10 @@ use {
         },
     },
     interpret_error::InterpretResult,
-    std::{ffi::CString, ptr::null_mut, rc::Rc},
+    std::{ffi::CString, ptr::null_mut},
 };
 
+use crate::dbg_println;
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
 
@@ -29,7 +29,7 @@ macro_rules! binary_op_result {
     ($stack: expr, $op: tt) => {{
         let b = $stack.pop();
         let a = $stack.pop();
-        println!("BINARY_OP: {} {} {}", a, stringify!($op), b);
+        crate::dbg_println!("BINARY_OP: {} {} {}", a, stringify!($op), b);
         a $op b
     }};
 }
@@ -51,7 +51,7 @@ macro_rules! binary_op_from_bool {
 pub struct Vm {
     ip: *mut u8,
     stack: Stack<Value>,
-    heap: Rc<RefCell<VmHeap>>,
+    heap: HeapPtr<VmHeap>,
 }
 
 impl Vm {
@@ -59,10 +59,10 @@ impl Vm {
         Self {
             ip: null_mut(),
             stack: Stack::new(),
-            heap: Rc::new(RefCell::new(VmHeap {
+            heap: HeapPtr::alloc(VmHeap {
                 objects: ObjectManager::new(),
                 interned_strings: HashTable::new(),
-            })),
+            }),
         }
     }
 
@@ -112,6 +112,7 @@ impl Vm {
                     let offset = self.ip.offset_from(chunk.borrow().get_code_ptr());
                     disassemble_instruction(&mut chunk.borrow_mut(), offset as usize);
                 }
+                println!("DEBUG HEAP: {:?}", &self.heap);
             }
 
             let instruction = self.read_byte();
@@ -140,24 +141,23 @@ impl Vm {
                     let second = self.stack.pop();
                     if first.is_object() && second.is_object() {
                         let first = first.as_object_ptr();
+                        let first = unsafe { first.assume_init_ref() };
                         let second = second.as_object_ptr();
+                        let second = unsafe { second.assume_init_ref() };
                         match &*first.get_object() {
                             Object::String(a_str) => match &*second.get_object() {
                                 Object::String(b_str) => {
-                                    let concat = b_str.concat(&a_str);
-                                    let mut heap = self.heap.borrow_mut();
+                                    let concat = b_str.concat(&a_str, &mut self.heap);
                                     let new_string = Value::object(
                                         ObjectContainer::alloc(
                                             Object::String(concat),
-                                            &mut heap.objects,
+                                            &mut self.heap.objects,
                                         )
                                         .take(),
                                     );
                                     self.stack.push(new_string) // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
                                 }
-                                _ => (),
                             },
-                            _ => (),
                         }
                     } else {
                         binary_op_try!(self.stack, +)
@@ -175,7 +175,7 @@ impl Vm {
                     *val = (-(*val).clone())?;
                 }
                 OpCode::Return => {
-                    println!("{}", self.stack.pop());
+                    dbg_println!("{}", self.stack.pop());
                     return Ok(());
                 }
             }
@@ -183,7 +183,7 @@ impl Vm {
     }
 
     fn free_objects(&self) {
-        let mut obj_container_ptr = self.heap.borrow().objects.get_objects_head();
+        let mut obj_container_ptr = self.heap.objects.get_objects_head();
         while !obj_container_ptr.is_null() {
             let next_obj_container_ptr = obj_container_ptr.get().get_next_object_ptr();
 

@@ -1,6 +1,6 @@
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_chunk;
-use crate::{value::object::ObjectManager, vm::VmHeap};
+use crate::{memory::HeapPtr, value::object::ObjectManager, vm::VmHeap};
 use {
     crate::{
         chunk::Chunk, lexing::scanner::Scanner, lexing::token::TokenType, opcode::OpCode,
@@ -19,7 +19,7 @@ pub struct Compiler<'a> {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new(heap: Rc<RefCell<VmHeap>>) -> Self {
+    pub fn new(heap: HeapPtr<VmHeap>) -> Self {
         let chunk = Rc::new(RefCell::new(Chunk::new()));
         Self {
             current_chunk: chunk.clone(),

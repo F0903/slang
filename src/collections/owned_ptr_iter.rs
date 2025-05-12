@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct OwnedPtrIter<T> {
     data: *mut T,
     count: usize,
@@ -5,7 +6,7 @@ pub struct OwnedPtrIter<T> {
 }
 
 impl<T> OwnedPtrIter<T> {
-    pub fn new(data: *mut T, count: usize) -> Self {
+    pub const fn new(data: *mut T, count: usize) -> Self {
         Self {
             data,
             count,

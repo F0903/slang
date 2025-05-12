@@ -3,7 +3,7 @@ mod global_alloc;
 mod manual_ptr;
 
 pub use dealloc::Dealloc;
-pub use manual_ptr::ManualPtr;
+pub use manual_ptr::HeapPtr;
 
 use std::{
     alloc::{GlobalAlloc, Layout, System, handle_alloc_error},

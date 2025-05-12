@@ -1,6 +1,6 @@
 use {
-    super::owned_ptr_iter::OwnedPtrIter,
-    crate::memory::reallocate,
+    super::{borrowed_ptr_iter::BorrowedIter, owned_ptr_iter::OwnedPtrIter},
+    crate::{dbg_println, memory::reallocate},
     std::{mem::MaybeUninit, ptr::null_mut},
 };
 
@@ -150,11 +150,32 @@ impl<T: std::fmt::Debug> DynArray<T> {
     pub const fn as_mut_slice(&mut self) -> &mut [T] {
         unsafe { std::slice::from_raw_parts_mut(self.data, self.count) }
     }
+
+    pub const fn iter<'a>(&'a self) -> BorrowedIter<'a, T> {
+        if self.data.is_null() {
+            return BorrowedIter::new(&[]);
+        }
+
+        BorrowedIter::new(self.as_slice())
+    }
+
+    /// An iterator over the memory of the array (the whole capacity), which may contain uninitialized values.
+    pub const fn memory_iter<'a>(&'a self) -> BorrowedIter<'a, MaybeUninit<T>> {
+        if self.data.is_null() {
+            return BorrowedIter::new(&[]);
+        }
+
+        BorrowedIter::new(unsafe { std::slice::from_raw_parts(self.data.cast(), self.capacity) })
+    }
 }
 
 impl<T: std::fmt::Debug> Clone for DynArray<T> {
     fn clone(&self) -> Self {
         let mut new_array = Self::new_with_cap(self.count, None);
+        if self.data.is_null() {
+            return new_array;
+        }
+
         unsafe {
             std::ptr::copy_nonoverlapping(self.data, new_array.data, self.count);
         }
@@ -174,9 +195,10 @@ impl<T: std::fmt::Debug> GrowArray for DynArray<T> {
         if let Some(init) = &self.init_value {
             let copy_start = old_cap;
             let copy_end = self.capacity;
-            let count = copy_end - copy_start;
-            unsafe {
-                (init as *const T).copy_to_nonoverlapping(self.data.add(copy_start), count);
+            for i in copy_start..copy_end {
+                unsafe {
+                    (init as *const T).copy_to_nonoverlapping(self.data.add(i), 1);
+                }
             }
         }
     }
@@ -205,7 +227,7 @@ impl<T: std::fmt::Debug> Drop for DynArray<T> {
             return;
         }
 
-        println!("DEBUG DYNARRAY DROP: {:?}", self);
+        dbg_println!("DEBUG DYNARRAY DROP: {:?}", self);
         unsafe {
             std::ptr::drop_in_place(self.as_mut_slice());
         }

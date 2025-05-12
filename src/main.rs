@@ -56,7 +56,7 @@ fn run_file(path: String, vm: &mut Vm) -> Result<()> {
 }
 
 fn interpret(buf: &[u8], vm: &mut Vm) -> Result<()> {
-    let mut vm = Vm::new(); // Create a new VM each time to debug the drop implementations.
+    //let mut vm = Vm::new(); // Create a new VM each time to debug the drop implementations.
     vm.interpret(buf)?;
     Ok(())
 }

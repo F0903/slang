@@ -8,6 +8,7 @@ use value_type::*;
 
 use std::{
     fmt::{Debug, Display},
+    mem::MaybeUninit,
     ops::{Add, Div, Mul, Neg, Sub},
 };
 
@@ -20,43 +21,45 @@ pub struct Value {
 }
 
 impl Value {
-    pub fn object(value: ObjectContainer) -> Self {
+    pub const fn object(value: ObjectContainer) -> Self {
         Self {
             value_type: ValueType::Object,
-            casts: ValueCasts { object: value },
+            casts: ValueCasts {
+                object: MaybeUninit::new(value),
+            },
         }
     }
 
-    pub fn boolean(value: bool) -> Self {
+    pub const fn boolean(value: bool) -> Self {
         Self {
             value_type: ValueType::Bool,
             casts: ValueCasts { boolean: value },
         }
     }
 
-    pub fn number(value: f64) -> Self {
+    pub const fn number(value: f64) -> Self {
         Self {
             value_type: ValueType::Number,
             casts: ValueCasts { number: value },
         }
     }
 
-    pub fn none() -> Self {
+    pub const fn none() -> Self {
         Self {
             value_type: ValueType::None,
             casts: ValueCasts { boolean: false },
         }
     }
 
-    pub fn as_number(&self) -> f64 {
+    pub const fn as_number(&self) -> f64 {
         unsafe { self.casts.number }
     }
 
-    pub fn as_boolean(&self) -> bool {
+    pub const fn as_boolean(&self) -> bool {
         unsafe { self.casts.boolean }
     }
 
-    pub fn as_object_ptr(&self) -> ObjectContainer {
+    pub const fn as_object_ptr(&self) -> MaybeUninit<ObjectContainer> {
         unsafe { self.casts.object }
     }
 
@@ -69,7 +72,7 @@ impl Value {
         self.value_type == ValueType::Object
     }
 
-    pub fn get_type(&self) -> ValueType {
+    pub const fn get_type(&self) -> ValueType {
         self.value_type
     }
 }
@@ -176,7 +179,9 @@ impl PartialEq for Value {
             match self.value_type {
                 ValueType::Bool => self.casts.boolean == other.casts.boolean,
                 ValueType::Number => self.casts.number == other.casts.number,
-                ValueType::Object => self.casts.object == other.casts.object,
+                ValueType::Object => {
+                    self.casts.object.assume_init_ref() == other.casts.object.assume_init_ref()
+                }
                 ValueType::None => other.value_type == ValueType::None,
             }
         }
@@ -192,7 +197,9 @@ impl PartialOrd for Value {
             match self.value_type {
                 ValueType::Bool => self.casts.boolean && !other.casts.boolean,
                 ValueType::Number => self.casts.number > other.casts.number,
-                ValueType::Object => self.casts.object > other.casts.object,
+                ValueType::Object => {
+                    self.casts.object.assume_init_ref() > other.casts.object.assume_init_ref()
+                }
                 ValueType::None => false,
             }
         }
@@ -209,7 +216,9 @@ impl PartialOrd for Value {
                         || self.casts.boolean == other.casts.boolean
                 }
                 ValueType::Number => self.casts.number >= other.casts.number,
-                ValueType::Object => self.casts.object >= other.casts.object,
+                ValueType::Object => {
+                    self.casts.object.assume_init_ref() >= other.casts.object.assume_init_ref()
+                }
                 ValueType::None => false,
             }
         }
@@ -223,7 +232,9 @@ impl PartialOrd for Value {
             match self.value_type {
                 ValueType::Bool => !self.casts.boolean && other.casts.boolean,
                 ValueType::Number => self.casts.number < other.casts.number,
-                ValueType::Object => self.casts.object < other.casts.object,
+                ValueType::Object => {
+                    self.casts.object.assume_init_ref() < other.casts.object.assume_init_ref()
+                }
                 ValueType::None => false,
             }
         }
@@ -240,7 +251,9 @@ impl PartialOrd for Value {
                         || self.casts.boolean == other.casts.boolean
                 }
                 ValueType::Number => self.casts.number <= other.casts.number,
-                ValueType::Object => self.casts.object <= other.casts.object,
+                ValueType::Object => {
+                    self.casts.object.assume_init_ref() <= other.casts.object.assume_init_ref()
+                }
                 ValueType::None => false,
             }
         }
@@ -271,7 +284,7 @@ impl Display for Value {
                 f.write_fmt(format_args!("[{}] = {}", self.value_type, self.as_number()))
             }
             ValueType::Object => unsafe {
-                let obj_wrapper = self.casts.object;
+                let obj_wrapper = self.casts.object.assume_init_ref();
                 let obj_ptr = obj_wrapper.get_object();
                 match &*obj_ptr {
                     Object::String(s) => {

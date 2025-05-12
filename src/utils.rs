@@ -5,3 +5,13 @@ macro_rules! fprint {
         _ = std::io::stdout().flush();
     }};
 }
+
+#[macro_export]
+macro_rules! dbg_println {
+    ($($arg:tt)*) => {{
+        #[cfg(debug_assertions)]
+        {
+            println!($($arg)*);
+        }
+    }};
+}

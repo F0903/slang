@@ -1,3 +1,4 @@
+mod borrowed_ptr_iter;
 mod dynarray;
 mod encoded_dynarray;
 mod hash_table;

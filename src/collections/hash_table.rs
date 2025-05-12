@@ -1,13 +1,13 @@
-use crate::value::object::StringObject;
+use crate::{hashing::HashMethod, value::object::StringObject};
 
 use super::DynArray;
 
 const TABLE_MAX_LOAD: f32 = 0.75;
 
 #[derive(Debug)]
-struct Entry<T> {
-    key: StringObject,
-    value: Option<T>,
+pub struct Entry<T> {
+    pub key: StringObject,
+    pub value: Option<T>,
 }
 
 #[derive(Debug)]
@@ -16,7 +16,6 @@ struct Bucket<T> {
     entry: Option<Entry<T>>,
 }
 
-#[derive(Debug)]
 pub struct HashTable<T: std::fmt::Debug> {
     data: DynArray<Bucket<T>>,
 }
@@ -114,21 +113,21 @@ impl<T: std::fmt::Debug> HashTable<T> {
         new_key
     }
 
-    pub fn get(&mut self, key: &StringObject) -> Option<&T> {
+    pub fn get<H: HashMethod>(&mut self, key_name: &str) -> Option<&Entry<T>> {
         if self.data.get_count() == 0 {
             return None;
         }
 
-        let bucket = self.find_bucket(key.get_hash());
+        let bucket = self.find_bucket(H::hash(key_name.as_bytes()));
         if let Some(entry) = &bucket.entry {
-            if entry.key == *key {
-                return entry.value.as_ref();
+            if entry.key.get_str() == key_name {
+                return Some(entry);
             }
         }
         None
     }
 
-    pub fn delete(&mut self, key: &StringObject) -> Option<T> {
+    pub fn delete(&mut self, key: &StringObject) -> Option<Entry<T>> {
         if self.data.get_count() == 0 {
             return None;
         }
@@ -140,6 +139,29 @@ impl<T: std::fmt::Debug> HashTable<T> {
 
         // We don't decrease the count since we just mark the entry as a tombstone
 
-        entry.map(|e| e.value).flatten()
+        entry
+    }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for HashTable<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HashTable")
+            .field("count", &self.data.get_count())
+            .field("capacity", &self.data.get_capacity())
+            .field(
+                "load_factor",
+                &(self.data.get_count() as f32 / self.data.get_capacity() as f32),
+            )
+            .field("buckets", &self.data.get_count())
+            .field(
+                "data",
+                &self
+                    .data
+                    .memory_iter()
+                    .map(|x| unsafe { x.assume_init_ref() })
+                    .filter(|x| x.entry.is_some())
+                    .collect::<Vec<&Bucket<T>>>(),
+            )
+            .finish()
     }
 }

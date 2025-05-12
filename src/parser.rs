@@ -2,10 +2,12 @@ use {
     crate::{
         chunk::Chunk,
         collections::DynArray,
+        dbg_println,
         lexing::{
             scanner::Scanner,
             token::{Precedence, Token, TokenType},
         },
+        memory::HeapPtr,
         opcode::OpCode,
         value::{
             Value,
@@ -36,7 +38,7 @@ macro_rules! define_parse_rule_table {
 }
 pub struct Parser<'a> {
     scanner: Scanner,
-    heap: Rc<RefCell<VmHeap>>,
+    heap: HeapPtr<VmHeap>,
     current_chunk: Rc<RefCell<Chunk>>,
     current: Option<Token>,
     previous: Option<Token>,
@@ -46,7 +48,7 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(scanner: Scanner, heap: Rc<RefCell<VmHeap>>, chunk: Rc<RefCell<Chunk>>) -> Self {
+    pub fn new(scanner: Scanner, heap: HeapPtr<VmHeap>, chunk: Rc<RefCell<Chunk>>) -> Self {
         Self {
             scanner,
             heap,
@@ -160,9 +162,10 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn advance(&mut self) {
-        println!(
+        dbg_println!(
             "Advancing... last: {:?}, current: {:?}",
-            &self.previous, &self.current
+            &self.previous,
+            &self.current
         );
         self.previous = self.current.clone();
         self.current = loop {
@@ -205,9 +208,7 @@ impl<'a> Parser<'a> {
         let name = &token.name;
         let name = &name[1..name.len() - 1];
         self.current_chunk.borrow_mut().write_constant(
-            Value::object(
-                ObjectContainer::alloc_interned_string(name, &mut self.heap.borrow_mut()).take(),
-            ), // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
+            Value::object(ObjectContainer::alloc_string(name, &mut self.heap).read()),
             token.line,
         );
     }

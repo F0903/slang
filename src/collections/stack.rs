@@ -1,5 +1,7 @@
 use std::{fmt::Debug, mem::MaybeUninit};
 
+use crate::dbg_println;
+
 pub struct Stack<T, const STACK_SIZE: usize = 1024> {
     stack: [MaybeUninit<T>; STACK_SIZE],
     count: usize,
@@ -21,7 +23,7 @@ where
     }
 
     pub fn push(&mut self, val: T) {
-        println!("STACK PUSH DEBUG: {:?}", val);
+        dbg_println!("Pushing to stack: {:?}", val);
         self.stack[self.count].write(val);
         self.count += 1;
     }

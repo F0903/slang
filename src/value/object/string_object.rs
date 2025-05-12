@@ -2,18 +2,19 @@ use std::fmt::Display;
 
 use crate::{
     collections::DynArray,
-    hashing::{FNV1a, HashMethod},
-    memory::{Dealloc, ManualPtr},
+    dbg_println,
+    hashing::{GlobalHashMethod, HashMethod},
+    memory::{Dealloc, HeapPtr},
+    vm::VmHeap,
 };
 
 #[derive(Debug)]
-pub struct StringObject<H: HashMethod = FNV1a> {
-    char_buf: ManualPtr<DynArray<u8>>,
+pub struct StringObject {
+    char_buf: HeapPtr<DynArray<u8>>,
     hash: u32,
-    _hash_method: std::marker::PhantomData<H>,
 }
 
-impl<H: HashMethod> StringObject<H> {
+impl StringObject {
     pub const fn as_slice(&self) -> &[u8] {
         self.char_buf.get().as_slice()
     }
@@ -30,28 +31,41 @@ impl<H: HashMethod> StringObject<H> {
         self.hash
     }
 
-    fn new_raw(chars: DynArray<u8>) -> Self {
-        Self {
-            hash: H::hash(chars.as_slice()),
-            char_buf: ManualPtr::alloc(chars),
-            _hash_method: std::marker::PhantomData,
+    fn new_raw(chars: DynArray<u8>, heap: &mut VmHeap) -> Self {
+        if let Some(entry) = heap
+            .interned_strings
+            .get::<GlobalHashMethod>(chars.as_str())
+        {
+            entry.key.clone()
+        } else {
+            let string = Self {
+                hash: GlobalHashMethod::hash(chars.as_slice()),
+                char_buf: HeapPtr::alloc(chars),
+            };
+            heap.interned_strings.insert(string.clone(), None); // We just care about the key.
+            string
         }
     }
 
-    pub fn new(str: &str) -> Self {
-        Self {
-            hash: H::hash(str.as_bytes()),
-            char_buf: ManualPtr::alloc(DynArray::from_str(str)),
-            _hash_method: std::marker::PhantomData,
+    pub fn new(str: &str, heap: &mut VmHeap) -> Self {
+        if let Some(entry) = heap.interned_strings.get::<GlobalHashMethod>(str) {
+            entry.key.clone()
+        } else {
+            let string = Self {
+                hash: GlobalHashMethod::hash(str.as_bytes()),
+                char_buf: HeapPtr::alloc(DynArray::from_str(str)),
+            };
+            heap.interned_strings.insert(string.clone(), None); // We just care about the key.
+            string
         }
     }
 
-    pub fn concat(&self, other: &StringObject) -> Self {
+    pub fn concat(&self, other: &StringObject, heap: &mut VmHeap) -> Self {
         let mut new_char_buf =
             DynArray::new_with_cap(self.char_buf.get_count() + other.char_buf.get_count(), None);
         new_char_buf.push_array(&self.char_buf);
         new_char_buf.push_array(&other.char_buf);
-        Self::new_raw(new_char_buf)
+        Self::new_raw(new_char_buf, heap)
     }
 }
 
@@ -61,23 +75,21 @@ impl Clone for StringObject {
         Self {
             char_buf: self.char_buf.clone(),
             hash: self.hash,
-            _hash_method: self._hash_method,
         }
     }
 }
 
-impl<H: HashMethod> Drop for StringObject<H> {
+impl Drop for StringObject {
     fn drop(&mut self) {
-        println!("DEBUG RAWSTRING DROP: {}", self.get_str());
+        dbg_println!("DEBUG RAWSTRING DROP: {}", self.get_str());
         self.char_buf.dealloc();
     }
 }
 
 impl PartialEq for StringObject {
     fn eq(&self, other: &Self) -> bool {
-        let me = self.get_str();
-        let other = other.get_str();
-        me == other
+        // Since all strings are interned, we can just compare the pointers
+        self.char_buf.compare_address(&other.char_buf)
     }
 }
 
