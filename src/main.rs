@@ -14,7 +14,6 @@ mod hashing;
 mod lexing;
 mod memory;
 mod opcode;
-mod parser;
 mod utils;
 mod value;
 mod vm;

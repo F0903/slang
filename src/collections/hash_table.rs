@@ -113,7 +113,21 @@ impl<T: std::fmt::Debug> HashTable<T> {
         new_key
     }
 
-    pub fn get<H: HashMethod>(&mut self, key_name: &str) -> Option<&Entry<T>> {
+    pub fn get(&mut self, key: &StringObject) -> Option<&Entry<T>> {
+        if self.data.get_count() == 0 {
+            return None;
+        }
+
+        let bucket = self.find_bucket(key.get_hash());
+        if let Some(entry) = &bucket.entry {
+            if entry.key == *key {
+                return Some(entry);
+            }
+        }
+        None
+    }
+
+    pub fn get_str<H: HashMethod>(&mut self, key_name: &str) -> Option<&Entry<T>> {
         if self.data.get_count() == 0 {
             return None;
         }

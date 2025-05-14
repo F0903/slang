@@ -34,7 +34,7 @@ impl StringObject {
     fn new_raw(chars: DynArray<u8>, heap: &mut VmHeap) -> Self {
         if let Some(entry) = heap
             .interned_strings
-            .get::<GlobalHashMethod>(chars.as_str())
+            .get_str::<GlobalHashMethod>(chars.as_str())
         {
             entry.key.clone()
         } else {
@@ -48,7 +48,7 @@ impl StringObject {
     }
 
     pub fn new(str: &str, heap: &mut VmHeap) -> Self {
-        if let Some(entry) = heap.interned_strings.get::<GlobalHashMethod>(str) {
+        if let Some(entry) = heap.interned_strings.get_str::<GlobalHashMethod>(str) {
             entry.key.clone()
         } else {
             let string = Self {

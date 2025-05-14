@@ -1,6 +1,8 @@
 mod interpret_error;
 mod vm_heap;
 
+use std::{cell::RefCell, rc::Rc};
+
 pub use interpret_error::InterpretError;
 pub use vm_heap::VmHeap;
 
@@ -21,9 +23,9 @@ use {
     std::{ffi::CString, ptr::null_mut},
 };
 
-use crate::dbg_println;
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
+use crate::{dbg_println, lexing::scanner::Scanner};
 
 macro_rules! binary_op_result {
     ($stack: expr, $op: tt) => {{
@@ -62,6 +64,7 @@ impl Vm {
             heap: HeapPtr::alloc(VmHeap {
                 objects: ObjectManager::new(),
                 interned_strings: HashTable::new(),
+                globals: HashTable::new(),
             }),
         }
     }
@@ -97,7 +100,12 @@ impl Vm {
             InterpretError::CompileTime("Could not create a CString from source!".to_owned())
         })?;
 
-        let mut compiler = Compiler::new(self.heap.clone());
+        let chunk = Chunk::new();
+        let mut compiler = Compiler::new(
+            Scanner::new(),
+            self.heap.clone(),
+            Rc::new(RefCell::new(chunk)),
+        );
         let chunk = compiler
             .compile(source.as_bytes())
             .map_err(|e| InterpretError::CompileTime(e.to_string()))?;
@@ -115,16 +123,48 @@ impl Vm {
                 println!("DEBUG HEAP: {:?}", &self.heap);
             }
 
+            let chunk = &mut chunk.borrow_mut();
             let instruction = self.read_byte();
             match instruction.into() {
-                OpCode::ConstantLong => {
-                    let chunk = &mut chunk.borrow_mut();
-                    let constant = self.read_constant_long(chunk);
-                    self.stack.push(constant.clone());
+                OpCode::Pop => {
+                    self.stack.pop();
+                }
+                OpCode::GetGlobal => {
+                    let name_value = self.read_constant_long(chunk);
+                    let name_object = unsafe { name_value.as_object_ptr().assume_init() };
+                    let name_object_string = match name_object.get_object() {
+                        Object::String(s) => s.clone(),
+                    };
+                    let global = self.heap.globals.get(&name_object_string);
+                    match global {
+                        Some(global) => {
+                            self.stack.push(global.value.clone().ok_or_else(|| {
+                                InterpretError::Runtime(format!(
+                                    "Variable '{}' had no value",
+                                    name_object_string.get_str()
+                                ))
+                            })?);
+                        }
+                        None => {
+                            return Err(InterpretError::Runtime(format!(
+                                "Undefined variable '{}'",
+                                name_object_string.get_str()
+                            )));
+                        }
+                    }
+                }
+                OpCode::DefineGlobal => {
+                    let name_value = self.read_constant_long(chunk);
+                    let name_object = unsafe { name_value.as_object_ptr().assume_init() };
+                    let name_object_string = match name_object.get_object() {
+                        Object::String(s) => s.clone(),
+                    };
+                    self.heap
+                        .globals
+                        .insert(name_object_string, Some(self.stack.peek(0).clone()));
                 }
                 OpCode::Constant => {
-                    let chunk = &mut chunk.borrow_mut();
-                    let constant = self.read_constant(chunk);
+                    let constant = self.read_constant_long(chunk);
                     self.stack.push(constant.clone());
                 }
                 OpCode::None => self.stack.push(Value::none()),

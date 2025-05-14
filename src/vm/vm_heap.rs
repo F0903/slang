@@ -1,12 +1,16 @@
 use crate::{
     collections::HashTable,
     dbg_println,
-    value::object::{ObjectManager, StringObject},
+    value::{
+        Value,
+        object::{ObjectManager, StringObject},
+    },
 };
 
 pub struct VmHeap {
     pub objects: ObjectManager,
     pub interned_strings: HashTable<StringObject>,
+    pub globals: HashTable<Value>,
 }
 
 impl Drop for VmHeap {

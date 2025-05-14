@@ -26,20 +26,34 @@ impl Chunk {
         self.code.get_raw_ptr()
     }
 
-    pub fn write_opcode(&mut self, opcode: OpCode, line_number: u32) {
-        self.write(opcode as u8, line_number)
-    }
-
     pub fn write(&mut self, byte: u8, line_number: u32) {
         self.code.push(byte);
         self.line_numbers_map.write(line_number);
     }
 
-    pub fn write_long(&mut self, bytes: *const u8, count: usize, line_number: u32) {
+    pub fn write_ptr(&mut self, bytes: *const u8, count: usize, line_number: u32) {
         self.code.push_ptr(bytes, count);
         for _ in 0..count {
             self.line_numbers_map.write(line_number);
         }
+    }
+
+    pub fn write_long(&mut self, long: u32, line_number: u32) {
+        self.write_ptr(addr_of!(long) as *const u8, 4, line_number);
+    }
+
+    pub fn write_opcode(&mut self, opcode: OpCode, line_number: u32) {
+        self.write(opcode as u8, line_number)
+    }
+
+    pub fn write_opcode_with_arg(&mut self, opcode: OpCode, arg: u8, line_number: u32) {
+        self.write(opcode as u8, line_number);
+        self.write(arg, line_number);
+    }
+
+    pub fn write_opcode_with_long_arg(&mut self, opcode: OpCode, arg: u32, line_number: u32) {
+        self.write(opcode as u8, line_number);
+        self.write_long(arg, line_number);
     }
 
     pub fn read(&self, index: usize) -> u8 {
@@ -66,20 +80,15 @@ impl Chunk {
 
     /// Returns index of the added constant.
     pub fn write_constant(&mut self, value: Value, line: u32) -> u32 {
-        let constant = self.add_constant(value);
-        let trunc_constant = constant as u32;
-
+        let constant_index = self.add_constant(value) as u32;
         let const_count = self.constants.get_count();
-        if const_count <= u8::MAX as usize {
+        if const_count <= u32::MAX as usize {
             self.write_opcode(OpCode::Constant, line);
-            self.write(constant as u8, line);
-        } else if const_count >= u8::MAX as usize {
-            self.write_opcode(OpCode::ConstantLong, line);
-            self.write_long(addr_of!(trunc_constant) as *const u8, 4, line);
+            self.write_long(constant_index, line);
         } else if const_count > u32::MAX as usize {
             panic!("Cannot add more constants! (how the hell are you using so many???)")
         }
-        trunc_constant
+        constant_index
     }
 
     pub fn get_constant(&self, index: u32) -> &Value {

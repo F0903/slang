@@ -1,8 +1,10 @@
 #[repr(u8)]
 #[derive(Debug, Clone)]
 pub enum OpCode {
+    Pop,
+    GetGlobal,
+    DefineGlobal,
     Constant,
-    ConstantLong,
     None,
     True,
     False,
