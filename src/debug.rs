@@ -32,7 +32,7 @@ pub fn disassemble_instruction(chunk: &mut Chunk, offset: usize) -> usize {
     let instruction = chunk.read(offset);
     let opcode = instruction.into();
     let inst_offset = match opcode {
-        OpCode::DefineGlobal | OpCode::GetGlobal | OpCode::Constant => {
+        OpCode::DefineGlobal | OpCode::SetGlobal | OpCode::GetGlobal | OpCode::Constant => {
             handle_constant_long_instr(&opcode, chunk, offset)
         }
         OpCode::Return

@@ -10,10 +10,7 @@ use {
         },
         memory::HeapPtr,
         opcode::OpCode,
-        value::{
-            self, Value,
-            object::{ObjectContainer, ObjectManager},
-        },
+        value::{Value, object::ObjectContainer},
         vm::VmHeap,
     },
     std::{cell::RefCell, rc::Rc},
@@ -21,7 +18,7 @@ use {
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-type ParseFn<'a> = fn(&mut Compiler<'a>);
+type ParseFn<'a> = fn(&mut Compiler<'a>, bool);
 
 #[derive(Debug)]
 struct ParseRule<'a> {
@@ -176,8 +173,9 @@ impl<'a> Compiler<'a> {
         self.advance();
         let previous_token_type = unsafe { self.previous.as_ref().unwrap_unchecked().token_type };
         let prefix_rule = self.get_rule(previous_token_type).prefix;
+        let can_assign = precedence <= Precedence::Assignment;
         match prefix_rule {
-            Some(x) => x(self),
+            Some(x) => x(self, can_assign),
             None => {
                 self.error("Expected an expression.");
                 return;
@@ -193,11 +191,15 @@ impl<'a> Compiler<'a> {
             let previous_token_type =
                 unsafe { self.previous.as_ref().unwrap_unchecked().token_type };
             let infix_rule = self.get_rule(previous_token_type).infix;
-            infix_rule.unwrap()(self);
+            infix_rule.unwrap()(self, can_assign);
+        }
+
+        if can_assign && self.match_and_advance(TokenType::Equal) {
+            self.error("Invalid assignment target.");
         }
     }
 
-    fn string(&mut self) {
+    fn string(&mut self, _can_assign: bool) {
         let token = self.previous.as_ref().unwrap();
         let name = &token.name;
         let name = &name[1..name.len() - 1];
@@ -207,7 +209,7 @@ impl<'a> Compiler<'a> {
         );
     }
 
-    fn literal(&mut self) {
+    fn literal(&mut self, _can_assign: bool) {
         match self.previous.as_ref().unwrap().token_type {
             TokenType::False => self.emit_op(OpCode::False),
             TokenType::True => self.emit_op(OpCode::True),
@@ -216,7 +218,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn unary(&mut self) {
+    fn unary(&mut self, _can_assign: bool) {
         let operator_type = unsafe { self.previous.as_ref().unwrap_unchecked().token_type };
 
         self.parse_precedence(Precedence::Unary);
@@ -228,7 +230,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn binary(&mut self) {
+    fn binary(&mut self, _can_assign: bool) {
         let next_token_type = unsafe { self.current.as_ref().unwrap_unchecked().token_type };
         let operator_type = unsafe { self.previous.as_ref().unwrap_unchecked().token_type };
 
@@ -258,7 +260,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn grouping(&mut self) {
+    fn grouping(&mut self, _can_assign: bool) {
         self.expression();
         self.consume(
             TokenType::RightParen,
@@ -266,7 +268,7 @@ impl<'a> Compiler<'a> {
         );
     }
 
-    fn number(&mut self) {
+    fn number(&mut self, _can_assign: bool) {
         let num: f64 = unsafe {
             self.previous
                 .as_ref()
@@ -379,19 +381,31 @@ impl<'a> Compiler<'a> {
         )
     }
 
-    fn parse_named_variable(&mut self, name_token: &Token) -> u32 {
+    fn parse_named_variable(&mut self, name_token: &Token, can_assign: bool) -> u32 {
         let index = self.parse_identifier_constant(name_token);
-        self.current_chunk.borrow_mut().write_opcode_with_long_arg(
-            OpCode::GetGlobal,
-            index,
-            name_token.line,
-        );
+
+        // If the current token is an '=', then we are assigning instead of getting.
+        if can_assign && self.match_and_advance(TokenType::Equal) {
+            self.expression();
+            self.current_chunk.borrow_mut().write_opcode_with_long_arg(
+                OpCode::SetGlobal,
+                index,
+                name_token.line,
+            );
+        } else {
+            self.current_chunk.borrow_mut().write_opcode_with_long_arg(
+                OpCode::GetGlobal,
+                index,
+                name_token.line,
+            );
+        }
+
         index
     }
 
-    fn variable(&mut self) {
+    fn variable(&mut self, can_assign: bool) {
         let name_token = self.get_previous_token().unwrap();
-        self.parse_named_variable(&name_token.clone());
+        self.parse_named_variable(&name_token.clone(), can_assign);
     }
 
     fn parse_variable(&mut self, error_message: &str) -> u32 {

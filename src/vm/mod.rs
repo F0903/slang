@@ -129,6 +129,26 @@ impl Vm {
                 OpCode::Pop => {
                     self.stack.pop();
                 }
+                OpCode::SetGlobal => {
+                    let name_value = self.read_constant_long(chunk);
+                    let name_object: ObjectContainer =
+                        unsafe { name_value.as_object_ptr().assume_init() };
+                    let name_object_string = match name_object.get_object() {
+                        Object::String(s) => s.clone(),
+                    };
+                    if self
+                        .heap
+                        .globals
+                        .set(name_object_string.clone(), Some(self.stack.peek(0).clone()))
+                    {
+                        // If the variable did not already exist at this point, return error
+                        self.heap.globals.delete(&name_object_string);
+                        return Err(InterpretError::Runtime(format!(
+                            "Undefined variable '{}'",
+                            name_object_string
+                        )));
+                    }
+                }
                 OpCode::GetGlobal => {
                     let name_value = self.read_constant_long(chunk);
                     let name_object = unsafe { name_value.as_object_ptr().assume_init() };
@@ -141,14 +161,14 @@ impl Vm {
                             self.stack.push(global.value.clone().ok_or_else(|| {
                                 InterpretError::Runtime(format!(
                                     "Variable '{}' had no value",
-                                    name_object_string.get_str()
+                                    name_object_string
                                 ))
                             })?);
                         }
                         None => {
                             return Err(InterpretError::Runtime(format!(
                                 "Undefined variable '{}'",
-                                name_object_string.get_str()
+                                name_object_string
                             )));
                         }
                     }
@@ -161,7 +181,7 @@ impl Vm {
                     };
                     self.heap
                         .globals
-                        .insert(name_object_string, Some(self.stack.peek(0).clone()));
+                        .set(name_object_string, Some(self.stack.peek(0).clone()));
                 }
                 OpCode::Constant => {
                     let constant = self.read_constant_long(chunk);

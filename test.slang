@@ -1,10 +1,5 @@
 ? comment
 
-class Test {
-    fn hello() {
-    }
-}
-
-let class_instance = Test()
-
-print(class_instance)
+let a = 2
+let b = 4
+let c = a + b

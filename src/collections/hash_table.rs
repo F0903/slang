@@ -90,7 +90,7 @@ impl<T: std::fmt::Debug> HashTable<T> {
     }
 
     // Returns true if the key was inserted, false if it was already present (thus overwritten)
-    pub fn insert(&mut self, key: StringObject, value: Option<T>) -> bool {
+    pub fn set(&mut self, key: StringObject, value: Option<T>) -> bool {
         if self.data.get_count() as f32 + 1_f32 > self.data.get_capacity() as f32 * TABLE_MAX_LOAD {
             self.grow();
         }
@@ -127,7 +127,7 @@ impl<T: std::fmt::Debug> HashTable<T> {
         None
     }
 
-    pub fn get_str<H: HashMethod>(&mut self, key_name: &str) -> Option<&Entry<T>> {
+    pub fn get_by_str<H: HashMethod>(&mut self, key_name: &str) -> Option<&Entry<T>> {
         if self.data.get_count() == 0 {
             return None;
         }
@@ -141,12 +141,12 @@ impl<T: std::fmt::Debug> HashTable<T> {
         None
     }
 
-    pub fn delete(&mut self, key: &StringObject) -> Option<Entry<T>> {
+    pub fn delete_by_hash(&mut self, hash: u32) -> Option<Entry<T>> {
         if self.data.get_count() == 0 {
             return None;
         }
 
-        let bucket = self.find_bucket(key.get_hash());
+        let bucket = self.find_bucket(hash);
         let entry = bucket.entry.take();
         bucket.tombstone = true;
         bucket.entry = None;
@@ -154,6 +154,10 @@ impl<T: std::fmt::Debug> HashTable<T> {
         // We don't decrease the count since we just mark the entry as a tombstone
 
         entry
+    }
+
+    pub fn delete(&mut self, key: &StringObject) -> Option<Entry<T>> {
+        self.delete_by_hash(key.get_hash())
     }
 }
 

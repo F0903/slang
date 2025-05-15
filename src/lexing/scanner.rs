@@ -3,7 +3,7 @@ use {
         scanner_error::ScannerError,
         token::{Token, TokenType},
     },
-    std::ptr::null,
+    std::{fmt::format, ptr::null},
 };
 
 type ScannerResult = std::result::Result<Token, ScannerError>;
@@ -59,7 +59,8 @@ impl Scanner {
         Ok(Token::new(typ, name, self.line))
     }
 
-    pub(crate) fn advance(&mut self) -> u8 {
+    // Gets the current character and advances to the next
+    pub(crate) fn get_and_advance(&mut self) -> u8 {
         unsafe {
             let ch = *self.current;
             self.current = self.current.add(1);
@@ -96,17 +97,17 @@ impl Scanner {
             let ch = self.peek();
             match ch {
                 b' ' | b'\r' | b'\t' => {
-                    self.advance();
+                    self.get_and_advance();
                 }
                 b'\n' => {
                     self.line += 1;
-                    self.advance();
+                    self.get_and_advance();
                     break;
                 }
                 b'?' => {
                     // Skip comments
                     while self.peek() != b'\n' && !self.is_at_end() {
-                        self.advance();
+                        self.get_and_advance();
                     }
                 }
                 _ => return,
@@ -119,27 +120,27 @@ impl Scanner {
             if self.peek() == b'\n' {
                 self.line += 1;
             }
-            self.advance();
+            self.get_and_advance();
         }
 
         if self.is_at_end() {
             return Err(format!("Unterminated string at {}", self.line).into());
         }
 
-        self.advance();
+        self.get_and_advance();
         self.make_token(TokenType::String)
     }
 
     fn number(&mut self) -> ScannerResult {
         while is_digit(self.peek()) {
-            self.advance();
+            self.get_and_advance();
         }
 
         if self.peek() == b'.' && is_digit(self.peek_next().unwrap_or(b'\0')) {
-            self.advance();
+            self.get_and_advance();
 
             while is_digit(self.peek()) {
-                self.advance();
+                self.get_and_advance();
             }
         }
 
@@ -196,10 +197,19 @@ impl Scanner {
 
     fn identifier(&mut self) -> ScannerResult {
         while is_alpha(self.peek()) || is_digit(self.peek()) {
-            self.advance();
+            self.get_and_advance();
         }
         let typ = self.identifier_type();
         self.make_token(typ)
+    }
+
+    fn skip_comment(&mut self) {
+        loop {
+            let current = self.get_and_advance();
+            if current == b'\n' {
+                break;
+            }
+        }
     }
 
     pub fn scan(&mut self) -> ScannerResult {
@@ -210,9 +220,11 @@ impl Scanner {
             return self.make_token(TokenType::EOF);
         }
 
-        let ch = self.advance();
+        let ch = self.get_and_advance();
 
-        if is_alpha(ch) {
+        if ch == b'?' {
+            self.skip_comment()
+        } else if is_alpha(ch) {
             return self.identifier();
         } else if is_digit(ch) {
             return self.number();
@@ -249,6 +261,6 @@ impl Scanner {
             _ => (),
         }
 
-        error("Unexpected character.")
+        error(format!("Unexpected character '{}'", ch))
     }
 }

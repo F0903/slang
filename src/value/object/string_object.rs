@@ -34,7 +34,7 @@ impl StringObject {
     fn new_raw(chars: DynArray<u8>, heap: &mut VmHeap) -> Self {
         if let Some(entry) = heap
             .interned_strings
-            .get_str::<GlobalHashMethod>(chars.as_str())
+            .get_by_str::<GlobalHashMethod>(chars.as_str())
         {
             entry.key.clone()
         } else {
@@ -42,20 +42,20 @@ impl StringObject {
                 hash: GlobalHashMethod::hash(chars.as_slice()),
                 char_buf: HeapPtr::alloc(chars),
             };
-            heap.interned_strings.insert(string.clone(), None); // We just care about the key.
+            heap.interned_strings.set(string.clone(), None); // We just care about the key.
             string
         }
     }
 
     pub fn new(str: &str, heap: &mut VmHeap) -> Self {
-        if let Some(entry) = heap.interned_strings.get_str::<GlobalHashMethod>(str) {
+        if let Some(entry) = heap.interned_strings.get_by_str::<GlobalHashMethod>(str) {
             entry.key.clone()
         } else {
             let string = Self {
                 hash: GlobalHashMethod::hash(str.as_bytes()),
                 char_buf: HeapPtr::alloc(DynArray::from_str(str)),
             };
-            heap.interned_strings.insert(string.clone(), None); // We just care about the key.
+            heap.interned_strings.set(string.clone(), None); // We just care about the key.
             string
         }
     }
