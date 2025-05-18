@@ -89,6 +89,7 @@ impl<T: std::fmt::Debug> HashTable<T> {
         self.data.set_count(count);
     }
 
+    //TODO: fix
     // Returns true if the key was inserted, false if it was already present (thus overwritten)
     pub fn set(&mut self, key: StringObject, value: Option<T>) -> bool {
         if self.data.get_count() as f32 + 1_f32 > self.data.get_capacity() as f32 * TABLE_MAX_LOAD {

@@ -1,11 +1,13 @@
 use crate::{chunk::Chunk, opcode::OpCode};
 
+// Each "disassembly function" returns how many byte long its instruction is
+
 fn handle_simple_instr(instruction: &OpCode) -> usize {
     print!("{:?}", instruction);
     1
 }
 
-fn handle_constant_instr(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
+fn _handle_constant_instr(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
     let constant_index = chunk.read(offset + 1);
     let constant_value = chunk.get_constant(constant_index as u32);
     print!("{:?} {} = {}", instruction, constant_index, constant_value);
@@ -61,7 +63,7 @@ pub fn disassemble_chunk(chunk: &mut Chunk, name: &str) {
     println!("=== {} ===", name);
 
     let mut offset = 0;
-    let count = chunk.get_instruction_count() - 1;
+    let count = chunk.get_bytes_count() - 1;
     while offset <= count {
         offset += disassemble_instruction(chunk, offset);
     }

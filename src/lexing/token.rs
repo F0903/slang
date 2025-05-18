@@ -40,10 +40,11 @@ pub enum TokenType {
     EOF,
 }
 
+//TODO: Make lexeme a &str
 #[derive(Clone, Debug)]
 pub struct Token {
     pub token_type: TokenType,
-    pub name: String,
+    pub lexeme: String,
     pub line: u32,
 }
 
@@ -51,7 +52,7 @@ impl Token {
     pub fn new(typ: TokenType, name: impl Into<String>, line: u32) -> Self {
         Self {
             token_type: typ,
-            name: name.into(),
+            lexeme: name.into(),
             line,
         }
     }

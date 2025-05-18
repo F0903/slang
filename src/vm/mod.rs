@@ -16,7 +16,7 @@ use {
         opcode::OpCode,
         value::{
             Value,
-            object::{Object, ObjectContainer, ObjectManager},
+            object::{Object, ObjectManager, ObjectNode},
         },
     },
     interpret_error::InterpretResult,
@@ -69,9 +69,9 @@ impl Vm {
         }
     }
 
-    fn read_byte(&mut self) -> u8 {
+    fn next_instruction(&mut self) -> u8 {
         unsafe {
-            let val = *self.ip;
+            let val = self.ip.read();
             self.ip = self.ip.add(1);
             val
         }
@@ -79,7 +79,7 @@ impl Vm {
 
     fn read_long(&mut self) -> u32 {
         unsafe {
-            let val = *self.ip.cast::<u32>();
+            let val = self.ip.cast::<u32>().read();
             self.ip = self.ip.add(4);
             val
         }
@@ -91,7 +91,7 @@ impl Vm {
     }
 
     fn read_constant<'a>(&mut self, chunk: &'a mut Chunk) -> &'a Value {
-        let index = self.read_byte();
+        let index = self.next_instruction();
         chunk.get_constant(index as u32)
     }
 
@@ -115,31 +115,34 @@ impl Vm {
         loop {
             #[cfg(debug_assertions)]
             {
+                print!("\n");
                 print!("{:?}", &self.stack);
                 unsafe {
                     let offset = self.ip.offset_from(chunk.borrow().get_code_ptr());
                     disassemble_instruction(&mut chunk.borrow_mut(), offset as usize);
                 }
-                println!("DEBUG HEAP: {:?}", &self.heap);
+                //println!("DEBUG HEAP: {:?}", &self.heap);
+                print!("\t")
             }
 
             let chunk = &mut chunk.borrow_mut();
-            let instruction = self.read_byte();
-            match instruction.into() {
+            let instruction = self.next_instruction();
+            match OpCode::from_code(instruction) {
                 OpCode::Pop => {
                     self.stack.pop();
                 }
                 OpCode::SetGlobal => {
                     let name_value = self.read_constant_long(chunk);
-                    let name_object: ObjectContainer =
-                        unsafe { name_value.as_object_ptr().assume_init() };
+                    let name_object = unsafe { name_value.as_object_ptr().assume_init() };
                     let name_object_string = match name_object.get_object() {
                         Object::String(s) => s.clone(),
                     };
+                    let value = self.stack.peek(0).clone();
+                    dbg_println!("SETTING GLOBAL {} = {}", name_object_string, value);
                     if self
                         .heap
                         .globals
-                        .set(name_object_string.clone(), Some(self.stack.peek(0).clone()))
+                        .set(name_object_string.clone(), Some(value))
                     {
                         // If the variable did not already exist at this point, return error
                         self.heap.globals.delete(&name_object_string);
@@ -158,12 +161,18 @@ impl Vm {
                     let global = self.heap.globals.get(&name_object_string);
                     match global {
                         Some(global) => {
-                            self.stack.push(global.value.clone().ok_or_else(|| {
+                            let global_value = global.value.clone().ok_or_else(|| {
                                 InterpretError::Runtime(format!(
                                     "Variable '{}' had no value",
                                     name_object_string
                                 ))
-                            })?);
+                            })?;
+                            dbg_println!(
+                                "GETTING GLOBAL: {} = ({})",
+                                name_object_string,
+                                global_value
+                            );
+                            self.stack.push(global_value);
                         }
                         None => {
                             return Err(InterpretError::Runtime(format!(
@@ -179,12 +188,20 @@ impl Vm {
                     let name_object_string = match name_object.get_object() {
                         Object::String(s) => s.clone(),
                     };
+                    let global_value = self.stack.peek(0).clone();
+                    dbg_println!(
+                        "DEFINING GLOBAL: {} = ({})",
+                        name_object_string,
+                        global_value
+                    );
                     self.heap
                         .globals
-                        .set(name_object_string, Some(self.stack.peek(0).clone()));
+                        .set(name_object_string, Some(global_value));
+                    self.stack.pop();
                 }
                 OpCode::Constant => {
                     let constant = self.read_constant_long(chunk);
+                    dbg_println!("PUSHING CONSTANT: {}", constant);
                     self.stack.push(constant.clone());
                 }
                 OpCode::None => self.stack.push(Value::none()),
@@ -197,8 +214,8 @@ impl Vm {
                 OpCode::Less => binary_op_from_bool!(self.stack, <),
                 OpCode::LessEqual => binary_op_from_bool!(self.stack, <=),
                 OpCode::Add => {
-                    let first = self.stack.pop();
                     let second = self.stack.pop();
+                    let first = self.stack.pop();
                     if first.is_object() && second.is_object() {
                         let first = first.as_object_ptr();
                         let first = unsafe { first.assume_init_ref() };
@@ -209,7 +226,7 @@ impl Vm {
                                 Object::String(b_str) => {
                                     let concat = b_str.concat(&a_str, &mut self.heap);
                                     let new_string = Value::object(
-                                        ObjectContainer::alloc(
+                                        ObjectNode::alloc(
                                             Object::String(concat),
                                             &mut self.heap.objects,
                                         )
@@ -220,7 +237,8 @@ impl Vm {
                             },
                         }
                     } else {
-                        binary_op_try!(self.stack, +)
+                        let result = first + second;
+                        self.stack.push(result?);
                     }
                 }
                 OpCode::Subtract => binary_op_try!(self.stack, -),

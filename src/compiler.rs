@@ -10,7 +10,7 @@ use {
         },
         memory::HeapPtr,
         opcode::OpCode,
-        value::{Value, object::ObjectContainer},
+        value::{Value, object::ObjectNode},
         vm::VmHeap,
     },
     std::{cell::RefCell, rc::Rc},
@@ -116,12 +116,19 @@ impl<'a> Compiler<'a> {
         self.scanner.set_source(source);
     }
 
-    fn emit_op(&mut self, op: OpCode) {
-        let line = self.get_current_line();
-        self.current_chunk.borrow_mut().write_opcode(op, line);
+    fn error_at_line(&mut self, line: u32, msg: &str) {
+        if self.panic_mode {
+            return;
+        }
+        self.panic_mode = true;
+        print!("[line {}] Error!", line);
+
+        print!("{}", msg);
+        print!("\n");
+        self.had_error = true;
     }
 
-    fn error_at(&mut self, token: &Token, msg: &str) {
+    fn error_at_token(&mut self, token: &Token, msg: &str) {
         if self.panic_mode {
             return;
         }
@@ -130,7 +137,7 @@ impl<'a> Compiler<'a> {
 
         match token.token_type {
             TokenType::EOF => print!(" at end."),
-            _ => print!(" at {}", token.name),
+            _ => print!(" at '{}'\n\t", token.lexeme),
         }
         print!("{}", msg);
         print!("\n");
@@ -138,23 +145,11 @@ impl<'a> Compiler<'a> {
     }
 
     fn error(&mut self, msg: &str) {
-        self.error_at(
-            &self
-                .previous
-                .clone()
-                .expect("Encountered error but the previous token was null!"),
-            msg,
-        );
-    }
-
-    fn error_at_current(&mut self, message: &str) {
-        self.error_at(
-            &self
-                .previous
-                .clone()
-                .expect("Encountered error but the current token was null!"),
-            message,
-        )
+        if let Some(prev) = &self.previous {
+            self.error_at_token(&prev.clone(), msg);
+        } else {
+            self.error_at_line(self.get_current_line(), msg);
+        }
     }
 
     pub fn had_error(&self) -> bool {
@@ -175,7 +170,7 @@ impl<'a> Compiler<'a> {
         let prefix_rule = self.get_rule(previous_token_type).prefix;
         let can_assign = precedence <= Precedence::Assignment;
         match prefix_rule {
-            Some(x) => x(self, can_assign),
+            Some(prefix_rule) => prefix_rule(self, can_assign),
             None => {
                 self.error("Expected an expression.");
                 return;
@@ -201,21 +196,24 @@ impl<'a> Compiler<'a> {
 
     fn string(&mut self, _can_assign: bool) {
         let token = self.previous.as_ref().unwrap();
-        let name = &token.name;
-        let name = &name[1..name.len() - 1];
-        self.current_chunk.borrow_mut().write_constant(
-            Value::object(ObjectContainer::alloc_string(name, &mut self.heap).read()),
+        let name = &token.lexeme;
+        let name = &name[1..name.len() - 1]; // Don't include the leading and trailing "
+        self.current_chunk.borrow_mut().add_constant_with_op(
+            Value::object(ObjectNode::alloc_string(name, &mut self.heap).read()),
             token.line,
         );
     }
 
     fn literal(&mut self, _can_assign: bool) {
-        match self.previous.as_ref().unwrap().token_type {
-            TokenType::False => self.emit_op(OpCode::False),
-            TokenType::True => self.emit_op(OpCode::True),
-            TokenType::None => self.emit_op(OpCode::None),
+        let op = match self.previous.as_ref().unwrap().token_type {
+            TokenType::False => OpCode::False,
+            TokenType::True => OpCode::True,
+            TokenType::None => OpCode::None,
             _ => unreachable!(),
-        }
+        };
+        self.current_chunk
+            .borrow_mut()
+            .write_opcode(op, self.get_current_line());
     }
 
     fn unary(&mut self, _can_assign: bool) {
@@ -223,11 +221,15 @@ impl<'a> Compiler<'a> {
 
         self.parse_precedence(Precedence::Unary);
 
-        match operator_type {
-            TokenType::Not => self.emit_op(OpCode::Not),
-            TokenType::Minus => self.emit_op(OpCode::Negate),
+        let op = match operator_type {
+            TokenType::Not => OpCode::Not,
+            TokenType::Minus => OpCode::Negate,
             _ => return,
-        }
+        };
+
+        self.current_chunk
+            .borrow_mut()
+            .write_opcode(op, self.get_current_line());
     }
 
     fn binary(&mut self, _can_assign: bool) {
@@ -237,8 +239,8 @@ impl<'a> Compiler<'a> {
         let parse_rule = self.get_rule(operator_type);
         self.parse_precedence(parse_rule.precedence.add(1));
 
-        match operator_type {
-            TokenType::IsNot => self.emit_op(OpCode::IsNot),
+        let op = match operator_type {
+            TokenType::IsNot => OpCode::IsNot,
             TokenType::Is => {
                 if next_token_type == TokenType::Not {
                     self.current_chunk
@@ -246,18 +248,21 @@ impl<'a> Compiler<'a> {
                         .replace_last_op(OpCode::IsNot);
                     return;
                 }
-                self.emit_op(OpCode::Is)
+                OpCode::Is
             }
-            TokenType::Greater => self.emit_op(OpCode::Greater),
-            TokenType::GreaterEqual => self.emit_op(OpCode::GreaterEqual),
-            TokenType::Less => self.emit_op(OpCode::Less),
-            TokenType::LessEqual => self.emit_op(OpCode::LessEqual),
-            TokenType::Plus => self.emit_op(OpCode::Add),
-            TokenType::Minus => self.emit_op(OpCode::Subtract),
-            TokenType::Star => self.emit_op(OpCode::Multiply),
-            TokenType::Slash => self.emit_op(OpCode::Divide),
+            TokenType::Greater => OpCode::Greater,
+            TokenType::GreaterEqual => OpCode::GreaterEqual,
+            TokenType::Less => OpCode::Less,
+            TokenType::LessEqual => OpCode::LessEqual,
+            TokenType::Plus => OpCode::Add,
+            TokenType::Minus => OpCode::Subtract,
+            TokenType::Star => OpCode::Multiply,
+            TokenType::Slash => OpCode::Divide,
             _ => unreachable!(),
-        }
+        };
+        self.current_chunk
+            .borrow_mut()
+            .write_opcode(op, self.get_current_line());
     }
 
     fn grouping(&mut self, _can_assign: bool) {
@@ -273,14 +278,14 @@ impl<'a> Compiler<'a> {
             self.previous
                 .as_ref()
                 .unwrap_unchecked()
-                .name
+                .lexeme
                 .parse()
                 .unwrap_unchecked()
         };
         let line = self.get_current_line();
         self.current_chunk
             .borrow_mut()
-            .write_constant(Value::number(num), line);
+            .add_constant_with_op(Value::number(num), line);
     }
 
     fn advance(&mut self) {
@@ -294,7 +299,7 @@ impl<'a> Compiler<'a> {
             match self.scanner.scan() {
                 Ok(x) => break Some(x),
                 Err(err) => {
-                    self.error_at_current(err.get_message());
+                    self.error(err.get_message());
                 }
             }
         }
@@ -332,7 +337,7 @@ impl<'a> Compiler<'a> {
 
     fn consume(&mut self, token_type: TokenType, err_msg: &str) {
         if !self.match_and_advance(token_type) {
-            self.error_at_current(err_msg);
+            self.error(err_msg);
         }
     }
 
@@ -362,23 +367,23 @@ impl<'a> Compiler<'a> {
     }
 
     fn expression_statement(&mut self) {
+        // Parse expression which pushes a value onto the stack, and then pop it off again since this is a statement
         self.expression();
-        self.consume(TokenType::Semicolon, "Expected ';' after expression.");
         self.current_chunk
             .borrow_mut()
             .write_opcode(OpCode::Pop, self.get_current_line());
     }
 
     fn statement(&mut self) {
+        dbg_println!("\nPARSING STATEMENT");
         self.expression_statement();
     }
 
     /// Returns the index of the constant.
     fn parse_identifier_constant(&mut self, name_token: &Token) -> u32 {
-        self.current_chunk.borrow_mut().write_constant(
-            Value::object(ObjectContainer::alloc_string(&name_token.name, &mut self.heap).read()),
-            name_token.line,
-        )
+        self.current_chunk.borrow_mut().add_constant(Value::object(
+            ObjectNode::alloc_string(&name_token.lexeme, &mut self.heap).read(),
+        ))
     }
 
     fn parse_named_variable(&mut self, name_token: &Token, can_assign: bool) -> u32 {
@@ -408,12 +413,6 @@ impl<'a> Compiler<'a> {
         self.parse_named_variable(&name_token.clone(), can_assign);
     }
 
-    fn parse_variable(&mut self, error_message: &str) -> u32 {
-        self.consume(TokenType::Identifier, error_message);
-        let name_token = self.get_previous_token().unwrap();
-        self.parse_identifier_constant(&name_token.clone())
-    }
-
     fn define_variable(&mut self, global_index: u32) {
         self.current_chunk.borrow_mut().write_opcode_with_long_arg(
             OpCode::DefineGlobal,
@@ -422,8 +421,16 @@ impl<'a> Compiler<'a> {
         );
     }
 
+    fn parse_variable(&mut self, error_message: &str) -> u32 {
+        self.consume(TokenType::Identifier, error_message);
+        let name_token = self.get_previous_token().unwrap();
+        self.parse_identifier_constant(&name_token.clone())
+    }
+
     fn variable_declaration(&mut self) {
-        let global = self.parse_variable("Expected variable name.");
+        dbg_println!("\nPARSING VARIABLE DECL");
+
+        let global_index = self.parse_variable("Expected variable name.");
 
         if self.match_and_advance(TokenType::Equal) {
             self.expression();
@@ -433,12 +440,7 @@ impl<'a> Compiler<'a> {
                 .write_opcode(OpCode::None, self.get_current_line());
         }
 
-        self.consume(
-            TokenType::Semicolon,
-            "Expected ';' after variable declaration.",
-        );
-
-        self.define_variable(global);
+        self.define_variable(global_index);
     }
 
     fn declaration(&mut self) {

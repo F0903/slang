@@ -1,8 +1,8 @@
-use crate::{memory::HeapPtr, value::ObjectContainer};
+use crate::{memory::HeapPtr, value::ObjectNode};
 
 #[derive(Debug)]
 pub struct ObjectManager {
-    objects_head: HeapPtr<ObjectContainer>,
+    objects_head: HeapPtr<ObjectNode>,
 }
 
 impl ObjectManager {
@@ -12,11 +12,11 @@ impl ObjectManager {
         }
     }
 
-    pub const fn get_objects_head(&self) -> HeapPtr<ObjectContainer> {
+    pub const fn get_objects_head(&self) -> HeapPtr<ObjectNode> {
         self.objects_head
     }
 
-    pub const fn set_objects_head(&mut self, object: HeapPtr<ObjectContainer>) {
+    pub const fn set_objects_head(&mut self, object: HeapPtr<ObjectNode>) {
         self.objects_head = object;
     }
 }

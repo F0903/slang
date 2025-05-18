@@ -2,7 +2,7 @@ pub mod object;
 mod value_casts;
 mod value_type;
 
-use object::{Object, ObjectContainer};
+use object::{Object, ObjectNode};
 use value_casts::*;
 use value_type::*;
 
@@ -21,7 +21,7 @@ pub struct Value {
 }
 
 impl Value {
-    pub const fn object(value: ObjectContainer) -> Self {
+    pub const fn object(value: ObjectNode) -> Self {
         Self {
             value_type: ValueType::Object,
             casts: ValueCasts {
@@ -59,7 +59,7 @@ impl Value {
         unsafe { self.casts.boolean }
     }
 
-    pub const fn as_object_ptr(&self) -> MaybeUninit<ObjectContainer> {
+    pub const fn as_object_ptr(&self) -> MaybeUninit<ObjectNode> {
         unsafe { self.casts.object }
     }
 

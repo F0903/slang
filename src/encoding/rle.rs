@@ -1,7 +1,6 @@
 use {
     super::Encoding,
     crate::{collections::DynArray, memory::reallocate},
-    std::ptr::addr_of,
 };
 
 pub struct RLE;
@@ -21,7 +20,7 @@ impl Encoding for RLE {
             let num = unsafe { *values_u32.add(i) };
             if num as u32 != current_num {
                 workspace.push(current_num_count);
-                workspace.push_ptr(addr_of!(current_num).cast(), 4);
+                workspace.push_ptr((&raw const current_num).cast(), 4);
 
                 current_num = num as u32;
                 current_num_count = 1;
@@ -31,7 +30,7 @@ impl Encoding for RLE {
             current_num_count += 1;
         }
         workspace.push(current_num_count);
-        workspace.push_ptr(addr_of!(current_num).cast(), 4);
+        workspace.push_ptr((&raw const current_num).cast(), 4);
 
         workspace
     }

@@ -1,10 +1,10 @@
-use super::ObjectContainer;
+use super::ObjectNode;
 use std::{fmt::Debug, mem::MaybeUninit};
 
 pub(super) union ValueCasts {
     pub(super) boolean: bool,
     pub(super) number: f64,
-    pub(super) object: MaybeUninit<ObjectContainer>,
+    pub(super) object: MaybeUninit<ObjectNode>,
 }
 
 impl Debug for ValueCasts {

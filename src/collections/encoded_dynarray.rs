@@ -1,4 +1,4 @@
-use {super::DynArray, crate::encoding::Encoding, std::ptr::addr_of};
+use {super::DynArray, crate::encoding::Encoding};
 
 pub struct EncodedDynArray<E>
 where
@@ -30,7 +30,7 @@ where
     }
 
     pub fn write(&mut self, val: u32) {
-        self.write_ptr(addr_of!(val).cast(), 4);
+        self.write_ptr((&raw const val).cast(), 4);
     }
 
     pub fn write_ptr(&mut self, val: *const u8, count: usize) {
@@ -66,6 +66,6 @@ where
 
     pub fn read(&mut self, offset: usize) -> u32 {
         self.decode_all();
-        *self.array.read_cast(offset)
+        self.array.read_cast(offset)
     }
 }

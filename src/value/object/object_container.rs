@@ -10,12 +10,12 @@ use {
 /// A container for objects that "links" them together as a linked list.
 /// This is used to keep track of all objects in the VM.
 #[derive(Clone, Copy)]
-pub struct ObjectContainer {
+pub struct ObjectNode {
     obj: HeapPtr<Object>,
-    next: HeapPtr<ObjectContainer>,
+    next: HeapPtr<ObjectNode>,
 }
 
-impl ObjectContainer {
+impl ObjectNode {
     pub fn alloc(obj: Object, objects: &mut ObjectManager) -> HeapPtr<Self> {
         dbg_println!("DEBUG OBJECT ALLOC: {:?}", obj);
 
@@ -46,12 +46,12 @@ impl ObjectContainer {
         self.obj.get()
     }
 
-    pub const fn get_next_object_ptr(&self) -> HeapPtr<ObjectContainer> {
+    pub const fn get_next_object_ptr(&self) -> HeapPtr<ObjectNode> {
         self.next
     }
 }
 
-impl Display for ObjectContainer {
+impl Display for ObjectNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "{}",
@@ -62,7 +62,7 @@ impl Display for ObjectContainer {
     }
 }
 
-impl Debug for ObjectContainer {
+impl Debug for ObjectNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "ObjectContainer: {}",
@@ -73,7 +73,7 @@ impl Debug for ObjectContainer {
     }
 }
 
-impl Dealloc for ObjectContainer {
+impl Dealloc for ObjectNode {
     fn dealloc(&mut self) {
         dbg_println!("DEBUG OBJECT CONTAINER DEALLOC: {:?}", self);
         // Don't dealloc the next node
@@ -81,13 +81,13 @@ impl Dealloc for ObjectContainer {
     }
 }
 
-impl PartialEq for ObjectContainer {
+impl PartialEq for ObjectNode {
     fn eq(&self, other: &Self) -> bool {
         self.obj == other.obj
     }
 }
 
-impl PartialOrd for ObjectContainer {
+impl PartialOrd for ObjectNode {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match self {
             _ => {

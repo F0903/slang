@@ -24,14 +24,24 @@ pub enum OpCode {
     Return,
 }
 
+impl OpCode {
+    pub const fn to_code(self) -> u8 {
+        unsafe { std::mem::transmute(self) }
+    }
+
+    pub const fn from_code(code: u8) -> Self {
+        unsafe { std::mem::transmute(code) }
+    }
+}
+
 impl From<u8> for OpCode {
     fn from(value: u8) -> Self {
-        unsafe { std::mem::transmute(value) }
+        Self::from_code(value)
     }
 }
 
 impl From<OpCode> for u8 {
     fn from(value: OpCode) -> Self {
-        unsafe { std::mem::transmute(value) }
+        value.to_code()
     }
 }

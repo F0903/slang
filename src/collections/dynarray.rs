@@ -204,10 +204,11 @@ impl<T: std::fmt::Debug> GrowArray for DynArray<T> {
     }
 }
 
-// Specialization to make string conversion easier
+// Specialization to make string conversion and raw byte handling easier
 impl DynArray<u8> {
-    pub fn read_cast<A>(&self, offset: usize) -> &A {
-        unsafe { &*self.data.cast::<A>().add(offset) }
+    pub fn read_cast<A>(&self, byte_offset: usize) -> A {
+        // First offset by n-bytes and then cast
+        unsafe { self.data.add(byte_offset).cast::<A>().read() }
     }
 
     pub fn from_str(str: &str) -> Self {

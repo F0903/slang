@@ -3,7 +3,7 @@ use {
         scanner_error::ScannerError,
         token::{Token, TokenType},
     },
-    std::{fmt::format, ptr::null},
+    std::ptr::null,
 };
 
 type ScannerResult = std::result::Result<Token, ScannerError>;
@@ -20,6 +20,7 @@ const fn is_alpha(ch: u8) -> bool {
     (ch >= b'a' && ch <= b'z') || (ch >= b'A' && ch <= b'Z') || ch == b'_'
 }
 
+//TODO: Own the source buffer directly or a ref to it
 pub struct Scanner {
     start: *const u8,
     current: *const u8,
@@ -102,7 +103,6 @@ impl Scanner {
                 b'\n' => {
                     self.line += 1;
                     self.get_and_advance();
-                    break;
                 }
                 b'?' => {
                     // Skip comments
@@ -203,15 +203,6 @@ impl Scanner {
         self.make_token(typ)
     }
 
-    fn skip_comment(&mut self) {
-        loop {
-            let current = self.get_and_advance();
-            if current == b'\n' {
-                break;
-            }
-        }
-    }
-
     pub fn scan(&mut self) -> ScannerResult {
         self.skip_whitespace();
         self.start = self.current;
@@ -222,9 +213,7 @@ impl Scanner {
 
         let ch = self.get_and_advance();
 
-        if ch == b'?' {
-            self.skip_comment()
-        } else if is_alpha(ch) {
+        if is_alpha(ch) {
             return self.identifier();
         } else if is_digit(ch) {
             return self.number();

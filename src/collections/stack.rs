@@ -22,26 +22,33 @@ where
         self.count
     }
 
-    pub fn push(&mut self, val: T) {
-        dbg_println!("Pushing to stack: {:?}", val);
+    pub const fn push(&mut self, val: T) {
         self.stack[self.count].write(val);
         self.count += 1;
     }
 
-    pub fn get_top_mut_ref(&mut self) -> &mut T {
-        unsafe { self.stack[self.count - 1].assume_init_mut() }
+    const fn get_top(&self, offset_from_top: usize) -> &MaybeUninit<T> {
+        &self.stack[self.count - 1 - offset_from_top]
     }
 
-    pub fn pop(&mut self) -> T {
+    const fn get_top_mut(&mut self, offset_from_top: usize) -> &mut MaybeUninit<T> {
+        &mut self.stack[self.count - 1 - offset_from_top]
+    }
+
+    pub const fn get_top_mut_ref(&mut self) -> &mut T {
+        unsafe { self.get_top_mut(0).assume_init_mut() }
+    }
+
+    pub const fn pop(&mut self) -> T {
         unsafe {
-            let val = self.stack[self.count - 1].assume_init_read();
+            let val = self.get_top(0).assume_init_read();
             self.count -= 1;
             val
         }
     }
 
     pub const fn peek(&self, distance: usize) -> &T {
-        unsafe { self.stack[self.count - distance].assume_init_ref() }
+        unsafe { self.get_top(distance).assume_init_ref() }
     }
 }
 
