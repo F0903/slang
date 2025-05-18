@@ -40,6 +40,7 @@ where
     }
 
     pub const fn pop(&mut self) -> T {
+        debug_assert!(self.count > 0, "count must be higher than 0");
         unsafe {
             let val = self.get_top(0).assume_init_read();
             self.count -= 1;

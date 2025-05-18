@@ -2,5 +2,3 @@
 pub trait Dealloc {
     fn dealloc(&mut self);
 }
-
-impl<T: Drop> !Dealloc for T {}

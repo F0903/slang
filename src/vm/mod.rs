@@ -276,5 +276,6 @@ impl Vm {
 impl Drop for Vm {
     fn drop(&mut self) {
         self.free_objects();
+        self.heap.dealloc();
     }
 }

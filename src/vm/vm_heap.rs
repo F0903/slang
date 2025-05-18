@@ -1,21 +1,38 @@
 use crate::{
     collections::HashTable,
     dbg_println,
+    memory::Dealloc,
     value::{
         Value,
-        object::{ObjectManager, StringObject},
+        object::{InternedString, ObjectManager},
     },
 };
 
 pub struct VmHeap {
     pub objects: ObjectManager,
-    pub interned_strings: HashTable<StringObject>,
+    pub interned_strings: HashTable<InternedString>,
     pub globals: HashTable<Value>,
+}
+
+impl VmHeap {
+    fn dealloc_interned_strings(&mut self) {
+        for bucket in self.interned_strings.get_raw_data().memory_iter() {
+            let bucket = unsafe { bucket.assume_init_read() };
+            let entry = bucket.entry;
+            match entry {
+                Some(mut entry) => {
+                    entry.key.dealloc();
+                }
+                None => (),
+            }
+        }
+    }
 }
 
 impl Drop for VmHeap {
     fn drop(&mut self) {
         dbg_println!("DEBUG DROP VMHEAP");
+        self.dealloc_interned_strings();
     }
 }
 

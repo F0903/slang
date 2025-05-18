@@ -9,12 +9,12 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct StringObject {
+pub struct InternedString {
     char_buf: HeapPtr<DynArray<u8>>,
     hash: u32,
 }
 
-impl StringObject {
+impl InternedString {
     pub const fn as_slice(&self) -> &[u8] {
         self.char_buf.get().as_slice()
     }
@@ -60,7 +60,7 @@ impl StringObject {
         }
     }
 
-    pub fn concat(&self, other: &StringObject, heap: &mut VmHeap) -> Self {
+    pub fn concat(&self, other: &InternedString, heap: &mut VmHeap) -> Self {
         let mut new_char_buf =
             DynArray::new_with_cap(self.char_buf.get_count() + other.char_buf.get_count(), None);
         new_char_buf.push_array(&self.char_buf);
@@ -69,7 +69,7 @@ impl StringObject {
     }
 }
 
-impl Clone for StringObject {
+impl Clone for InternedString {
     /// COPIES OF THE STRING WILL POINT TO THE SAME MEMORY
     fn clone(&self) -> Self {
         Self {
@@ -79,21 +79,21 @@ impl Clone for StringObject {
     }
 }
 
-impl Drop for StringObject {
-    fn drop(&mut self) {
-        dbg_println!("DEBUG RAWSTRING DROP: {}", self.get_str());
+impl Dealloc for InternedString {
+    fn dealloc(&mut self) {
+        dbg_println!("DEBUG RAWSTRING DEALLOC: {}", self.get_str());
         self.char_buf.dealloc();
     }
 }
 
-impl PartialEq for StringObject {
+impl PartialEq for InternedString {
     fn eq(&self, other: &Self) -> bool {
         // Since all strings are interned, we can just compare the pointers
         self.char_buf.compare_address(&other.char_buf)
     }
 }
 
-impl Display for StringObject {
+impl Display for InternedString {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.get_str())
     }

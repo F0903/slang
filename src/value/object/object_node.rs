@@ -1,5 +1,5 @@
 use {
-    super::{Object, ObjectManager, StringObject},
+    super::{InternedString, Object, ObjectManager},
     crate::{
         dbg_println,
         memory::{Dealloc, HeapPtr},
@@ -33,7 +33,7 @@ impl ObjectNode {
     // Convinience function to allocate a string object
     pub fn alloc_string(str: &str, heap: &mut VmHeap) -> HeapPtr<Self> {
         Self::alloc(
-            Object::String(StringObject::new(str, heap)),
+            Object::String(InternedString::new(str, heap)),
             &mut heap.objects,
         )
     }

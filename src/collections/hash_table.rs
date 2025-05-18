@@ -1,4 +1,4 @@
-use crate::{hashing::HashMethod, value::object::StringObject};
+use crate::{hashing::HashMethod, value::object::InternedString};
 
 use super::DynArray;
 
@@ -6,14 +6,14 @@ const TABLE_MAX_LOAD: f32 = 0.75;
 
 #[derive(Debug)]
 pub struct Entry<T> {
-    pub key: StringObject,
+    pub key: InternedString,
     pub value: Option<T>,
 }
 
 #[derive(Debug)]
-struct Bucket<T> {
+pub(crate) struct Bucket<T> {
     tombstone: bool,
-    entry: Option<Entry<T>>,
+    pub(crate) entry: Option<Entry<T>>,
 }
 
 pub struct HashTable<T: std::fmt::Debug> {
@@ -28,6 +28,10 @@ impl<T: std::fmt::Debug> HashTable<T> {
                 entry: None,
             })),
         }
+    }
+
+    pub fn get_raw_data(&mut self) -> &mut DynArray<Bucket<T>> {
+        &mut self.data
     }
 
     fn find_bucket(&mut self, hash: u32) -> &mut Bucket<T> {
@@ -91,7 +95,7 @@ impl<T: std::fmt::Debug> HashTable<T> {
 
     //TODO: fix
     // Returns true if the key was inserted, false if it was already present (thus overwritten)
-    pub fn set(&mut self, key: StringObject, value: Option<T>) -> bool {
+    pub fn set(&mut self, key: InternedString, value: Option<T>) -> bool {
         if self.data.get_count() as f32 + 1_f32 > self.data.get_capacity() as f32 * TABLE_MAX_LOAD {
             self.grow();
         }
@@ -114,7 +118,7 @@ impl<T: std::fmt::Debug> HashTable<T> {
         new_key
     }
 
-    pub fn get(&mut self, key: &StringObject) -> Option<&Entry<T>> {
+    pub fn get(&mut self, key: &InternedString) -> Option<&Entry<T>> {
         if self.data.get_count() == 0 {
             return None;
         }
@@ -157,7 +161,7 @@ impl<T: std::fmt::Debug> HashTable<T> {
         entry
     }
 
-    pub fn delete(&mut self, key: &StringObject) -> Option<Entry<T>> {
+    pub fn delete(&mut self, key: &InternedString) -> Option<Entry<T>> {
         self.delete_by_hash(key.get_hash())
     }
 }

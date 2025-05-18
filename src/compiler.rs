@@ -465,6 +465,10 @@ impl<'a> Compiler<'a> {
         }
         self.consume(TokenType::EOF, "Expected end of file.");
 
+        //Temporary None and return ops
+        self.current_chunk
+            .borrow_mut()
+            .add_constant_with_op(Value::none(), self.get_current_line());
         self.current_chunk
             .borrow_mut()
             .write_opcode(OpCode::Return, self.get_current_line());
