@@ -36,7 +36,7 @@ impl Span {
     }
 
     #[cfg(not(debug_assertions))]
-    pub fn get_lexeme<'a>(&self, source: &'a [u8]) -> &'a str {
+    pub fn get_str<'a>(&self, source: &'a [u8]) -> &'a str {
         unsafe { std::str::from_utf8_unchecked(&source[self.start_index..self.end_index]) }
     }
 }
