@@ -16,14 +16,14 @@ use {
     std::{cell::RefCell, rc::Rc},
 };
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+type CompilerResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-type ParseFn<'a> = fn(&mut Compiler<'a>, bool);
+type ParseFn<'a, 'src> = fn(&mut Compiler<'a, 'src>, bool);
 
 #[derive(Debug)]
-struct ParseRule<'a> {
-    prefix: Option<ParseFn<'a>>,
-    infix: Option<ParseFn<'a>>,
+struct ParseRule<'a, 'src> {
+    prefix: Option<ParseFn<'a, 'src>>,
+    infix: Option<ParseFn<'a, 'src>>,
     precedence: Precedence,
 }
 
@@ -36,20 +36,25 @@ macro_rules! define_parse_rule_table {
         v
     }};
 }
-pub struct Compiler<'a> {
-    scanner: Scanner,
+pub struct Compiler<'a, 'src> {
+    current_source: Option<&'src [u8]>,
+    scanner: Scanner<'src>,
     heap: HeapPtr<VmHeap>,
     current_chunk: Rc<RefCell<Chunk>>,
     current: Option<Token>,
     previous: Option<Token>,
     had_error: bool,
     panic_mode: bool,
-    parse_rule_table: DynArray<ParseRule<'a>>,
+    parse_rule_table: DynArray<ParseRule<'a, 'src>>,
 }
 
-impl<'a> Compiler<'a> {
-    pub fn new(scanner: Scanner, heap: HeapPtr<VmHeap>, chunk: Rc<RefCell<Chunk>>) -> Self {
+impl<'a, 'src> Compiler<'a, 'src>
+where
+    'src: 'a,
+{
+    pub fn new(scanner: Scanner<'src>, heap: HeapPtr<VmHeap>, chunk: Rc<RefCell<Chunk>>) -> Self {
         Self {
+            current_source: None,
             scanner,
             heap,
             current_chunk: chunk,
@@ -104,16 +109,12 @@ impl<'a> Compiler<'a> {
         self.current_chunk = chunk;
     }
 
-    fn get_rule(&self, token: TokenType) -> &ParseRule<'a> {
+    fn get_rule(&self, token: TokenType) -> &ParseRule<'a, 'src> {
         self.parse_rule_table.read(token as usize)
     }
 
     pub const fn get_current_line(&self) -> u32 {
         self.scanner.get_current_line()
-    }
-
-    pub fn set_scanner_source(&mut self, source: &[u8]) {
-        self.scanner.set_source(source);
     }
 
     fn error_at_line(&mut self, line: u32, msg: &str) {
@@ -137,7 +138,13 @@ impl<'a> Compiler<'a> {
 
         match token.token_type {
             TokenType::EOF => print!(" at end."),
-            _ => print!(" at '{}'\n\t", token.lexeme),
+            _ => print!(
+                " at '{}'\n\t",
+                match self.current_source {
+                    Some(src) => token.lexeme.get_str(src),
+                    None => "no source available",
+                }
+            ),
         }
         print!("{}", msg);
         print!("\n");
@@ -196,7 +203,9 @@ impl<'a> Compiler<'a> {
 
     fn string(&mut self, _can_assign: bool) {
         let token = self.previous.as_ref().unwrap();
-        let name = &token.lexeme;
+
+        let source = self.current_source.expect("No source set in compiler"); // We can unwrap as this should not be possible outside development
+        let name = token.lexeme.get_str(source);
         let name = &name[1..name.len() - 1]; // Don't include the leading and trailing "
         self.current_chunk.borrow_mut().add_constant_with_op(
             Value::object(ObjectNode::alloc_string(name, &mut self.heap).read()),
@@ -279,6 +288,7 @@ impl<'a> Compiler<'a> {
                 .as_ref()
                 .unwrap_unchecked()
                 .lexeme
+                .get_str(self.current_source.expect("No source set in compiler"))
                 .parse()
                 .unwrap_unchecked()
         };
@@ -381,8 +391,11 @@ impl<'a> Compiler<'a> {
 
     /// Returns the index of the constant.
     fn parse_identifier_constant(&mut self, name_token: &Token) -> u32 {
+        let lexeme = name_token
+            .lexeme
+            .get_str(self.current_source.expect("No source set in compiler"));
         self.current_chunk.borrow_mut().add_constant(Value::object(
-            ObjectNode::alloc_string(&name_token.lexeme, &mut self.heap).read(),
+            ObjectNode::alloc_string(lexeme, &mut self.heap).read(),
         ))
     }
 
@@ -409,8 +422,8 @@ impl<'a> Compiler<'a> {
     }
 
     fn variable(&mut self, can_assign: bool) {
-        let name_token = self.get_previous_token().unwrap();
-        self.parse_named_variable(&name_token.clone(), can_assign);
+        let name_token = self.get_previous_token().cloned().unwrap();
+        self.parse_named_variable(&name_token, can_assign);
     }
 
     fn define_variable(&mut self, global_index: u32) {
@@ -423,8 +436,8 @@ impl<'a> Compiler<'a> {
 
     fn parse_variable(&mut self, error_message: &str) -> u32 {
         self.consume(TokenType::Identifier, error_message);
-        let name_token = self.get_previous_token().unwrap();
-        self.parse_identifier_constant(&name_token.clone())
+        let name_token = self.get_previous_token().cloned().unwrap();
+        self.parse_identifier_constant(&name_token)
     }
 
     fn variable_declaration(&mut self) {
@@ -455,8 +468,9 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    pub fn compile(&mut self, source: &[u8]) -> Result<Rc<RefCell<Chunk>>> {
-        self.set_scanner_source(source);
+    pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<Rc<RefCell<Chunk>>> {
+        self.current_source = Some(source);
+        self.scanner.set_source(source);
         self.set_current_chunk(self.current_chunk.clone());
 
         self.advance();

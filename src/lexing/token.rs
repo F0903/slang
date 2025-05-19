@@ -1,3 +1,5 @@
+use super::span::Span;
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum TokenType {
     LeftParen,
@@ -40,19 +42,18 @@ pub enum TokenType {
     EOF,
 }
 
-//TODO: Make lexeme a &str
 #[derive(Clone, Debug)]
 pub struct Token {
     pub token_type: TokenType,
-    pub lexeme: String,
+    pub lexeme: Span,
     pub line: u32,
 }
 
 impl Token {
-    pub fn new(typ: TokenType, name: impl Into<String>, line: u32) -> Self {
+    pub fn new(token_type: TokenType, lexeme: Span, line: u32) -> Self {
         Self {
-            token_type: typ,
-            lexeme: name.into(),
+            token_type,
+            lexeme,
             line,
         }
     }

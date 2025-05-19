@@ -20,7 +20,7 @@ use {
         },
     },
     interpret_error::InterpretResult,
-    std::{ffi::CString, ptr::null_mut},
+    std::ptr::null_mut,
 };
 
 #[cfg(debug_assertions)]
@@ -95,11 +95,7 @@ impl Vm {
         chunk.get_constant(index as u32)
     }
 
-    pub fn interpret(&mut self, source: impl Into<Vec<u8>>) -> InterpretResult {
-        let source = CString::new(source).map_err(|_| {
-            InterpretError::CompileTime("Could not create a CString from source!".to_owned())
-        })?;
-
+    pub fn interpret<'src>(&mut self, source: &'src [u8]) -> InterpretResult {
         let chunk = Chunk::new();
         let mut compiler = Compiler::new(
             Scanner::new(),
@@ -107,7 +103,7 @@ impl Vm {
             Rc::new(RefCell::new(chunk)),
         );
         let chunk = compiler
-            .compile(source.as_bytes())
+            .compile(source)
             .map_err(|e| InterpretError::CompileTime(e.to_string()))?;
 
         self.ip = chunk.borrow().get_code_ptr();
