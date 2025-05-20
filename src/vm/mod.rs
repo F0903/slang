@@ -77,6 +77,22 @@ impl Vm {
         }
     }
 
+    fn read_byte(&mut self) -> u8 {
+        unsafe {
+            let val = self.ip.read();
+            self.ip = self.ip.add(1);
+            val
+        }
+    }
+
+    fn read_short(&mut self) -> u16 {
+        unsafe {
+            let val = self.ip.cast::<u16>().read();
+            self.ip = self.ip.add(2);
+            val
+        }
+    }
+
     fn read_long(&mut self) -> u32 {
         unsafe {
             let val = self.ip.cast::<u32>().read();
@@ -124,6 +140,21 @@ impl Vm {
             let chunk = &mut chunk.borrow_mut();
             let instruction = self.next_instruction();
             match OpCode::from_code(instruction) {
+                OpCode::SetLocal => {
+                    let slot = self.read_short();
+                    self.stack.set_at(slot as usize, self.stack.peek(0).clone());
+                }
+                OpCode::GetLocal => {
+                    let slot = self.read_short();
+                    // Push the local on top of the stack
+                    self.stack.push(self.stack.get_at(slot as usize));
+                }
+                OpCode::PopN => {
+                    let n = self.read_short();
+                    for _ in 0..n {
+                        self.stack.pop();
+                    }
+                }
                 OpCode::Pop => {
                     self.stack.pop();
                 }
@@ -245,7 +276,7 @@ impl Vm {
                     self.stack.push(Value::boolean(val.is_falsey()));
                 }
                 OpCode::Negate => {
-                    let val = self.stack.get_top_mut_ref();
+                    let val = self.stack.peek_mut(0);
                     *val = (-(*val).clone())?;
                 }
                 OpCode::Return => {

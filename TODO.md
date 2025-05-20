@@ -4,5 +4,6 @@ Current chapter: <https://craftinginterpreters.com/global-variables.html> at "As
 
 - Finish basic rough implementation through the book.
 - String interpolation.
+- Const "variables"
 - Better error handling.
 - Language test suite.

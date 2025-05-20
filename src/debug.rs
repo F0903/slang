@@ -2,23 +2,29 @@ use crate::{chunk::Chunk, opcode::OpCode};
 
 // Each "disassembly function" returns how many byte long its instruction is
 
-fn handle_simple_instr(instruction: &OpCode) -> usize {
+fn simple_instruction(instruction: &OpCode) -> usize {
     print!("{:?}", instruction);
     1
 }
 
-fn _handle_constant_instr(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
+fn constant_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
     let constant_index = chunk.read(offset + 1);
     let constant_value = chunk.get_constant(constant_index as u32);
     print!("{:?} {} = {}", instruction, constant_index, constant_value);
     2
 }
 
-fn handle_constant_long_instr(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
+fn constant_long_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
     let constant_index = chunk.read_long(offset + 1);
     let constant_value = chunk.get_constant(constant_index);
     print!("{:?} {} = {}", instruction, constant_index, constant_value);
     5
+}
+
+fn byte_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
+    let arg = chunk.read(offset + 1);
+    print!("{:?}[{:?}]", instruction, arg);
+    2
 }
 
 pub fn disassemble_instruction(chunk: &mut Chunk, offset: usize) -> usize {
@@ -34,8 +40,11 @@ pub fn disassemble_instruction(chunk: &mut Chunk, offset: usize) -> usize {
     let instruction = chunk.read(offset);
     let opcode = instruction.into();
     let inst_offset = match opcode {
+        OpCode::PopN | OpCode::GetLocal | OpCode::SetLocal => {
+            byte_instruction(&opcode, chunk, offset)
+        }
         OpCode::DefineGlobal | OpCode::SetGlobal | OpCode::GetGlobal | OpCode::Constant => {
-            handle_constant_long_instr(&opcode, chunk, offset)
+            constant_long_instruction(&opcode, chunk, offset)
         }
         OpCode::Return
         | OpCode::Pop
@@ -53,7 +62,7 @@ pub fn disassemble_instruction(chunk: &mut Chunk, offset: usize) -> usize {
         | OpCode::Add
         | OpCode::Subtract
         | OpCode::Multiply
-        | OpCode::Divide => handle_simple_instr(&opcode),
+        | OpCode::Divide => simple_instruction(&opcode),
     };
     println!();
     inst_offset

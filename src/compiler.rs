@@ -1,13 +1,14 @@
 use {
     crate::{
         chunk::Chunk,
-        collections::DynArray,
+        collections::{DynArray, Stack},
         dbg_println,
         debug::disassemble_chunk,
         lexing::{
             scanner::Scanner,
             token::{Precedence, Token, TokenType},
         },
+        local::Local,
         memory::HeapPtr,
         opcode::OpCode,
         value::{Value, object::ObjectNode},
@@ -15,6 +16,8 @@ use {
     },
     std::{cell::RefCell, rc::Rc},
 };
+
+const LOCAL_SLOTS: usize = 512;
 
 type CompilerResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -37,12 +40,14 @@ macro_rules! define_parse_rule_table {
     }};
 }
 pub struct Compiler<'a, 'src> {
-    current_source: Option<&'src [u8]>,
+    current_source: &'src [u8],
     scanner: Scanner<'src>,
     heap: HeapPtr<VmHeap>,
     current_chunk: Rc<RefCell<Chunk>>,
     current: Option<Token>,
     previous: Option<Token>,
+    locals: Stack<Local, LOCAL_SLOTS>,
+    scope_depth: i32,
     had_error: bool,
     panic_mode: bool,
     parse_rule_table: DynArray<ParseRule<'a, 'src>>,
@@ -54,12 +59,14 @@ where
 {
     pub fn new(scanner: Scanner<'src>, heap: HeapPtr<VmHeap>, chunk: Rc<RefCell<Chunk>>) -> Self {
         Self {
-            current_source: None,
+            current_source: &[],
             scanner,
             heap,
             current_chunk: chunk,
             current: None,
             previous: None,
+            locals: Stack::new(),
+            scope_depth: 0,
             had_error: false,
             panic_mode: false,
             parse_rule_table: define_parse_rule_table! {
@@ -113,6 +120,10 @@ where
         self.parse_rule_table.read(token as usize)
     }
 
+    pub const fn get_current_source(&self) -> &'src [u8] {
+        self.current_source
+    }
+
     pub const fn get_current_line(&self) -> u32 {
         self.scanner.get_current_line()
     }
@@ -140,10 +151,7 @@ where
             TokenType::EOF => print!(" at end."),
             _ => print!(
                 " at '{}'\n\t",
-                match self.current_source {
-                    Some(src) => token.lexeme.get_str(src),
-                    None => "no source available",
-                }
+                token.lexeme.get_str(self.get_current_source())
             ),
         }
         print!("{}", msg);
@@ -204,7 +212,7 @@ where
     fn string(&mut self, _can_assign: bool) {
         let token = self.previous.as_ref().unwrap();
 
-        let source = self.current_source.expect("No source set in compiler"); // We can unwrap as this should not be possible outside development
+        let source = self.get_current_source();
         let name = token.lexeme.get_str(source);
         let name = &name[1..name.len() - 1]; // Don't include the leading and trailing "
         self.current_chunk.borrow_mut().add_constant_with_op(
@@ -288,7 +296,7 @@ where
                 .as_ref()
                 .unwrap_unchecked()
                 .lexeme
-                .get_str(self.current_source.expect("No source set in compiler"))
+                .get_str(self.get_current_source())
                 .parse()
                 .unwrap_unchecked()
         };
@@ -384,60 +392,174 @@ where
             .write_opcode(OpCode::Pop, self.get_current_line());
     }
 
+    fn block(&mut self) {
+        while !self.matches_current_token(TokenType::RightBrace)
+            && !self.matches_current_token(TokenType::EOF)
+        {
+            self.declaration();
+        }
+
+        self.consume(TokenType::RightBrace, "Expected '}' after block.");
+    }
+
+    fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    fn end_scope(&mut self) {
+        self.scope_depth -= 1;
+
+        // Pop all locals in scope
+        let mut chunk = self.current_chunk.borrow_mut();
+        let mut locals_to_pop = 0;
+        while self.locals.count() > 0 && self.locals.peek(0).depth > self.scope_depth {
+            locals_to_pop += 1;
+            self.locals.pop();
+        }
+        if locals_to_pop > 0 {
+            chunk.write_opcode_with_short_arg(OpCode::PopN, locals_to_pop, self.get_current_line());
+        }
+    }
+
     fn statement(&mut self) {
         dbg_println!("\nPARSING STATEMENT");
-        self.expression_statement();
+
+        if self.match_and_advance(TokenType::LeftBrace) {
+            self.begin_scope();
+            self.block();
+            self.end_scope();
+        } else {
+            self.expression_statement();
+        }
     }
 
     /// Returns the index of the constant.
-    fn parse_identifier_constant(&mut self, name_token: &Token) -> u32 {
-        let lexeme = name_token
-            .lexeme
-            .get_str(self.current_source.expect("No source set in compiler"));
+    fn identifier_constant(&mut self, name_token: &Token) -> u32 {
+        let lexeme = name_token.lexeme.get_str(self.get_current_source());
         self.current_chunk.borrow_mut().add_constant(Value::object(
             ObjectNode::alloc_string(lexeme, &mut self.heap).read(),
         ))
     }
 
-    fn parse_named_variable(&mut self, name_token: &Token, can_assign: bool) -> u32 {
-        let index = self.parse_identifier_constant(name_token);
-
-        // If the current token is an '=', then we are assigning instead of getting.
-        if can_assign && self.match_and_advance(TokenType::Equal) {
-            self.expression();
-            self.current_chunk.borrow_mut().write_opcode_with_long_arg(
-                OpCode::SetGlobal,
-                index,
-                name_token.line,
-            );
-        } else {
-            self.current_chunk.borrow_mut().write_opcode_with_long_arg(
-                OpCode::GetGlobal,
-                index,
-                name_token.line,
-            );
+    /// Returns None if no local variable with the name is found.
+    fn resolve_local(&mut self, name_token: &Token) -> Option<u16> {
+        for (i, local) in self.locals.iter().enumerate() {
+            if name_token.lexeme.get_str(self.get_current_source())
+                == local.name.lexeme.get_str(self.get_current_source())
+            {
+                if !local.is_initialized() {
+                    self.error("Can't read uninitialized variable.");
+                }
+                return Some(i as u16);
+            }
         }
 
-        index
+        None
     }
 
+    fn named_variable(&mut self, name_token: &Token, can_assign: bool) -> u32 {
+        enum VariableType {
+            Local,
+            Global,
+        }
+
+        let (slot, get_op, set_op, var_type) = if let Some(slot) = self.resolve_local(&name_token) {
+            (
+                slot as u32,
+                OpCode::GetLocal,
+                OpCode::SetLocal,
+                VariableType::Local,
+            )
+        } else {
+            let slot = self.identifier_constant(name_token);
+            (
+                slot,
+                OpCode::GetGlobal,
+                OpCode::SetGlobal,
+                VariableType::Global,
+            )
+        };
+
+        // If the current token is an '=', then we are assigning instead of getting.
+        let op = if can_assign && self.match_and_advance(TokenType::Equal) {
+            self.expression();
+            set_op
+        } else {
+            get_op
+        };
+
+        match var_type {
+            VariableType::Local => {
+                self.current_chunk.borrow_mut().write_opcode_with_short_arg(
+                    op,
+                    slot as u16,
+                    name_token.line,
+                );
+            }
+            VariableType::Global => {
+                self.current_chunk.borrow_mut().write_opcode_with_long_arg(
+                    op,
+                    slot,
+                    name_token.line,
+                );
+            }
+        }
+
+        slot
+    }
+
+    // Gets called from parse table on a 'let' token
     fn variable(&mut self, can_assign: bool) {
+        let name_token = self
+            .get_previous_token()
+            .cloned()
+            .expect("Unexpected state: no name token for variable.");
+        self.named_variable(&name_token, can_assign);
+    }
+
+    fn add_local(&mut self, name: Token) {
+        if self.locals.count() >= self.locals.stack_size() {
+            self.error("Cannot add local, too many locals in scope!");
+            return;
+        }
+        self.locals.push(Local::new(name, self.scope_depth));
+    }
+
+    fn declare_variable(&mut self) {
+        if self.scope_depth == 0 {
+            return;
+        }
+
+        let name = self
+            .get_previous_token()
+            .cloned()
+            .expect("Unexpected state: no name token for local variable.");
+        self.add_local(name);
+    }
+
+    fn parse_variable(&mut self, error_message: &str) -> u32 {
+        self.consume(TokenType::Identifier, error_message);
+
+        self.declare_variable();
+        if self.scope_depth > 0 {
+            return 0;
+        }
+
         let name_token = self.get_previous_token().cloned().unwrap();
-        self.parse_named_variable(&name_token, can_assign);
+        self.identifier_constant(&name_token)
     }
 
     fn define_variable(&mut self, global_index: u32) {
+        if self.scope_depth > 0 {
+            self.locals.peek_mut(0).depth = self.scope_depth;
+            return;
+        }
+
         self.current_chunk.borrow_mut().write_opcode_with_long_arg(
             OpCode::DefineGlobal,
             global_index,
             self.get_current_line(),
         );
-    }
-
-    fn parse_variable(&mut self, error_message: &str) -> u32 {
-        self.consume(TokenType::Identifier, error_message);
-        let name_token = self.get_previous_token().cloned().unwrap();
-        self.parse_identifier_constant(&name_token)
     }
 
     fn variable_declaration(&mut self) {
@@ -469,7 +591,7 @@ where
     }
 
     pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<Rc<RefCell<Chunk>>> {
-        self.current_source = Some(source);
+        self.current_source = source;
         self.scanner.set_source(source);
         self.set_current_chunk(self.current_chunk.clone());
 

@@ -1,21 +1,23 @@
 use std::{fmt::Debug, mem::MaybeUninit};
 
-use crate::dbg_println;
+use super::stack_iter::StackIter;
 
 pub struct Stack<T, const STACK_SIZE: usize = 1024> {
     stack: [MaybeUninit<T>; STACK_SIZE],
     count: usize,
 }
 
-impl<'a, T, const STACK_SIZE: usize> Stack<T, STACK_SIZE>
-where
-    T: Debug,
-{
+impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
     pub const fn new() -> Self {
+        debug_assert!(STACK_SIZE > 0, "stack size must not be 0");
         Self {
             stack: [const { MaybeUninit::uninit() }; STACK_SIZE],
             count: 0,
         }
+    }
+
+    pub const fn stack_size(&self) -> usize {
+        STACK_SIZE
     }
 
     pub const fn count(&self) -> usize {
@@ -23,33 +25,52 @@ where
     }
 
     pub const fn push(&mut self, val: T) {
+        debug_assert!(self.count < STACK_SIZE, "stack overflow");
         self.stack[self.count].write(val);
         self.count += 1;
     }
 
-    const fn get_top(&self, offset_from_top: usize) -> &MaybeUninit<T> {
-        &self.stack[self.count - 1 - offset_from_top]
+    const fn get(&self, offset_from_top: usize) -> T {
+        debug_assert!(offset_from_top < self.count, "index is out of bounds");
+        unsafe { self.stack[self.count - 1 - offset_from_top].assume_init_read() }
     }
 
-    const fn get_top_mut(&mut self, offset_from_top: usize) -> &mut MaybeUninit<T> {
-        &mut self.stack[self.count - 1 - offset_from_top]
+    const fn get_mut(&mut self, offset_from_top: usize) -> &mut T {
+        debug_assert!(offset_from_top < self.count, "index is out of bounds");
+        unsafe { self.stack[self.count - 1 - offset_from_top].assume_init_mut() }
     }
 
-    pub const fn get_top_mut_ref(&mut self) -> &mut T {
-        unsafe { self.get_top_mut(0).assume_init_mut() }
+    pub const fn get_at(&self, index: usize) -> T {
+        debug_assert!(index < self.count, "index is out of bounds");
+        unsafe { self.stack[index].assume_init_read() }
     }
 
-    pub const fn pop(&mut self) -> T {
-        debug_assert!(self.count > 0, "count must be higher than 0");
+    pub fn set_at(&mut self, index: usize, value: T) {
+        self.stack[index] = MaybeUninit::new(value);
+    }
+
+    pub fn pop(&mut self) -> T {
+        let maybe_init = &mut self.stack[self.count - 1];
+        let val = unsafe { maybe_init.assume_init_read() }; // First duplicate the value
         unsafe {
-            let val = self.get_top(0).assume_init_read();
-            self.count -= 1;
-            val
+            maybe_init.assume_init_drop(); // Then drop the old
         }
+        self.count -= 1;
+        val
     }
 
-    pub const fn peek(&self, distance: usize) -> &T {
-        unsafe { self.get_top(distance).assume_init_ref() }
+    pub const fn peek(&self, offset_from_top: usize) -> &T {
+        debug_assert!(offset_from_top < self.count, "index is out of bounds");
+        unsafe { self.stack[self.count - 1 - offset_from_top].assume_init_ref() }
+    }
+
+    pub const fn peek_mut(&mut self, offset_from_top: usize) -> &mut T {
+        debug_assert!(offset_from_top < self.count, "index is out of bounds");
+        unsafe { self.stack[self.count - 1 - offset_from_top].assume_init_mut() }
+    }
+
+    pub const fn iter<'a>(&'a self) -> StackIter<'a, T, STACK_SIZE> {
+        StackIter::new(self)
     }
 }
 

@@ -11,6 +11,7 @@ mod debug;
 mod encoding;
 mod hashing;
 mod lexing;
+mod local;
 mod memory;
 mod opcode;
 mod utils;

@@ -38,6 +38,10 @@ impl Chunk {
         }
     }
 
+    pub fn write_short(&mut self, short: u16, line_number: u32) {
+        self.write_ptr(&raw const short as *const u8, 2, line_number);
+    }
+
     pub fn write_long(&mut self, long: u32, line_number: u32) {
         self.write_ptr(&raw const long as *const u8, 4, line_number);
     }
@@ -53,6 +57,13 @@ impl Chunk {
 
         self.write(opcode as u8, line_number);
         self.write(arg, line_number);
+    }
+
+    pub fn write_opcode_with_short_arg(&mut self, opcode: OpCode, arg: u16, line_number: u32) {
+        dbg_println!("WRITING OP WITH ARG: {:?} + {:?}", opcode, arg);
+
+        self.write(opcode as u8, line_number);
+        self.write_short(arg, line_number);
     }
 
     pub fn write_opcode_with_long_arg(&mut self, opcode: OpCode, arg: u32, line_number: u32) {
