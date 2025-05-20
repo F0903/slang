@@ -17,7 +17,7 @@ use {
     std::{cell::RefCell, rc::Rc},
 };
 
-const LOCAL_SLOTS: usize = 512;
+const LOCAL_SLOTS: usize = 1024;
 
 type CompilerResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
