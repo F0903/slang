@@ -92,7 +92,7 @@ where
                 TokenType::Identifier   => {prefix: Some(Self::variable), infix: None, precedence: Precedence::None},
                 TokenType::String       => {prefix: Some(Self::string), infix: None, precedence: Precedence::None},
                 TokenType::Number       => {prefix: Some(Self::number), infix: None, precedence: Precedence::None},
-                TokenType::And          => {prefix: None, infix: None, precedence: Precedence::None},
+                TokenType::And          => {prefix: None, infix: Some(Self::and), precedence: Precedence::None},
                 TokenType::Class        => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::Else         => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::False        => {prefix: Some(Self::literal), infix: None, precedence: Precedence::None},
@@ -100,7 +100,7 @@ where
                 TokenType::Fn           => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::If           => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::None         => {prefix: Some(Self::literal), infix: None, precedence: Precedence::None},
-                TokenType::Or           => {prefix: None, infix: None, precedence: Precedence::None},
+                TokenType::Or           => {prefix: None, infix: Some(Self::or), precedence: Precedence::None},
                 TokenType::Return       => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::Super        => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::This         => {prefix: None, infix: None, precedence: Precedence::None},
@@ -126,6 +126,10 @@ where
 
     pub const fn get_current_line(&self) -> u32 {
         self.scanner.get_current_line()
+    }
+
+    fn get_instruction_count(&self) -> usize {
+        self.current_chunk.borrow().get_bytes_count()
     }
 
     fn error_at_line(&mut self, line: u32, msg: &str) {
@@ -179,6 +183,79 @@ where
         self.panic_mode = value;
     }
 
+    /// Convenience function to write an opcode to the current chunk.
+    fn emit_op(&mut self, op: OpCode) {
+        self.current_chunk
+            .borrow_mut()
+            .write_opcode(op, self.get_current_line());
+    }
+
+    /// Convenience function to write an opcode with a u8 arg to the current chunk.
+    fn emit_op_with_byte(&mut self, op: OpCode, arg: u8) {
+        self.current_chunk.borrow_mut().write_opcode_with_byte_arg(
+            op,
+            arg,
+            self.get_current_line(),
+        );
+    }
+
+    /// Convenience function to write an opcode with a u16 arg to the current chunk.
+    fn emit_op_with_double(&mut self, op: OpCode, arg: u16) {
+        self.current_chunk
+            .borrow_mut()
+            .write_opcode_with_double_arg(op, arg, self.get_current_line());
+    }
+
+    /// Convenience function to write an opcode with a u32 arg to the current chunk.
+    fn emit_op_with_quad(&mut self, op: OpCode, arg: u32) {
+        self.current_chunk
+            .borrow_mut()
+            .write_opcode_with_quad(op, arg, self.get_current_line());
+    }
+
+    /// Convenience function to replace the last opcode in the current chunk.
+    fn replace_last_op(&mut self, op: OpCode) {
+        self.current_chunk.borrow_mut().replace_last_op(op);
+    }
+
+    /// Convenience function to write a jump opcode.
+    fn emit_jump(&mut self, op: OpCode, to: u16) {
+        debug_assert!(
+            op == OpCode::Jump || op == OpCode::JumpIfFalse,
+            "non-jump instruction passed to emit_jump"
+        );
+        self.emit_op_with_double(op, to);
+    }
+
+    /// Convenience function to write a jump opcode for backpatching.
+    fn emit_jump_backpatch(&mut self, op: OpCode) -> u32 {
+        self.emit_jump(op, u16::MAX);
+        (self.get_instruction_count() - 2) as u32
+    }
+
+    /// Convenience function to write a jumpback opcode that jumps back to the specified index.
+    fn emit_backjump(&mut self, loop_start: u32) {
+        let offset = self.get_instruction_count() as u32 - loop_start + 2;
+        if offset > u16::MAX as u32 {
+            self.error("Loop body is too large to jump.");
+        }
+        let offset = offset as u16;
+
+        self.emit_op_with_double(OpCode::Backjump, offset);
+    }
+
+    /// Returns constant index
+    fn emit_constant_with_op(&mut self, value: Value) -> u32 {
+        self.current_chunk
+            .borrow_mut()
+            .add_constant_with_op(value, self.get_current_line())
+    }
+
+    /// Returns constant index
+    fn emit_constant(&mut self, value: Value) -> u32 {
+        self.current_chunk.borrow_mut().add_constant(value)
+    }
+
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
         let previous_token_type = unsafe { self.previous.as_ref().unwrap_unchecked().token_type };
@@ -215,10 +292,8 @@ where
         let source = self.get_current_source();
         let name = token.lexeme.get_str(source);
         let name = &name[1..name.len() - 1]; // Don't include the leading and trailing "
-        self.current_chunk.borrow_mut().add_constant_with_op(
-            Value::object(ObjectNode::alloc_string(name, &mut self.heap).read()),
-            token.line,
-        );
+        let value = Value::object(ObjectNode::alloc_string(name, &mut self.heap).read());
+        self.emit_constant_with_op(value);
     }
 
     fn literal(&mut self, _can_assign: bool) {
@@ -228,9 +303,7 @@ where
             TokenType::None => OpCode::None,
             _ => unreachable!(),
         };
-        self.current_chunk
-            .borrow_mut()
-            .write_opcode(op, self.get_current_line());
+        self.emit_op(op);
     }
 
     fn unary(&mut self, _can_assign: bool) {
@@ -244,9 +317,7 @@ where
             _ => return,
         };
 
-        self.current_chunk
-            .borrow_mut()
-            .write_opcode(op, self.get_current_line());
+        self.emit_op(op);
     }
 
     fn binary(&mut self, _can_assign: bool) {
@@ -260,9 +331,7 @@ where
             TokenType::IsNot => OpCode::IsNot,
             TokenType::Is => {
                 if next_token_type == TokenType::Not {
-                    self.current_chunk
-                        .borrow_mut()
-                        .replace_last_op(OpCode::IsNot);
+                    self.replace_last_op(OpCode::IsNot);
                     return;
                 }
                 OpCode::Is
@@ -277,9 +346,7 @@ where
             TokenType::Slash => OpCode::Divide,
             _ => unreachable!(),
         };
-        self.current_chunk
-            .borrow_mut()
-            .write_opcode(op, self.get_current_line());
+        self.emit_op(op);
     }
 
     fn grouping(&mut self, _can_assign: bool) {
@@ -300,10 +367,7 @@ where
                 .parse()
                 .unwrap_unchecked()
         };
-        let line = self.get_current_line();
-        self.current_chunk
-            .borrow_mut()
-            .add_constant_with_op(Value::number(num), line);
+        self.emit_constant_with_op(Value::number(num));
     }
 
     fn advance(&mut self) {
@@ -335,18 +399,18 @@ where
         self.parse_precedence(Precedence::Assignment);
     }
 
-    fn matches_previous_token(&self, token_type: TokenType) -> bool {
+    fn is_previous_token(&self, token_type: TokenType) -> bool {
         self.get_previous_token()
             .map_or(false, |token| token.token_type == token_type)
     }
 
-    fn matches_current_token(&self, token_type: TokenType) -> bool {
+    fn is_current_token(&self, token_type: TokenType) -> bool {
         self.get_current_token()
             .map_or(false, |token| token.token_type == token_type)
     }
 
     fn match_and_advance(&mut self, token_type: TokenType) -> bool {
-        let value = self.matches_current_token(token_type);
+        let value = self.is_current_token(token_type);
         if value {
             self.advance();
         }
@@ -362,8 +426,8 @@ where
     fn synchronize(&mut self) {
         self.set_panic_mode(false);
 
-        while !self.matches_current_token(TokenType::EOF) {
-            if self.matches_previous_token(TokenType::Semicolon) {
+        while !self.is_current_token(TokenType::EOF) {
+            if self.is_previous_token(TokenType::Semicolon) {
                 return;
             }
             match self.get_current_token() {
@@ -387,14 +451,12 @@ where
     fn expression_statement(&mut self) {
         // Parse expression which pushes a value onto the stack, and then pop it off again since this is a statement
         self.expression();
-        self.current_chunk
-            .borrow_mut()
-            .write_opcode(OpCode::Pop, self.get_current_line());
+        self.emit_op(OpCode::Pop);
     }
 
     fn block(&mut self) {
-        while !self.matches_current_token(TokenType::RightBrace)
-            && !self.matches_current_token(TokenType::EOF)
+        while !self.is_current_token(TokenType::RightBrace)
+            && !self.is_current_token(TokenType::EOF)
         {
             self.declaration();
         }
@@ -410,21 +472,100 @@ where
         self.scope_depth -= 1;
 
         // Pop all locals in scope
-        let mut chunk = self.current_chunk.borrow_mut();
         let mut locals_to_pop = 0;
         while self.locals.count() > 0 && self.locals.peek(0).depth > self.scope_depth {
             locals_to_pop += 1;
             self.locals.pop();
         }
         if locals_to_pop > 0 {
-            chunk.write_opcode_with_short_arg(OpCode::PopN, locals_to_pop, self.get_current_line());
+            self.emit_op_with_double(OpCode::PopN, locals_to_pop);
         }
+    }
+
+    fn patch_jump(&mut self, offset: u32) {
+        // -2 to adjust for the bytecode for the jump itself
+        let (code, jump) = {
+            let chunk = self.current_chunk.borrow();
+            (
+                chunk.get_code_ptr(),
+                chunk.get_bytes_count() - offset as usize - 2,
+            )
+        };
+        if jump > u16::MAX as usize {
+            self.error("Jump distance is too far.");
+        }
+        let jump = jump as u16;
+
+        unsafe { code.add(offset as usize).cast::<u16>().write(jump) };
+    }
+
+    fn and(&mut self, _can_assign: bool) {
+        let end_jump = self.emit_jump_backpatch(OpCode::JumpIfFalse);
+
+        self.emit_op(OpCode::Pop);
+        self.parse_precedence(Precedence::And);
+
+        self.patch_jump(end_jump);
+    }
+
+    fn or(&mut self, _can_assign: bool) {
+        let end_jump = self.emit_jump_backpatch(OpCode::JumpIfTrue);
+
+        self.emit_op(OpCode::Pop);
+        self.parse_precedence(Precedence::Or);
+
+        self.patch_jump(end_jump);
+    }
+
+    fn if_statement(&mut self) {
+        self.expression();
+        if !self.is_current_token(TokenType::LeftBrace) {
+            self.error("Missing '{' after if statement.");
+        }
+
+        let then_jump = self.emit_jump_backpatch(OpCode::JumpIfFalse);
+        self.emit_op(OpCode::Pop);
+        self.statement();
+
+        let else_jump = self.emit_jump_backpatch(OpCode::Jump);
+
+        self.patch_jump(then_jump);
+        self.emit_op(OpCode::Pop);
+
+        if self.match_and_advance(TokenType::Else) {
+            if !self.is_current_token(TokenType::LeftBrace) {
+                self.error("Missing '{' after else statement.");
+            }
+            self.statement();
+        }
+        self.patch_jump(else_jump);
+    }
+
+    fn while_statement(&mut self) {
+        let loop_start = self.get_instruction_count() as u32;
+
+        self.expression();
+        if !self.is_current_token(TokenType::LeftBrace) {
+            self.error("Missing '{' after while statement.");
+        }
+
+        let exit_jump = self.emit_jump_backpatch(OpCode::JumpIfFalse);
+        self.emit_op(OpCode::Pop);
+        self.statement();
+        self.emit_backjump(loop_start);
+
+        self.patch_jump(exit_jump);
+        self.emit_op(OpCode::Pop);
     }
 
     fn statement(&mut self) {
         dbg_println!("\nPARSING STATEMENT");
 
-        if self.match_and_advance(TokenType::LeftBrace) {
+        if self.match_and_advance(TokenType::If) {
+            self.if_statement();
+        } else if self.match_and_advance(TokenType::While) {
+            self.while_statement();
+        } else if self.match_and_advance(TokenType::LeftBrace) {
             self.begin_scope();
             self.block();
             self.end_scope();
@@ -436,9 +577,8 @@ where
     /// Returns the index of the constant.
     fn identifier_constant(&mut self, name_token: &Token) -> u32 {
         let lexeme = name_token.lexeme.get_str(self.get_current_source());
-        self.current_chunk.borrow_mut().add_constant(Value::object(
-            ObjectNode::alloc_string(lexeme, &mut self.heap).read(),
-        ))
+        let value = Value::object(ObjectNode::alloc_string(lexeme, &mut self.heap).read());
+        self.emit_constant(value)
     }
 
     /// Returns None if no local variable with the name is found.
@@ -490,18 +630,10 @@ where
 
         match var_type {
             VariableType::Local => {
-                self.current_chunk.borrow_mut().write_opcode_with_short_arg(
-                    op,
-                    slot as u16,
-                    name_token.line,
-                );
+                self.emit_op_with_double(op, slot as u16);
             }
             VariableType::Global => {
-                self.current_chunk.borrow_mut().write_opcode_with_long_arg(
-                    op,
-                    slot,
-                    name_token.line,
-                );
+                self.emit_op_with_quad(op, slot);
             }
         }
 
@@ -555,11 +687,7 @@ where
             return;
         }
 
-        self.current_chunk.borrow_mut().write_opcode_with_long_arg(
-            OpCode::DefineGlobal,
-            global_index,
-            self.get_current_line(),
-        );
+        self.emit_op_with_quad(OpCode::DefineGlobal, global_index);
     }
 
     fn variable_declaration(&mut self) {
@@ -570,9 +698,7 @@ where
         if self.match_and_advance(TokenType::Equal) {
             self.expression();
         } else {
-            self.current_chunk
-                .borrow_mut()
-                .write_opcode(OpCode::None, self.get_current_line());
+            self.emit_op(OpCode::None);
         }
 
         self.define_variable(global_index);
@@ -602,12 +728,8 @@ where
         self.consume(TokenType::EOF, "Expected end of file.");
 
         //Temporary None and return ops
-        self.current_chunk
-            .borrow_mut()
-            .add_constant_with_op(Value::none(), self.get_current_line());
-        self.current_chunk
-            .borrow_mut()
-            .write_opcode(OpCode::Return, self.get_current_line());
+        self.emit_constant_with_op(Value::none());
+        self.emit_op(OpCode::Return);
 
         #[cfg(debug_assertions)]
         if !self.had_error() {

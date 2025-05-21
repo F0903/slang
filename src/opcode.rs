@@ -1,6 +1,10 @@
 #[repr(u8)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum OpCode {
+    Backjump,
+    Jump,
+    JumpIfTrue,
+    JumpIfFalse,
     SetLocal,
     GetLocal,
     Pop,

@@ -31,19 +31,19 @@ impl Chunk {
         self.line_numbers_map.write(line_number);
     }
 
-    pub fn write_ptr(&mut self, bytes: *const u8, count: usize, line_number: u32) {
+    pub fn write_ptr(&mut self, bytes: *const u8, count: usize, line: u32) {
         self.code.push_ptr(bytes, count);
         for _ in 0..count {
-            self.line_numbers_map.write(line_number);
+            self.line_numbers_map.write(line);
         }
     }
 
-    pub fn write_short(&mut self, short: u16, line_number: u32) {
-        self.write_ptr(&raw const short as *const u8, 2, line_number);
+    pub fn write_short(&mut self, short: u16, line: u32) {
+        self.write_ptr(&raw const short as *const u8, 2, line);
     }
 
-    pub fn write_long(&mut self, long: u32, line_number: u32) {
-        self.write_ptr(&raw const long as *const u8, 4, line_number);
+    pub fn write_long(&mut self, long: u32, line: u32) {
+        self.write_ptr(&raw const long as *const u8, 4, line);
     }
 
     pub fn write_opcode(&mut self, opcode: OpCode, line_number: u32) {
@@ -52,39 +52,43 @@ impl Chunk {
         self.write(opcode as u8, line_number)
     }
 
-    pub fn write_opcode_with_arg(&mut self, opcode: OpCode, arg: u8, line_number: u32) {
+    pub fn write_opcode_with_byte_arg(&mut self, opcode: OpCode, arg: u8, line: u32) {
         dbg_println!("WRITING OP WITH ARG: {:?} + {:?}", opcode, arg);
 
-        self.write(opcode as u8, line_number);
-        self.write(arg, line_number);
+        self.write(opcode as u8, line);
+        self.write(arg, line);
     }
 
-    pub fn write_opcode_with_short_arg(&mut self, opcode: OpCode, arg: u16, line_number: u32) {
+    pub fn write_opcode_with_double_arg(&mut self, opcode: OpCode, arg: u16, line: u32) {
         dbg_println!("WRITING OP WITH ARG: {:?} + {:?}", opcode, arg);
 
-        self.write(opcode as u8, line_number);
-        self.write_short(arg, line_number);
+        self.write(opcode as u8, line);
+        self.write_short(arg, line);
     }
 
-    pub fn write_opcode_with_long_arg(&mut self, opcode: OpCode, arg: u32, line_number: u32) {
+    pub fn write_opcode_with_quad(&mut self, opcode: OpCode, arg: u32, line: u32) {
         dbg_println!("WRITING OP WITH LONG ARG: {:?} + {:?}", opcode, arg);
 
-        self.write(opcode as u8, line_number);
-        self.write_long(arg, line_number);
+        self.write(opcode as u8, line);
+        self.write_long(arg, line);
     }
 
-    pub fn read(&self, index: usize) -> u8 {
+    pub fn read_byte(&self, index: usize) -> u8 {
         *self.code.read(index)
+    }
+
+    pub fn read_double(&self, index: usize) -> u16 {
+        self.code.read_cast(index)
+    }
+
+    pub fn read_quad(&self, index: usize) -> u32 {
+        self.code.read_cast(index)
     }
 
     pub fn replace_last_op(&self, new_op: OpCode) {
         dbg_println!("REPLACING LAST OP WITH: {:?}", new_op);
 
         self.code.replace(self.code.get_count() - 1, new_op.into())
-    }
-
-    pub fn read_long(&self, index: usize) -> u32 {
-        self.code.read_cast(index)
     }
 
     pub const fn get_bytes_count(&self) -> usize {

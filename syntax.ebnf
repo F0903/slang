@@ -42,8 +42,9 @@ class-declaration = "class", identifier, "{", { function-declaration }, "}";
 declaration = class-declaration | function-declaration | variable-declaration | statement;
 
 block = "{", declaration, "}";
-if-statement = "if", "(", expression, ")", statement, [ "else", statement ];
-while-statement = "while", "(", expression, ")", statement;
+if-statement = "if", expression, "{", statement, "}", [ "else", "{", statement, "}" ];
+while-statement = "while", expression, "{", statement, "}";
+for-statement = "for", (variable-declaration | expression | ","), [expression, ","], [expression], "{", statement;
 return-statement = "return", [ expression ];
 statement = ( expression | block | if-statement | while-statement | return-statement ), "\n";
 

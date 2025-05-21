@@ -140,6 +140,26 @@ impl Vm {
             let chunk = &mut chunk.borrow_mut();
             let instruction = self.next_instruction();
             match OpCode::from_code(instruction) {
+                OpCode::Backjump => {
+                    let offset = self.read_short();
+                    self.ip = unsafe { self.ip.sub(offset as usize) };
+                }
+                OpCode::Jump => {
+                    let offset = self.read_short();
+                    self.ip = unsafe { self.ip.add(offset as usize) };
+                }
+                OpCode::JumpIfTrue => {
+                    let offset = self.read_short();
+                    if !self.stack.peek(0).is_falsey() {
+                        self.ip = unsafe { self.ip.add(offset as usize) };
+                    }
+                }
+                OpCode::JumpIfFalse => {
+                    let offset = self.read_short();
+                    if self.stack.peek(0).is_falsey() {
+                        self.ip = unsafe { self.ip.add(offset as usize) };
+                    }
+                }
                 OpCode::SetLocal => {
                     let slot = self.read_short();
                     self.stack.set_at(slot as usize, self.stack.peek(0).clone());
