@@ -112,17 +112,17 @@ impl Vm {
     }
 
     pub fn interpret<'src>(&mut self, source: &'src [u8]) -> InterpretResult {
-        let chunk = Chunk::new();
         let mut compiler = Compiler::new(
             Scanner::new(),
             self.heap.clone(),
-            Rc::new(RefCell::new(chunk)),
+            HeapPtr::alloc(Chunk::new()),
         );
-        let chunk = compiler
+        let mut chunk = compiler
             .compile(source)
-            .map_err(|e| InterpretError::CompileTime(e.to_string()))?;
+            .map_err(|e| InterpretError::CompileTime(e.to_string()))?
+            .auto_drop();
 
-        self.ip = chunk.borrow().get_code_ptr();
+        self.ip = chunk.get_code_ptr();
 
         loop {
             #[cfg(debug_assertions)]
@@ -130,14 +130,14 @@ impl Vm {
                 print!("\n");
                 print!("{:?}", &self.stack);
                 unsafe {
-                    let offset = self.ip.offset_from(chunk.borrow().get_code_ptr());
-                    disassemble_instruction(&mut chunk.borrow_mut(), offset as usize);
+                    let offset = self.ip.offset_from(chunk.get_code_ptr());
+                    disassemble_instruction(&mut chunk, offset as usize);
                 }
                 //println!("DEBUG HEAP: {:?}", &self.heap);
                 print!("\t");
             }
 
-            let chunk = &mut chunk.borrow_mut();
+            let chunk = &mut chunk;
             let instruction = self.next_instruction();
             match OpCode::from_code(instruction) {
                 OpCode::Backjump => {

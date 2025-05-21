@@ -2,6 +2,7 @@ use core::panic;
 
 use crate::{collections::DynArray, dbg_println, opcode::OpCode, value::Value};
 
+#[derive(Debug)]
 pub struct Chunk {
     code: DynArray<u8>,
     constants: DynArray<Value>,

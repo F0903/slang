@@ -4,7 +4,7 @@ use std::{
     ptr::{self, null_mut},
 };
 
-use super::dealloc::Dealloc;
+use super::{dealloc::Dealloc, drop_heap_ptr::DropHeapPtr};
 
 // A manual version of Box<T> that REQUIRES YOU TO MANUALLY CALL DEALLOC TO FREE MEMORY
 // This is useful for heap allocated objects that require multiple references to the same object and lowest overhead (thus not using Rc<RefCell<T>> or similar).
@@ -12,11 +12,18 @@ pub struct HeapPtr<T> {
     mem: *mut T,
 }
 
-impl<T> HeapPtr<T> {
+impl<T> HeapPtr<T>
+where
+    T: Debug,
+{
     pub fn alloc(obj: T) -> Self {
         // Using Box::leak is more efficient than manually allocating due to some internal Rust optimizations.
         let mem = Box::leak(Box::new(obj));
         Self { mem }
+    }
+
+    pub const fn auto_drop(self) -> DropHeapPtr<T> {
+        DropHeapPtr::new(self)
     }
 
     pub const fn from_raw(ptr: *mut T) -> Self {
@@ -97,7 +104,7 @@ impl<T> Copy for HeapPtr<T> {}
 
 impl<T> Display for HeapPtr<T>
 where
-    T: Display,
+    T: Display + Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_null() {
@@ -135,7 +142,7 @@ impl<T> DerefMut for HeapPtr<T> {
 
 impl<T> PartialEq for HeapPtr<T>
 where
-    T: PartialEq,
+    T: PartialEq + Debug,
 {
     fn eq(&self, other: &Self) -> bool {
         if self.is_null() && other.is_null() {

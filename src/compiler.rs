@@ -44,7 +44,7 @@ pub struct Compiler<'a, 'src> {
     current_source: &'src [u8],
     scanner: Scanner<'src>,
     heap: HeapPtr<VmHeap>,
-    current_chunk: Rc<RefCell<Chunk>>,
+    current_chunk: HeapPtr<Chunk>,
     current: Option<Token>,
     previous: Option<Token>,
     locals: Stack<Local, LOCAL_SLOTS>,
@@ -58,7 +58,7 @@ impl<'a, 'src> Compiler<'a, 'src>
 where
     'src: 'a,
 {
-    pub fn new(scanner: Scanner<'src>, heap: HeapPtr<VmHeap>, chunk: Rc<RefCell<Chunk>>) -> Self {
+    pub fn new(scanner: Scanner<'src>, heap: HeapPtr<VmHeap>, chunk: HeapPtr<Chunk>) -> Self {
         Self {
             current_source: &[],
             scanner,
@@ -113,7 +113,7 @@ where
         }
     }
 
-    pub fn set_current_chunk(&mut self, chunk: Rc<RefCell<Chunk>>) {
+    pub fn set_current_chunk(&mut self, chunk: HeapPtr<Chunk>) {
         self.current_chunk = chunk;
     }
 
@@ -130,7 +130,7 @@ where
     }
 
     fn get_instruction_count(&self) -> usize {
-        self.current_chunk.borrow().get_bytes_count()
+        self.current_chunk.get_bytes_count()
     }
 
     fn error_at_line(&mut self, line: u32, msg: &str) {
@@ -186,37 +186,32 @@ where
 
     /// Convenience function to write an opcode to the current chunk.
     fn emit_op(&mut self, op: OpCode) {
-        self.current_chunk
-            .borrow_mut()
-            .write_opcode(op, self.get_current_line());
+        let line = self.get_current_line();
+        self.current_chunk.write_opcode(op, line);
     }
 
     /// Convenience function to write an opcode with a u8 arg to the current chunk.
     fn emit_op_with_byte(&mut self, op: OpCode, arg: u8) {
-        self.current_chunk.borrow_mut().write_opcode_with_byte_arg(
-            op,
-            arg,
-            self.get_current_line(),
-        );
+        let line = self.get_current_line();
+        self.current_chunk.write_opcode_with_byte_arg(op, arg, line);
     }
 
     /// Convenience function to write an opcode with a u16 arg to the current chunk.
     fn emit_op_with_double(&mut self, op: OpCode, arg: u16) {
+        let line = self.get_current_line();
         self.current_chunk
-            .borrow_mut()
-            .write_opcode_with_double_arg(op, arg, self.get_current_line());
+            .write_opcode_with_double_arg(op, arg, line);
     }
 
     /// Convenience function to write an opcode with a u32 arg to the current chunk.
     fn emit_op_with_quad(&mut self, op: OpCode, arg: u32) {
-        self.current_chunk
-            .borrow_mut()
-            .write_opcode_with_quad(op, arg, self.get_current_line());
+        let line = self.get_current_line();
+        self.current_chunk.write_opcode_with_quad(op, arg, line);
     }
 
     /// Convenience function to replace the last opcode in the current chunk.
     fn replace_last_op(&mut self, op: OpCode) {
-        self.current_chunk.borrow_mut().replace_last_op(op);
+        self.current_chunk.replace_last_op(op);
     }
 
     /// Convenience function to write a jump opcode.
@@ -248,14 +243,13 @@ where
 
     /// Returns constant index
     fn emit_constant_with_op(&mut self, value: Value) -> u32 {
-        self.current_chunk
-            .borrow_mut()
-            .add_constant_with_op(value, self.get_current_line())
+        let line = self.get_current_line();
+        self.current_chunk.add_constant_with_op(value, line)
     }
 
     /// Returns constant index
     fn emit_constant(&mut self, value: Value) -> u32 {
-        self.current_chunk.borrow_mut().add_constant(value)
+        self.current_chunk.add_constant(value)
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) {
@@ -488,10 +482,9 @@ where
         //TODO: look into strange issue
         // -2 to adjust for the bytecode for the jump itself
         let (code, jump) = {
-            let chunk = self.current_chunk.borrow();
             (
-                chunk.get_code_ptr(),
-                chunk.get_bytes_count() - offset as usize - 2,
+                self.current_chunk.get_code_ptr(),
+                self.current_chunk.get_bytes_count() - offset as usize - 2,
             )
         };
         if jump > u16::MAX as usize {
@@ -777,7 +770,7 @@ where
         }
     }
 
-    pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<Rc<RefCell<Chunk>>> {
+    pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<HeapPtr<Chunk>> {
         self.current_source = source;
         self.scanner.set_source(source);
         self.set_current_chunk(self.current_chunk.clone());
@@ -794,7 +787,7 @@ where
 
         #[cfg(debug_assertions)]
         if !self.had_error() {
-            disassemble_chunk(&mut self.current_chunk.borrow_mut(), "code");
+            disassemble_chunk(&mut self.current_chunk, "code");
         }
 
         if self.had_error() {

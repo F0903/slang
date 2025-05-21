@@ -1,9 +1,10 @@
 mod dealloc;
+mod drop_heap_ptr;
 mod global_alloc;
-mod manual_ptr;
+mod heap_ptr;
 
 pub use dealloc::Dealloc;
-pub use manual_ptr::HeapPtr;
+pub use heap_ptr::HeapPtr;
 
 use std::{
     alloc::{GlobalAlloc, Layout, System, handle_alloc_error},
