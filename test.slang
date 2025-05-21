@@ -1,5 +1,5 @@
 ? comment
 
-let a = 2
-let b = 4
-a = 2 + b
+for let a = 0, a < 5, a = a + 1 {
+    let b = 0
+}

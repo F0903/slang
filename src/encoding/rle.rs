@@ -3,6 +3,7 @@ use {
     crate::{collections::DynArray, memory::reallocate},
 };
 
+// Not actually sure this works at all lol. Needs testing
 pub struct RLE;
 impl Encoding for RLE {
     fn encode(values: *const u8, count: usize) -> DynArray<u8> {

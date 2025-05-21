@@ -16,6 +16,7 @@ impl Local {
     }
 
     pub fn is_initialized(&self) -> bool {
-        self.depth == -1
+        // Uninitialized values have a depth of -1 (used instead of a field to save memory)
+        self.depth > 0
     }
 }

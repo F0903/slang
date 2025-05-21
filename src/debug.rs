@@ -14,7 +14,7 @@ fn constant_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) 
     2
 }
 
-fn constant_long_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
+fn quad_constant_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
     let constant_index = chunk.read_quad(offset + 1);
     let constant_value = chunk.get_constant(constant_index);
     print!("{:?} {} = {}", instruction, constant_index, constant_value);
@@ -27,14 +27,16 @@ fn byte_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> u
     2
 }
 
+fn double_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
+    let arg = chunk.read_double(offset + 1);
+    print!("{:?}[{:?}]", instruction, arg);
+    3
+}
+
 fn jump_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize, sign: isize) -> usize {
     let jump = chunk.read_double(offset + 1);
-    print!(
-        "{:?} {:?} -> {:?}",
-        instruction,
-        offset,
-        offset + 3 + (sign * jump as isize) as usize
-    );
+    let destination = offset as isize + 3 + (sign * jump as isize);
+    print!("{:?} {:?} -> {:?}", instruction, offset, destination);
     3
 }
 
@@ -56,10 +58,10 @@ pub fn disassemble_instruction(chunk: &mut Chunk, offset: usize) -> usize {
             jump_instruction(&opcode, chunk, offset, 1)
         }
         OpCode::PopN | OpCode::GetLocal | OpCode::SetLocal => {
-            byte_instruction(&opcode, chunk, offset)
+            double_instruction(&opcode, chunk, offset)
         }
         OpCode::DefineGlobal | OpCode::SetGlobal | OpCode::GetGlobal | OpCode::Constant => {
-            constant_long_instruction(&opcode, chunk, offset)
+            quad_constant_instruction(&opcode, chunk, offset)
         }
         OpCode::Return
         | OpCode::Pop

@@ -85,7 +85,7 @@ impl Vm {
         }
     }
 
-    fn read_short(&mut self) -> u16 {
+    fn read_double(&mut self) -> u16 {
         unsafe {
             let val = self.ip.cast::<u16>().read();
             self.ip = self.ip.add(2);
@@ -93,7 +93,7 @@ impl Vm {
         }
     }
 
-    fn read_long(&mut self) -> u32 {
+    fn read_quad(&mut self) -> u32 {
         unsafe {
             let val = self.ip.cast::<u32>().read();
             self.ip = self.ip.add(4);
@@ -101,8 +101,8 @@ impl Vm {
         }
     }
 
-    fn read_constant_long<'a>(&mut self, chunk: &'a mut Chunk) -> &'a Value {
-        let index = self.read_long();
+    fn read_constant_quad<'a>(&mut self, chunk: &'a mut Chunk) -> &'a Value {
+        let index = self.read_quad();
         chunk.get_constant(index)
     }
 
@@ -134,43 +134,46 @@ impl Vm {
                     disassemble_instruction(&mut chunk.borrow_mut(), offset as usize);
                 }
                 //println!("DEBUG HEAP: {:?}", &self.heap);
-                print!("\t")
+                print!("\t");
             }
 
             let chunk = &mut chunk.borrow_mut();
             let instruction = self.next_instruction();
             match OpCode::from_code(instruction) {
                 OpCode::Backjump => {
-                    let offset = self.read_short();
+                    let offset = self.read_double();
                     self.ip = unsafe { self.ip.sub(offset as usize) };
                 }
                 OpCode::Jump => {
-                    let offset = self.read_short();
+                    let offset = self.read_double();
                     self.ip = unsafe { self.ip.add(offset as usize) };
                 }
                 OpCode::JumpIfTrue => {
-                    let offset = self.read_short();
+                    let offset = self.read_double();
                     if !self.stack.peek(0).is_falsey() {
                         self.ip = unsafe { self.ip.add(offset as usize) };
                     }
                 }
                 OpCode::JumpIfFalse => {
-                    let offset = self.read_short();
+                    let offset = self.read_double();
                     if self.stack.peek(0).is_falsey() {
                         self.ip = unsafe { self.ip.add(offset as usize) };
                     }
                 }
                 OpCode::SetLocal => {
-                    let slot = self.read_short();
-                    self.stack.set_at(slot as usize, self.stack.peek(0).clone());
+                    let slot = self.read_double();
+                    let value = self.stack.peek(0).clone();
+                    dbg_println!("SETTING LOCAL {} = {}", slot, value);
+                    self.stack.set_at(slot as usize, value);
                 }
                 OpCode::GetLocal => {
-                    let slot = self.read_short();
-                    // Push the local on top of the stack
-                    self.stack.push(self.stack.get_at(slot as usize));
+                    let slot = self.read_double();
+                    let local = self.stack.get_at(slot as usize);
+                    dbg_println!("GETTING LOCAL {} = {}", slot, local);
+                    self.stack.push(local);
                 }
                 OpCode::PopN => {
-                    let n = self.read_short();
+                    let n = self.read_double();
                     for _ in 0..n {
                         self.stack.pop();
                     }
@@ -179,7 +182,7 @@ impl Vm {
                     self.stack.pop();
                 }
                 OpCode::SetGlobal => {
-                    let name_value = self.read_constant_long(chunk);
+                    let name_value = self.read_constant_quad(chunk);
                     let name_object = unsafe { name_value.as_object_ptr().assume_init() };
                     let name_object_string = match name_object.get_object() {
                         Object::String(s) => s.clone(),
@@ -200,7 +203,7 @@ impl Vm {
                     }
                 }
                 OpCode::GetGlobal => {
-                    let name_value = self.read_constant_long(chunk);
+                    let name_value = self.read_constant_quad(chunk);
                     let name_object = unsafe { name_value.as_object_ptr().assume_init() };
                     let name_object_string = match name_object.get_object() {
                         Object::String(s) => s.clone(),
@@ -230,7 +233,7 @@ impl Vm {
                     }
                 }
                 OpCode::DefineGlobal => {
-                    let name_value = self.read_constant_long(chunk);
+                    let name_value = self.read_constant_quad(chunk);
                     let name_object = unsafe { name_value.as_object_ptr().assume_init() };
                     let name_object_string = match name_object.get_object() {
                         Object::String(s) => s.clone(),
@@ -247,7 +250,7 @@ impl Vm {
                     self.stack.pop();
                 }
                 OpCode::Constant => {
-                    let constant = self.read_constant_long(chunk);
+                    let constant = self.read_constant_quad(chunk);
                     dbg_println!("PUSHING CONSTANT: {}", constant);
                     self.stack.push(constant.clone());
                 }

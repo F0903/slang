@@ -17,6 +17,7 @@ use {
     std::{cell::RefCell, rc::Rc},
 };
 
+const JUMP_BYTES: usize = 3; // 1 byte for opcode, 2 for arg
 const LOCAL_SLOTS: usize = 1024;
 
 type CompilerResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -230,12 +231,13 @@ where
     /// Convenience function to write a jump opcode for backpatching.
     fn emit_jump_backpatch(&mut self, op: OpCode) -> u32 {
         self.emit_jump(op, u16::MAX);
-        (self.get_instruction_count() - 2) as u32
+        // We subtract JUMP_BYTES - 1 to get the index of the opcode destination bytes
+        (self.get_instruction_count() - (JUMP_BYTES - 1)) as u32
     }
 
     /// Convenience function to write a jumpback opcode that jumps back to the specified index.
     fn emit_backjump(&mut self, loop_start: u32) {
-        let offset = self.get_instruction_count() as u32 - loop_start + 2;
+        let offset = self.get_instruction_count() as u32 - loop_start + JUMP_BYTES as u32;
         if offset > u16::MAX as u32 {
             self.error("Loop body is too large to jump.");
         }
@@ -483,6 +485,7 @@ where
     }
 
     fn patch_jump(&mut self, offset: u32) {
+        //TODO: look into strange issue
         // -2 to adjust for the bytecode for the jump itself
         let (code, jump) = {
             let chunk = self.current_chunk.borrow();
@@ -558,11 +561,69 @@ where
         self.emit_op(OpCode::Pop);
     }
 
+    fn for_statement(&mut self) {
+        self.begin_scope();
+
+        // Compile optional variable declaration
+        if self.match_and_advance(TokenType::Comma) {
+            // Hello :)
+            // We don't do anything in this case as these are optional
+        } else if self.match_and_advance(TokenType::Let) {
+            self.variable_declaration();
+            self.consume(
+                TokenType::Comma,
+                "Expected ',' after for variable declaration.",
+            );
+        } else {
+            self.expression_statement();
+        }
+
+        let mut loop_start = self.get_instruction_count();
+
+        let mut exit_jump = None;
+
+        // Compile optional conditional
+        if !self.is_current_token(TokenType::Comma) {
+            self.expression();
+            self.consume(TokenType::Comma, "Expected ','.");
+
+            exit_jump = Some(self.emit_jump_backpatch(OpCode::JumpIfFalse));
+            self.emit_op(OpCode::Pop);
+        }
+
+        // Compile optional increment expression
+        if !self.match_and_advance(TokenType::LeftBrace) {
+            let body_jump = self.emit_jump_backpatch(OpCode::Jump);
+            let increment_start = self.get_instruction_count();
+            self.expression();
+            self.emit_op(OpCode::Pop);
+
+            if !self.is_current_token(TokenType::LeftBrace) {
+                self.error("Expected '{' after for clauses.");
+            }
+
+            self.emit_backjump(loop_start as u32);
+            loop_start = increment_start;
+            self.patch_jump(body_jump);
+        }
+
+        self.statement();
+
+        self.emit_backjump(loop_start as u32);
+        if let Some(exit_jump) = exit_jump {
+            self.patch_jump(exit_jump);
+            self.emit_op(OpCode::Pop);
+        }
+        self.end_scope();
+    }
+
     fn statement(&mut self) {
         dbg_println!("\nPARSING STATEMENT");
 
         if self.match_and_advance(TokenType::If) {
             self.if_statement();
+        } else if self.match_and_advance(TokenType::For) {
+            self.for_statement();
         } else if self.match_and_advance(TokenType::While) {
             self.while_statement();
         } else if self.match_and_advance(TokenType::LeftBrace) {
@@ -683,7 +744,7 @@ where
 
     fn define_variable(&mut self, global_index: u32) {
         if self.scope_depth > 0 {
-            self.locals.peek_mut(0).depth = self.scope_depth;
+            self.locals.peek_mut(0).initialize(self.scope_depth);
             return;
         }
 
@@ -693,7 +754,7 @@ where
     fn variable_declaration(&mut self) {
         dbg_println!("\nPARSING VARIABLE DECL");
 
-        let global_index = self.parse_variable("Expected variable name.");
+        let slot = self.parse_variable("Expected variable name.");
 
         if self.match_and_advance(TokenType::Equal) {
             self.expression();
@@ -701,7 +762,7 @@ where
             self.emit_op(OpCode::None);
         }
 
-        self.define_variable(global_index);
+        self.define_variable(slot);
     }
 
     fn declaration(&mut self) {
@@ -736,7 +797,6 @@ where
             disassemble_chunk(&mut self.current_chunk.borrow_mut(), "code");
         }
 
-        self.current_chunk.borrow_mut().encode();
         if self.had_error() {
             Err("Parser encountered errors!".into())
         } else {

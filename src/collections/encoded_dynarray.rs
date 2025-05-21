@@ -1,43 +1,44 @@
 use {super::DynArray, crate::encoding::Encoding};
 
-pub struct EncodedDynArray<E>
+//TODO: Redo this whole thing
+pub struct EncodedDynArray<T, E>
 where
+    T: std::fmt::Debug,
     E: Encoding,
 {
+    _actual_type: std::marker::PhantomData<T>,
     _encoding: std::marker::PhantomData<E>,
-    array: DynArray<u8>,
+    data: DynArray<T>,
     encoded: bool,
 }
 
-impl<E> EncodedDynArray<E>
+impl<T, E> EncodedDynArray<T, E>
 where
+    T: std::fmt::Debug,
     E: Encoding,
 {
     pub fn new() -> Self {
         Self {
+            _actual_type: std::marker::PhantomData,
             _encoding: std::marker::PhantomData,
-            array: DynArray::new(None),
+            data: DynArray::new(None),
             encoded: false,
         }
     }
 
     pub const fn get_count(&self) -> usize {
-        self.array.get_count()
+        self.data.get_count()
     }
 
     pub const fn get_capacity(&self) -> usize {
-        self.array.get_capacity()
+        self.data.get_capacity()
     }
 
-    pub fn write(&mut self, val: u32) {
-        self.write_ptr((&raw const val).cast(), 4);
-    }
-
-    pub fn write_ptr(&mut self, val: *const u8, count: usize) {
+    pub fn write(&mut self, val: T) {
         if self.encoded {
             self.decode_all();
         }
-        self.array.push_ptr(val, count);
+        self.data.push(val);
     }
 
     pub fn encode_all(&mut self) {
@@ -46,9 +47,10 @@ where
         }
 
         let mut new_count = self.get_count();
-        let old_data = self.array.get_raw_ptr();
-        let new_data = E::encode_replace(old_data, &mut new_count); // Will dealloc old data
-        self.array.set_backing_data(new_data, new_count, new_count);
+        let old_data = self.data.get_raw_ptr();
+        let new_data = E::encode_replace(old_data.cast(), &mut new_count);
+        self.data
+            .set_backing_data(new_data.cast(), new_count, new_count);
         self.encoded = true;
     }
 
@@ -58,14 +60,20 @@ where
         }
 
         let mut new_count = self.get_count();
-        let old_data = self.array.get_raw_ptr();
-        let new_data = E::decode_replace(old_data, &mut new_count); // Will dealloc old data
-        self.array.set_backing_data(new_data, new_count, new_count);
+        let old_data = self.data.get_raw_ptr();
+        let new_data = E::decode_replace(old_data.cast(), &mut new_count); // Will dealloc old data
+        self.data
+            .set_backing_data(new_data.cast(), new_count, new_count);
         self.encoded = false;
     }
 
-    pub fn read(&mut self, offset: usize) -> u32 {
+    pub fn read(&mut self, index: usize) -> &T {
         self.decode_all();
-        self.array.read_cast(offset)
+        self.data.read(index)
+    }
+
+    pub fn copy_read(&mut self, index: usize) -> T {
+        self.decode_all();
+        self.data.copy_read(index)
     }
 }

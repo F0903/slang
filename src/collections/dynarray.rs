@@ -119,6 +119,10 @@ impl<T: std::fmt::Debug> DynArray<T> {
         self.push_ptr(other.data, other.count)
     }
 
+    pub fn copy_read(&self, index: usize) -> T {
+        unsafe { self.data.add(index).read() }
+    }
+
     pub fn read(&self, index: usize) -> &T {
         unsafe { &*self.data.add(index) }
     }
