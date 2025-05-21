@@ -1,6 +1,4 @@
 #![feature(str_from_raw_parts)]
-#![feature(layout_for_ptr)]
-#![feature(get_mut_unchecked)]
 #![feature(ptr_as_ref_unchecked)]
 #![feature(specialization)]
 

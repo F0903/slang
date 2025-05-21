@@ -6,10 +6,10 @@ static A: AllocWrapper = AllocWrapper;
 struct AllocWrapper;
 unsafe impl GlobalAlloc for AllocWrapper {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        System.alloc(layout)
+        unsafe { System.alloc(layout) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        System.dealloc(ptr, layout)
+        unsafe { System.dealloc(ptr, layout) }
     }
 }

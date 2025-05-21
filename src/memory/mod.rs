@@ -14,18 +14,10 @@ fn allocate<T>(layout: Layout) -> *mut T {
     unsafe { System.alloc(layout).cast() }
 }
 
-fn allocate_t<T>() -> *mut T {
-    allocate(Layout::new::<T>())
-}
-
 fn free<T>(ptr: *mut T, layout: Layout) {
     unsafe {
         System.dealloc(ptr.cast(), layout);
     }
-}
-
-fn free_t<T>(ptr: *mut T) {
-    free(ptr, Layout::new::<T>());
 }
 
 pub fn reallocate<T>(mut ptr: *mut u8, old_cap: usize, new_cap: usize) -> *mut u8 {
