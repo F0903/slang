@@ -64,14 +64,6 @@ impl Vm {
         }
     }
 
-    fn next_instruction(&mut self) -> u8 {
-        unsafe {
-            let val = self.ip.read();
-            self.ip = self.ip.add(1);
-            val
-        }
-    }
-
     fn read_byte(&mut self) -> u8 {
         unsafe {
             let val = self.ip.read();
@@ -96,13 +88,15 @@ impl Vm {
         }
     }
 
+    /// Reads a constant from the chunk with a u32 index.
     fn read_constant_quad<'a>(&mut self, chunk: &'a mut Chunk) -> &'a Value {
         let index = self.read_quad();
         chunk.get_constant(index)
     }
 
+    /// Reads a constant from the chunk with a u8 index.
     fn read_constant<'a>(&mut self, chunk: &'a mut Chunk) -> &'a Value {
-        let index = self.next_instruction();
+        let index = self.read_byte();
         chunk.get_constant(index as u32)
     }
 
@@ -133,7 +127,7 @@ impl Vm {
             }
 
             let chunk = &mut chunk;
-            let instruction = self.next_instruction();
+            let instruction = self.read_byte();
             match OpCode::from_code(instruction) {
                 OpCode::Backjump => {
                     let offset = self.read_double();
