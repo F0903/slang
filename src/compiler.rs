@@ -85,7 +85,6 @@ where
                 TokenType::Not          => {prefix: Some(Self::unary), infix: None, precedence: Precedence::None},
                 TokenType::Equal        => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::Is           => {prefix: None, infix: Some(Self::binary), precedence: Precedence::Equality},
-                TokenType::IsNot        => {prefix: None, infix: Some(Self::binary), precedence: Precedence::Equality},
                 TokenType::Greater      => {prefix: None, infix: Some(Self::binary), precedence: Precedence::Comparison},
                 TokenType::GreaterEqual => {prefix: None, infix: Some(Self::binary), precedence: Precedence::Comparison},
                 TokenType::Less         => {prefix: None, infix: Some(Self::binary), precedence: Precedence::Comparison},
@@ -324,7 +323,6 @@ where
         self.parse_precedence(parse_rule.precedence.add(1));
 
         let op = match operator_type {
-            TokenType::IsNot => OpCode::IsNot,
             TokenType::Is => {
                 if next_token_type == TokenType::Not {
                     self.replace_last_op(OpCode::IsNot);

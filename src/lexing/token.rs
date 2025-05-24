@@ -30,7 +30,6 @@ pub enum TokenType {
     If,
     Is,
     Not,
-    IsNot,
     None,
     Or,
     Return,

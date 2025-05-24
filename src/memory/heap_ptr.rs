@@ -22,7 +22,8 @@ where
         Self { mem }
     }
 
-    pub const fn auto_drop(self) -> DropHeapPtr<T> {
+    /// Automatically deallocates the memory when this pointer is dropped.
+    pub const fn dealloc_on_drop(self) -> DropHeapPtr<T> {
         DropHeapPtr::new(self)
     }
 

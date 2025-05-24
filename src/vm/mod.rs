@@ -120,7 +120,7 @@ impl Vm {
         let mut chunk = compiler
             .compile(source)
             .map_err(|e| InterpretError::CompileTime(e.to_string()))?
-            .auto_drop();
+            .dealloc_on_drop();
 
         self.ip = chunk.get_code_ptr();
 
