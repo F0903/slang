@@ -1,6 +1,5 @@
-use crate::{hashing::HashMethod, value::object::InternedString};
-
 use super::DynArray;
+use crate::{hashing::HashMethod, value::object::InternedString};
 
 const TABLE_MAX_LOAD: f32 = 0.75;
 

@@ -1,4 +1,5 @@
-use {super::DynArray, crate::encoding::Encoding};
+use super::DynArray;
+use crate::encoding::Encoding;
 
 //TODO: Redo this whole thing
 pub struct EncodedDynArray<T, E>

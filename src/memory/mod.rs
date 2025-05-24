@@ -3,13 +3,13 @@ mod drop_heap_ptr;
 mod global_alloc;
 mod heap_ptr;
 
-pub use dealloc::Dealloc;
-pub use heap_ptr::HeapPtr;
-
 use std::{
     alloc::{GlobalAlloc, Layout, System, handle_alloc_error},
     ptr::null_mut,
 };
+
+pub use dealloc::Dealloc;
+pub use heap_ptr::HeapPtr;
 
 fn allocate<T>(layout: Layout) -> *mut T {
     unsafe { System.alloc(layout).cast() }

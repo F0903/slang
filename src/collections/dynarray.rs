@@ -1,8 +1,7 @@
-use {
-    super::{borrowed_ptr_iter::BorrowedIter, owned_ptr_iter::OwnedPtrIter},
-    crate::{dbg_println, memory::reallocate},
-    std::{mem::MaybeUninit, ptr::null_mut},
-};
+use std::{mem::MaybeUninit, ptr::null_mut};
+
+use super::{borrowed_ptr_iter::BorrowedIter, owned_ptr_iter::OwnedPtrIter};
+use crate::{dbg_println, memory::reallocate};
 
 trait GrowArray {
     fn grow_array_to(&mut self, to: usize);

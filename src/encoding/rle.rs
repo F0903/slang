@@ -1,7 +1,5 @@
-use {
-    super::Encoding,
-    crate::{collections::DynArray, memory::reallocate},
-};
+use super::Encoding;
+use crate::{collections::DynArray, memory::reallocate};
 
 // Not actually sure this works at all lol. Needs testing
 pub struct RLE;

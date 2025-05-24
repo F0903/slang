@@ -1,11 +1,10 @@
-use {
-    super::{InternedString, Object, ObjectManager},
-    crate::{
-        dbg_println,
-        memory::{Dealloc, HeapPtr},
-        vm::VmHeap,
-    },
-    std::fmt::{Debug, Display},
+use std::fmt::{Debug, Display};
+
+use super::{InternedString, Object, ObjectManager};
+use crate::{
+    dbg_println,
+    memory::{Dealloc, HeapPtr},
+    vm::VmHeap,
 };
 /// A container for objects that "links" them together as a linked list.
 /// This is used to keep track of all objects in the VM.

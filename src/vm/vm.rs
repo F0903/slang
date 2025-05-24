@@ -1,10 +1,15 @@
-use super::VmHeap;
+use std::ptr::null_mut;
 
+use super::VmHeap;
+#[cfg(debug_assertions)]
+use crate::debug::disassemble_instruction;
 use crate::{
     chunk::Chunk,
     collections::{HashTable, Stack},
     compiler::Compiler,
+    dbg_println,
     error::{Error, Result},
+    lexing::scanner::Scanner,
     memory::{Dealloc, HeapPtr},
     opcode::OpCode,
     value::{
@@ -12,12 +17,6 @@ use crate::{
         object::{Object, ObjectManager, ObjectNode},
     },
 };
-
-use std::ptr::null_mut;
-
-#[cfg(debug_assertions)]
-use crate::debug::disassemble_instruction;
-use crate::{dbg_println, lexing::scanner::Scanner};
 
 macro_rules! binary_op_result {
     ($stack: expr, $op: tt) => {{

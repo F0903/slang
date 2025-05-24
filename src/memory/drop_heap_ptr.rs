@@ -3,9 +3,8 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::dbg_println;
-
 use super::{Dealloc, HeapPtr};
+use crate::dbg_println;
 
 // A wrapper around `HeapPtr` that automatically deallocates the memory when dropped.
 pub struct DropHeapPtr<T: Debug> {

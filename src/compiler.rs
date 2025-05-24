@@ -1,20 +1,19 @@
-use {
-    crate::{
-        chunk::Chunk,
-        collections::{DynArray, Stack},
-        dbg_println,
-        debug::disassemble_chunk,
-        lexing::{
-            scanner::Scanner,
-            token::{Precedence, Token, TokenType},
-        },
-        local::Local,
-        memory::HeapPtr,
-        opcode::OpCode,
-        value::{Value, object::ObjectNode},
-        vm::VmHeap,
+use std::{cell::RefCell, rc::Rc};
+
+use crate::{
+    chunk::Chunk,
+    collections::{DynArray, Stack},
+    dbg_println,
+    debug::disassemble_chunk,
+    lexing::{
+        scanner::Scanner,
+        token::{Precedence, Token, TokenType},
     },
-    std::{cell::RefCell, rc::Rc},
+    local::Local,
+    memory::HeapPtr,
+    opcode::OpCode,
+    value::{Value, object::ObjectNode},
+    vm::VmHeap,
 };
 
 const JUMP_BYTES: usize = 3; // 1 byte for opcode, 2 for arg

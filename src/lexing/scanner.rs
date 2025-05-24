@@ -1,10 +1,9 @@
-use {
-    super::{
-        scanner_error::ScannerError,
-        span::Span,
-        token::{Token, TokenType},
-    },
-    std::ptr::null,
+use std::ptr::null;
+
+use super::{
+    scanner_error::ScannerError,
+    span::Span,
+    token::{Token, TokenType},
 };
 
 type ScannerResult = std::result::Result<Token, ScannerError>;

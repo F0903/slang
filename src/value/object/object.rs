@@ -1,6 +1,7 @@
+use std::fmt::{Debug, Display};
+
 use super::InternedString;
 use crate::memory::Dealloc;
-use std::fmt::{Debug, Display};
 
 pub enum Object {
     String(InternedString),

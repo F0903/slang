@@ -1,6 +1,6 @@
-use crate::collections::DynArray;
-
 pub use rle::RLE;
+
+use crate::collections::DynArray;
 
 mod rle;
 

@@ -17,12 +17,12 @@ mod utils;
 mod value;
 mod vm;
 
-use vm::Vm;
-
 use std::{
     env::args,
     io::{BufRead, Read, Write},
 };
+
+use vm::Vm;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 

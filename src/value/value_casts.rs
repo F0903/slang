@@ -1,5 +1,6 @@
-use super::ObjectNode;
 use std::{fmt::Debug, mem::MaybeUninit};
+
+use super::ObjectNode;
 
 pub(super) union ValueCasts {
     pub(super) boolean: bool,

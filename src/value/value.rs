@@ -1,16 +1,15 @@
-use crate::error::Error;
+use std::{
+    fmt::{Debug, Display},
+    mem::MaybeUninit,
+    ops::{Add, Div, Mul, Neg, Sub},
+};
 
 use super::{
     ValueCasts,
     object::{Object, ObjectNode},
     value_type::ValueType,
 };
-
-use std::{
-    fmt::{Debug, Display},
-    mem::MaybeUninit,
-    ops::{Add, Div, Mul, Neg, Sub},
-};
+use crate::error::Error;
 
 #[derive(Debug, Clone)]
 pub struct Value {
