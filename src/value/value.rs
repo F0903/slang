@@ -1,4 +1,4 @@
-use crate::vm::InterpretError;
+use crate::error::Error;
 
 use super::{
     ValueCasts,
@@ -76,94 +76,66 @@ impl Value {
 }
 
 impl Add for Value {
-    type Output = Result<Value, InterpretError>;
+    type Output = Result<Value, Error>;
 
     fn add(self, rhs: Self) -> Self::Output {
         match self.value_type {
             ValueType::Number => Ok(Value::number(self.as_number() + rhs.as_number())),
-            ValueType::Bool => Err(InterpretError::Runtime(
-                "Cannot add boolean values!".to_owned(),
-            )),
-            ValueType::Object => Err(InterpretError::Runtime(
-                "Cannot add Object types!".to_owned(),
-            )),
-            ValueType::None => Err(InterpretError::Runtime("Cannot add None types!".to_owned())),
+            ValueType::Bool => Err(Error::Runtime("Cannot add boolean values!".to_owned())),
+            ValueType::Object => Err(Error::Runtime("Cannot add Object types!".to_owned())),
+            ValueType::None => Err(Error::Runtime("Cannot add None types!".to_owned())),
         }
     }
 }
 
 impl Sub for Value {
-    type Output = Result<Value, InterpretError>;
+    type Output = Result<Value, Error>;
 
     fn sub(self, rhs: Self) -> Self::Output {
         match self.value_type {
             ValueType::Number => Ok(Value::number(self.as_number() - rhs.as_number())),
-            ValueType::Bool => Err(InterpretError::Runtime(
-                "Cannot subtract boolean values!".to_owned(),
-            )),
-            ValueType::Object => Err(InterpretError::Runtime(
-                "Cannot subtract Object types!".to_owned(),
-            )),
-            ValueType::None => Err(InterpretError::Runtime(
-                "Cannot subtract None types!".to_owned(),
-            )),
+            ValueType::Bool => Err(Error::Runtime("Cannot subtract boolean values!".to_owned())),
+            ValueType::Object => Err(Error::Runtime("Cannot subtract Object types!".to_owned())),
+            ValueType::None => Err(Error::Runtime("Cannot subtract None types!".to_owned())),
         }
     }
 }
 
 impl Mul for Value {
-    type Output = Result<Value, InterpretError>;
+    type Output = Result<Value, Error>;
 
     fn mul(self, rhs: Self) -> Self::Output {
         match self.value_type {
             ValueType::Number => Ok(Value::number(self.as_number() * rhs.as_number())),
-            ValueType::Bool => Err(InterpretError::Runtime(
-                "Cannot multiply boolean values!".to_owned(),
-            )),
-            ValueType::Object => Err(InterpretError::Runtime(
-                "Cannot multiply Object types!".to_owned(),
-            )),
-            ValueType::None => Err(InterpretError::Runtime(
-                "Cannot multiply None types!".to_owned(),
-            )),
+            ValueType::Bool => Err(Error::Runtime("Cannot multiply boolean values!".to_owned())),
+            ValueType::Object => Err(Error::Runtime("Cannot multiply Object types!".to_owned())),
+            ValueType::None => Err(Error::Runtime("Cannot multiply None types!".to_owned())),
         }
     }
 }
 
 impl Div for Value {
-    type Output = Result<Value, InterpretError>;
+    type Output = Result<Value, Error>;
 
     fn div(self, rhs: Self) -> Self::Output {
         match self.value_type {
             ValueType::Number => Ok(Value::number(self.as_number() / rhs.as_number())),
-            ValueType::Bool => Err(InterpretError::Runtime(
-                "Cannot divide boolean values!".to_owned(),
-            )),
-            ValueType::Object => Err(InterpretError::Runtime(
-                "Cannot divide Object types!".to_owned(),
-            )),
-            ValueType::None => Err(InterpretError::Runtime(
-                "Cannot divide None types!".to_owned(),
-            )),
+            ValueType::Bool => Err(Error::Runtime("Cannot divide boolean values!".to_owned())),
+            ValueType::Object => Err(Error::Runtime("Cannot divide Object types!".to_owned())),
+            ValueType::None => Err(Error::Runtime("Cannot divide None types!".to_owned())),
         }
     }
 }
 
 impl Neg for Value {
-    type Output = Result<Value, InterpretError>;
+    type Output = Result<Value, Error>;
 
     fn neg(self) -> Self::Output {
         match self.value_type {
             ValueType::Number => Ok(Value::number(-self.as_number())),
-            ValueType::Bool => Err(InterpretError::Runtime(
-                "Cannot negate boolean values!".to_owned(),
-            )),
-            ValueType::Object => Err(InterpretError::Runtime(
-                "Cannot negate Object types!".to_owned(),
-            )),
-            ValueType::None => Err(InterpretError::Runtime(
-                "Cannot negate None types!".to_owned(),
-            )),
+            ValueType::Bool => Err(Error::Runtime("Cannot negate boolean values!".to_owned())),
+            ValueType::Object => Err(Error::Runtime("Cannot negate Object types!".to_owned())),
+            ValueType::None => Err(Error::Runtime("Cannot negate None types!".to_owned())),
         }
     }
 }

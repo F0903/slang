@@ -8,3 +8,4 @@ edition = "2024"
 [features]
 
 [dependencies]
+thiserror = "2.0.12"

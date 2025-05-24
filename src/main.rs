@@ -7,6 +7,7 @@ mod collections;
 mod compiler;
 mod debug;
 mod encoding;
+mod error;
 mod hashing;
 mod lexing;
 mod local;

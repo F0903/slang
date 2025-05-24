@@ -1,22 +1,19 @@
-use {
-    super::{
-        VmHeap,
-        interpret_error::{InterpretError, InterpretResult},
+use super::VmHeap;
+
+use crate::{
+    chunk::Chunk,
+    collections::{HashTable, Stack},
+    compiler::Compiler,
+    error::{Error, Result},
+    memory::{Dealloc, HeapPtr},
+    opcode::OpCode,
+    value::{
+        Value,
+        object::{Object, ObjectManager, ObjectNode},
     },
-    crate::{
-        chunk::Chunk,
-        collections::{HashTable, Stack},
-        compiler::Compiler,
-        memory::Dealloc,
-        memory::HeapPtr,
-        opcode::OpCode,
-        value::{
-            Value,
-            object::{Object, ObjectManager, ObjectNode},
-        },
-    },
-    std::ptr::null_mut,
 };
+
+use std::ptr::null_mut;
 
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
@@ -100,7 +97,7 @@ impl Vm {
         chunk.get_constant(index as u32)
     }
 
-    pub fn interpret<'src>(&mut self, source: &'src [u8]) -> InterpretResult {
+    pub fn interpret<'src>(&mut self, source: &'src [u8]) -> Result<()> {
         let mut compiler = Compiler::new(
             Scanner::new(),
             self.heap.clone(),
@@ -108,7 +105,7 @@ impl Vm {
         );
         let mut chunk = compiler
             .compile(source)
-            .map_err(|e| InterpretError::CompileTime(e.to_string()))?
+            .map_err(|e| Error::CompileTime(e.to_string()))?
             .dealloc_on_drop();
 
         self.ip = chunk.get_code_ptr();
@@ -185,7 +182,7 @@ impl Vm {
                     {
                         // If the variable did not already exist at this point, return error
                         self.heap.globals.delete(&name_object_string);
-                        return Err(InterpretError::Runtime(format!(
+                        return Err(Error::Runtime(format!(
                             "Undefined variable '{}'",
                             name_object_string
                         )));
@@ -201,7 +198,7 @@ impl Vm {
                     match global {
                         Some(global) => {
                             let global_value = global.value.clone().ok_or_else(|| {
-                                InterpretError::Runtime(format!(
+                                Error::Runtime(format!(
                                     "Variable '{}' had no value",
                                     name_object_string
                                 ))
@@ -214,7 +211,7 @@ impl Vm {
                             self.stack.push(global_value);
                         }
                         None => {
-                            return Err(InterpretError::Runtime(format!(
+                            return Err(Error::Runtime(format!(
                                 "Undefined variable '{}'",
                                 name_object_string
                             )));
