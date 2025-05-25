@@ -2,7 +2,6 @@
 #![feature(ptr_as_ref_unchecked)]
 #![feature(specialization)]
 
-mod chunk;
 mod collections;
 mod compiler;
 mod debug;
@@ -10,9 +9,7 @@ mod encoding;
 mod error;
 mod hashing;
 mod lexing;
-mod local;
 mod memory;
-mod opcode;
 mod utils;
 mod value;
 mod vm;

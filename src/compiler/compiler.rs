@@ -1,7 +1,5 @@
-use std::{cell::RefCell, rc::Rc};
-
+use super::{chunk::Chunk, local::Local};
 use crate::{
-    chunk::Chunk,
     collections::{DynArray, Stack},
     dbg_println,
     debug::disassemble_chunk,
@@ -9,11 +7,9 @@ use crate::{
         scanner::Scanner,
         token::{Precedence, Token, TokenType},
     },
-    local::Local,
     memory::HeapPtr,
-    opcode::OpCode,
     value::{Value, object::ObjectNode},
-    vm::VmHeap,
+    vm::{VmHeap, opcode::OpCode},
 };
 
 const JUMP_BYTES: u32 = 3; // 1 byte for opcode, 2 for arg

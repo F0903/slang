@@ -1,6 +1,6 @@
 use core::panic;
 
-use crate::{collections::DynArray, dbg_println, opcode::OpCode, value::Value};
+use crate::{collections::DynArray, dbg_println, value::Value, vm::opcode::OpCode};
 
 #[derive(Debug)]
 pub struct Chunk {

@@ -1,17 +1,15 @@
 use std::ptr::null_mut;
 
-use super::VmHeap;
+use super::{VmHeap, opcode::OpCode};
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
 use crate::{
-    chunk::Chunk,
     collections::{HashTable, Stack},
-    compiler::Compiler,
+    compiler::{Compiler, chunk::Chunk},
     dbg_println,
     error::{Error, Result},
     lexing::scanner::Scanner,
     memory::{Dealloc, HeapPtr},
-    opcode::OpCode,
     value::{
         Value,
         object::{Object, ObjectManager, ObjectNode},

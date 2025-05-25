@@ -1,6 +1,6 @@
-use crate::{chunk::Chunk, opcode::OpCode};
-
 // Each "disassembly function" returns how many byte long its instruction is
+
+use crate::{compiler::chunk::Chunk, vm::opcode::OpCode};
 
 fn simple_instruction(instruction: &OpCode) -> usize {
     print!("{:?}", instruction);

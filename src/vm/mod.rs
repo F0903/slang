@@ -1,3 +1,4 @@
+pub mod opcode;
 mod vm;
 mod vm_heap;
 
