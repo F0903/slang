@@ -191,7 +191,11 @@ impl<'src> Scanner<'src> {
         unsafe {
             match *self.current_start {
                 b'a' => self.check_keywords(1, &[("nd", TokenType::And)]),
-                b'c' => self.check_keywords(1, &[("lass", TokenType::Class)]),
+                b'b' => self.check_keywords(1, &[("reak", TokenType::Break)]),
+                b'c' => self.check_keywords(
+                    1,
+                    &[("lass", TokenType::Class), ("ontinue", TokenType::Continue)],
+                ),
                 b'e' => self.check_keywords(1, &[("else", TokenType::Else)]),
                 b'f' => self.check_keywords(
                     1,

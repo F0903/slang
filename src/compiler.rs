@@ -16,7 +16,7 @@ use crate::{
     vm::VmHeap,
 };
 
-const JUMP_BYTES: usize = 3; // 1 byte for opcode, 2 for arg
+const JUMP_BYTES: u32 = 3; // 1 byte for opcode, 2 for arg
 const LOCAL_SLOTS: usize = 1024;
 
 type CompilerResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -39,6 +39,17 @@ macro_rules! define_parse_rule_table {
         v
     }};
 }
+
+struct EnclosingLoop {
+    start_jump_index: Option<u32>,
+    exit_jump_index: Option<u32>,
+}
+
+struct JumpIndecies {
+    instruction: u32,
+    argument: u32,
+}
+
 pub struct Compiler<'a, 'src> {
     current_source: &'src [u8],
     scanner: Scanner<'src>,
@@ -48,6 +59,7 @@ pub struct Compiler<'a, 'src> {
     previous: Option<Token>,
     locals: Stack<Local, LOCAL_SLOTS>,
     scope_depth: i32,
+    enclosing_loop: Option<EnclosingLoop>,
     had_error: bool,
     panic_mode: bool,
     parse_rule_table: DynArray<ParseRule<'a, 'src>>,
@@ -67,9 +79,11 @@ where
             previous: None,
             locals: Stack::new(),
             scope_depth: 0,
+            enclosing_loop: None,
             had_error: false,
             panic_mode: false,
             parse_rule_table: define_parse_rule_table! {
+                // REMEMBER TO ADD EVERY NEW TOKEN HERE
                 TokenType::LeftParen    => {prefix: Some(Self::grouping), infix: None, precedence: Precedence::None},
                 TokenType::RightParen   => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::LeftBrace    => {prefix: None, infix: None, precedence: Precedence::None},
@@ -106,6 +120,8 @@ where
                 TokenType::True         => {prefix: Some(Self::literal), infix: None, precedence: Precedence::None},
                 TokenType::Let          => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::While        => {prefix: None, infix: None, precedence: Precedence::None},
+                TokenType::Continue     => {prefix: None, infix: None, precedence: Precedence::None},
+                TokenType::Break        => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::EOF          => {prefix: None, infix: None, precedence: Precedence::None}
             },
         }
@@ -213,30 +229,52 @@ where
     }
 
     /// Convenience function to write a jump opcode.
-    fn emit_jump(&mut self, op: OpCode, to: u16) {
+    fn emit_jump(&mut self, op: OpCode, arg: u32) {
         debug_assert!(
-            op == OpCode::Jump || op == OpCode::JumpIfFalse,
+            op == OpCode::Jump
+                || op == OpCode::JumpIfFalse
+                || op == OpCode::JumpIfTrue
+                || op == OpCode::Backjump,
             "non-jump instruction passed to emit_jump"
         );
-        self.emit_op_with_double(op, to);
+        if arg > u16::MAX as u32 {
+            self.error("Jump distance is too far.");
+        }
+
+        self.emit_op_with_double(op, arg as u16);
     }
 
     /// Convenience function to write a jump opcode for backpatching.
-    fn emit_jump_backpatch(&mut self, op: OpCode) -> u32 {
-        self.emit_jump(op, u16::MAX);
-        // We subtract JUMP_BYTES - 1 to get the index of the opcode destination bytes
-        (self.get_instruction_count() - (JUMP_BYTES - 1)) as u32
+    fn emit_jump_backpatch(&mut self, op: OpCode) -> JumpIndecies {
+        self.emit_jump(op, u16::MAX as u32);
+        let index = self.get_instruction_count() as u32 - JUMP_BYTES;
+        JumpIndecies {
+            instruction: index,
+            argument: index + 1,
+        }
+    }
+
+    /// Function to patch a jump instruction at the specified offset to point to the current instruction.
+    fn patch_jump(&mut self, offset: u32) {
+        let (code, jump) = {
+            (
+                self.current_chunk.get_code_ptr(),
+                self.get_instruction_count() as u32 - offset - (JUMP_BYTES - 1),
+            )
+        };
+
+        if jump > u16::MAX as u32 {
+            self.error("Jump distance is too far.");
+        }
+        let jump = jump as u16;
+
+        unsafe { code.add(offset as usize).cast::<u16>().write(jump) };
     }
 
     /// Convenience function to write a jumpback opcode that jumps back to the specified index.
-    fn emit_backjump(&mut self, loop_start: u32) {
-        let offset = self.get_instruction_count() as u32 - loop_start + JUMP_BYTES as u32;
-        if offset > u16::MAX as u32 {
-            self.error("Loop body is too large to jump.");
-        }
-        let offset = offset as u16;
-
-        self.emit_op_with_double(OpCode::Backjump, offset);
+    fn emit_backjump(&mut self, to: u32) {
+        let backward = self.get_instruction_count() as u32 + JUMP_BYTES - to;
+        self.emit_jump(OpCode::Backjump, backward);
     }
 
     /// Returns constant index
@@ -475,30 +513,13 @@ where
         }
     }
 
-    fn patch_jump(&mut self, offset: u32) {
-        //TODO: look into strange issue
-        // -2 to adjust for the bytecode for the jump itself
-        let (code, jump) = {
-            (
-                self.current_chunk.get_code_ptr(),
-                self.current_chunk.get_bytes_count() - offset as usize - 2,
-            )
-        };
-        if jump > u16::MAX as usize {
-            self.error("Jump distance is too far.");
-        }
-        let jump = jump as u16;
-
-        unsafe { code.add(offset as usize).cast::<u16>().write(jump) };
-    }
-
     fn and(&mut self, _can_assign: bool) {
         let end_jump = self.emit_jump_backpatch(OpCode::JumpIfFalse);
 
         self.emit_op(OpCode::Pop);
         self.parse_precedence(Precedence::And);
 
-        self.patch_jump(end_jump);
+        self.patch_jump(end_jump.argument);
     }
 
     fn or(&mut self, _can_assign: bool) {
@@ -507,7 +528,7 @@ where
         self.emit_op(OpCode::Pop);
         self.parse_precedence(Precedence::Or);
 
-        self.patch_jump(end_jump);
+        self.patch_jump(end_jump.argument);
     }
 
     fn if_statement(&mut self) {
@@ -522,7 +543,7 @@ where
 
         let else_jump = self.emit_jump_backpatch(OpCode::Jump);
 
-        self.patch_jump(then_jump);
+        self.patch_jump(then_jump.argument);
         self.emit_op(OpCode::Pop);
 
         if self.match_and_advance(TokenType::Else) {
@@ -531,7 +552,7 @@ where
             }
             self.statement();
         }
-        self.patch_jump(else_jump);
+        self.patch_jump(else_jump.argument);
     }
 
     fn while_statement(&mut self) {
@@ -544,11 +565,18 @@ where
 
         let exit_jump = self.emit_jump_backpatch(OpCode::JumpIfFalse);
         self.emit_op(OpCode::Pop);
+
+        self.enclosing_loop = Some(EnclosingLoop {
+            start_jump_index: Some(loop_start),
+            exit_jump_index: Some(exit_jump.instruction),
+        });
+
         self.statement();
         self.emit_backjump(loop_start);
 
-        self.patch_jump(exit_jump);
+        self.patch_jump(exit_jump.argument);
         self.emit_op(OpCode::Pop);
+        self.enclosing_loop = None;
     }
 
     fn for_statement(&mut self) {
@@ -570,18 +598,19 @@ where
 
         let mut loop_start = self.get_instruction_count();
 
-        let mut exit_jump = None;
+        // Compile conditional
+        self.expression();
+        self.consume(TokenType::Comma, "Expected ','.");
 
-        // Compile optional conditional
-        if !self.is_current_token(TokenType::Comma) {
-            self.expression();
-            self.consume(TokenType::Comma, "Expected ','.");
+        let exit_jump = self.emit_jump_backpatch(OpCode::JumpIfFalse);
+        self.emit_op(OpCode::Pop);
 
-            exit_jump = Some(self.emit_jump_backpatch(OpCode::JumpIfFalse));
-            self.emit_op(OpCode::Pop);
-        }
+        self.enclosing_loop = Some(EnclosingLoop {
+            start_jump_index: Some(loop_start as u32),
+            exit_jump_index: Some(exit_jump.argument as u32),
+        });
 
-        // Compile optional increment expression
+        // Compile increment expression
         if !self.match_and_advance(TokenType::LeftBrace) {
             let body_jump = self.emit_jump_backpatch(OpCode::Jump);
             let increment_start = self.get_instruction_count();
@@ -594,17 +623,44 @@ where
 
             self.emit_backjump(loop_start as u32);
             loop_start = increment_start;
-            self.patch_jump(body_jump);
+            self.patch_jump(body_jump.argument);
+        } else {
+            self.error("Expected increment expression after conditional in for loop.");
         }
 
         self.statement();
 
         self.emit_backjump(loop_start as u32);
-        if let Some(exit_jump) = exit_jump {
-            self.patch_jump(exit_jump);
-            self.emit_op(OpCode::Pop);
-        }
+        self.patch_jump(exit_jump.argument);
+        self.emit_op(OpCode::Pop);
         self.end_scope();
+        self.enclosing_loop = None;
+    }
+
+    fn continue_statement(&mut self) {
+        if self.enclosing_loop.is_none() {
+            self.error("Cannot use 'continue' outside of a loop.");
+            return;
+        }
+
+        let enclosing_loop = self.enclosing_loop.as_ref().unwrap();
+        if let Some(start_jump) = enclosing_loop.start_jump_index {
+            self.emit_backjump(start_jump);
+        }
+    }
+
+    fn break_statement(&mut self) {
+        if self.enclosing_loop.is_none() {
+            self.error("Cannot use 'break' outside of a loop.");
+            return;
+        }
+
+        let enclosing_loop = self.enclosing_loop.as_ref().unwrap();
+        if let Some(exit_jump) = enclosing_loop.exit_jump_index {
+            // Push false to the stack so the loop condition evaluates to false and exits.
+            self.emit_constant_with_op(Value::boolean(false));
+            self.emit_backjump(exit_jump);
+        }
     }
 
     fn statement(&mut self) {
@@ -612,14 +668,18 @@ where
 
         if self.match_and_advance(TokenType::If) {
             self.if_statement();
-        } else if self.match_and_advance(TokenType::For) {
-            self.for_statement();
-        } else if self.match_and_advance(TokenType::While) {
-            self.while_statement();
         } else if self.match_and_advance(TokenType::LeftBrace) {
             self.begin_scope();
             self.block();
             self.end_scope();
+        } else if self.match_and_advance(TokenType::For) {
+            self.for_statement();
+        } else if self.match_and_advance(TokenType::While) {
+            self.while_statement();
+        } else if self.match_and_advance(TokenType::Continue) {
+            self.continue_statement();
+        } else if self.match_and_advance(TokenType::Break) {
+            self.break_statement();
         } else {
             self.expression_statement();
         }
