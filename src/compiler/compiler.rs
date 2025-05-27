@@ -36,11 +36,13 @@ macro_rules! define_parse_rule_table {
     }};
 }
 
+#[derive(Debug, Clone)]
 struct EnclosingLoop {
-    start_jump_index: Option<u32>,
-    exit_jump_index: Option<u32>,
+    start_jump_index: u32,
+    exit_jump_index: u32,
 }
 
+#[derive(Debug, Clone)]
 struct JumpIndecies {
     instruction: u32,
     argument: u32,
@@ -568,8 +570,8 @@ where
         self.emit_op(OpCode::Pop);
 
         self.enclosing_loop = Some(EnclosingLoop {
-            start_jump_index: Some(loop_start),
-            exit_jump_index: Some(exit_jump.instruction),
+            start_jump_index: loop_start,
+            exit_jump_index: exit_jump.instruction,
         });
 
         self.begin_scope();
@@ -628,8 +630,8 @@ where
         }
 
         self.enclosing_loop = Some(EnclosingLoop {
-            start_jump_index: Some(loop_start as u32),
-            exit_jump_index: Some(exit_jump.instruction as u32),
+            start_jump_index: loop_start as u32,
+            exit_jump_index: exit_jump.instruction as u32,
         });
 
         self.begin_scope();
@@ -645,36 +647,28 @@ where
     }
 
     fn continue_statement(&mut self) {
-        match &self.enclosing_loop {
+        match self.enclosing_loop.clone() {
             None => {
                 self.error("Cannot use 'continue' outside of a loop.");
             }
             Some(enclosing_loop) => {
-                if let Some(start_jump) = enclosing_loop.start_jump_index {
-                    // Make sure we discard current locals or the stack will slowly overflow.
-                    self.end_scope();
-                    self.begin_scope();
-                    self.emit_backjump(start_jump);
-                } else {
-                    self.error("Enclosing loop start index was not set. (compiler bug)");
-                }
+                // Make sure we discard current locals or the stack will slowly overflow.
+                self.end_scope();
+                self.begin_scope();
+                self.emit_backjump(enclosing_loop.start_jump_index);
             }
         }
     }
 
     fn break_statement(&mut self) {
-        match &self.enclosing_loop {
+        match self.enclosing_loop.clone() {
             None => {
                 self.error("Cannot use 'break' outside of a loop.");
             }
             Some(enclosing_loop) => {
-                if let Some(exit_jump) = enclosing_loop.exit_jump_index {
-                    // Push false to the stack so the loop condition evaluates to false and exits.
-                    self.emit_constant_with_op(Value::boolean(false));
-                    self.emit_backjump(exit_jump);
-                } else {
-                    self.error("Enclosing loop exit index was not set. (compiler bug)");
-                }
+                // Push false to the stack so the loop condition evaluates to false and exits.
+                self.emit_constant_with_op(Value::boolean(false));
+                self.emit_backjump(enclosing_loop.exit_jump_index);
             }
         }
     }
