@@ -88,6 +88,7 @@ impl<T: std::fmt::Debug> DynArray<T> {
 
         unsafe {
             self.data.add(index).write(val);
+            self.count += 1;
         }
     }
 
