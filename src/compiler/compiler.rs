@@ -496,6 +496,11 @@ where
     }
 
     fn end_scope(&mut self) {
+        if self.scope_depth <= 0 {
+            self.error("Cannot end scope, no scope is open.");
+            return;
+        }
+
         self.scope_depth -= 1;
 
         // Pop all locals in scope
@@ -555,7 +560,7 @@ where
         let loop_start = self.get_instruction_count() as u32;
 
         self.expression();
-        if !self.is_current_token(TokenType::LeftBrace) {
+        if !self.match_and_advance(TokenType::LeftBrace) {
             self.error("Missing '{' after while statement.");
         }
 
@@ -567,11 +572,14 @@ where
             exit_jump_index: Some(exit_jump.instruction),
         });
 
-        self.statement();
+        self.begin_scope();
+        self.block();
         self.emit_backjump(loop_start);
 
         self.patch_jump(exit_jump.argument);
         self.emit_op(OpCode::Pop);
+        self.end_scope();
+
         self.enclosing_loop = None;
     }
 
@@ -601,21 +609,12 @@ where
         let exit_jump = self.emit_jump_backpatch(OpCode::JumpIfFalse);
         self.emit_op(OpCode::Pop);
 
-        self.enclosing_loop = Some(EnclosingLoop {
-            start_jump_index: Some(loop_start as u32),
-            exit_jump_index: Some(exit_jump.argument as u32),
-        });
-
         // Compile increment expression
         if !self.match_and_advance(TokenType::LeftBrace) {
             let body_jump = self.emit_jump_backpatch(OpCode::Jump);
             let increment_start = self.get_instruction_count();
             self.expression();
             self.emit_op(OpCode::Pop);
-
-            if !self.is_current_token(TokenType::LeftBrace) {
-                self.error("Expected '{' after for clauses.");
-            }
 
             self.emit_backjump(loop_start as u32);
             loop_start = increment_start;
@@ -624,38 +623,59 @@ where
             self.error("Expected increment expression after conditional in for loop.");
         }
 
-        self.statement();
+        if !self.match_and_advance(TokenType::LeftBrace) {
+            self.error("Expected '{' after for clauses.");
+        }
+
+        self.enclosing_loop = Some(EnclosingLoop {
+            start_jump_index: Some(loop_start as u32),
+            exit_jump_index: Some(exit_jump.instruction as u32),
+        });
+
+        self.begin_scope();
+        self.block();
+        self.end_scope();
 
         self.emit_backjump(loop_start as u32);
         self.patch_jump(exit_jump.argument);
         self.emit_op(OpCode::Pop);
         self.end_scope();
+
         self.enclosing_loop = None;
     }
 
     fn continue_statement(&mut self) {
-        if self.enclosing_loop.is_none() {
-            self.error("Cannot use 'continue' outside of a loop.");
-            return;
-        }
-
-        let enclosing_loop = self.enclosing_loop.as_ref().unwrap();
-        if let Some(start_jump) = enclosing_loop.start_jump_index {
-            self.emit_backjump(start_jump);
+        match &self.enclosing_loop {
+            None => {
+                self.error("Cannot use 'continue' outside of a loop.");
+            }
+            Some(enclosing_loop) => {
+                if let Some(start_jump) = enclosing_loop.start_jump_index {
+                    // Make sure we discard current locals or the stack will slowly overflow.
+                    self.end_scope();
+                    self.begin_scope();
+                    self.emit_backjump(start_jump);
+                } else {
+                    self.error("Enclosing loop start index was not set. (compiler bug)");
+                }
+            }
         }
     }
 
     fn break_statement(&mut self) {
-        if self.enclosing_loop.is_none() {
-            self.error("Cannot use 'break' outside of a loop.");
-            return;
-        }
-
-        let enclosing_loop = self.enclosing_loop.as_ref().unwrap();
-        if let Some(exit_jump) = enclosing_loop.exit_jump_index {
-            // Push false to the stack so the loop condition evaluates to false and exits.
-            self.emit_constant_with_op(Value::boolean(false));
-            self.emit_backjump(exit_jump);
+        match &self.enclosing_loop {
+            None => {
+                self.error("Cannot use 'break' outside of a loop.");
+            }
+            Some(enclosing_loop) => {
+                if let Some(exit_jump) = enclosing_loop.exit_jump_index {
+                    // Push false to the stack so the loop condition evaluates to false and exits.
+                    self.emit_constant_with_op(Value::boolean(false));
+                    self.emit_backjump(exit_jump);
+                } else {
+                    self.error("Enclosing loop exit index was not set. (compiler bug)");
+                }
+            }
         }
     }
 
@@ -790,6 +810,7 @@ where
 
     fn define_variable(&mut self, global_index: u32) {
         if self.scope_depth > 0 {
+            dbg_println!("DEFINING LAST DECLARED LOCAL VARIABLE");
             self.locals.peek_mut(0).initialize(self.scope_depth);
             return;
         }

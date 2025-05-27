@@ -10,14 +10,14 @@ fn simple_instruction(instruction: &OpCode) -> usize {
 fn constant_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
     let constant_index = chunk.read_byte(offset + 1);
     let constant_value = chunk.get_constant(constant_index as u32);
-    print!("{:?} {} = {}", instruction, constant_index, constant_value);
+    print!("{:?}[{}] = {}", instruction, constant_index, constant_value);
     2
 }
 
 fn quad_constant_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
     let constant_index = chunk.read_quad(offset + 1);
     let constant_value = chunk.get_constant(constant_index);
-    print!("{:?} {} = {}", instruction, constant_index, constant_value);
+    print!("{:?}[{}] = {}", instruction, constant_index, constant_value);
     5
 }
 
