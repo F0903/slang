@@ -12,7 +12,6 @@ use crate::{
     vm::{VmHeap, opcode::OpCode},
 };
 
-const JUMP_BYTES: u32 = 3; // 1 byte for opcode, 2 for arg
 const LOCAL_SLOTS: usize = 1024;
 
 type CompilerResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -44,8 +43,17 @@ struct EnclosingLoop {
 
 #[derive(Debug, Clone)]
 struct JumpIndecies {
-    instruction: u32,
-    argument: u32,
+    instruction_index: u32,
+}
+
+impl JumpIndecies {
+    const INSTRUCTION_SIZE: u32 = 1; // 1 byte for opcode
+    const ARGUMENT_SIZE: u32 = 2; // 2 bytes for argument
+    const JUMP_SIZE: u32 = Self::INSTRUCTION_SIZE + Self::ARGUMENT_SIZE;
+
+    pub const fn get_argument_index(&self) -> u32 {
+        self.instruction_index + Self::INSTRUCTION_SIZE
+    }
 }
 
 pub struct Compiler<'a, 'src> {
@@ -245,10 +253,9 @@ where
     /// Convenience function to write a jump opcode for backpatching.
     fn emit_jump_backpatch(&mut self, op: OpCode) -> JumpIndecies {
         self.emit_jump(op, u16::MAX as u32);
-        let index = self.get_instruction_count() as u32 - JUMP_BYTES;
+        let index = self.get_instruction_count() as u32 - JumpIndecies::JUMP_SIZE;
         JumpIndecies {
-            instruction: index,
-            argument: index + 1,
+            instruction_index: index,
         }
     }
 
@@ -257,7 +264,7 @@ where
         let (code, jump) = {
             (
                 self.current_chunk.get_code_ptr(),
-                self.get_instruction_count() as u32 - offset - (JUMP_BYTES - 1),
+                self.get_instruction_count() as u32 - offset - (JumpIndecies::ARGUMENT_SIZE),
             )
         };
 
@@ -271,7 +278,7 @@ where
 
     /// Convenience function to write a jumpback opcode that jumps back to the specified index.
     fn emit_backjump(&mut self, to: u32) {
-        let backward = self.get_instruction_count() as u32 + JUMP_BYTES - to;
+        let backward = self.get_instruction_count() as u32 + JumpIndecies::JUMP_SIZE - to;
         self.emit_jump(OpCode::Backjump, backward);
     }
 
@@ -522,7 +529,7 @@ where
         self.emit_op(OpCode::Pop);
         self.parse_precedence(Precedence::And);
 
-        self.patch_jump(end_jump.argument);
+        self.patch_jump(end_jump.get_argument_index());
     }
 
     fn or(&mut self, _can_assign: bool) {
@@ -531,7 +538,7 @@ where
         self.emit_op(OpCode::Pop);
         self.parse_precedence(Precedence::Or);
 
-        self.patch_jump(end_jump.argument);
+        self.patch_jump(end_jump.get_argument_index());
     }
 
     fn if_statement(&mut self) {
@@ -546,7 +553,7 @@ where
 
         let else_jump = self.emit_jump_backpatch(OpCode::Jump);
 
-        self.patch_jump(then_jump.argument);
+        self.patch_jump(then_jump.get_argument_index());
         self.emit_op(OpCode::Pop);
 
         if self.match_and_advance(TokenType::Else) {
@@ -555,7 +562,7 @@ where
             }
             self.statement();
         }
-        self.patch_jump(else_jump.argument);
+        self.patch_jump(else_jump.get_argument_index());
     }
 
     fn while_statement(&mut self) {
@@ -571,14 +578,14 @@ where
 
         self.enclosing_loop = Some(EnclosingLoop {
             start_jump_index: loop_start,
-            exit_jump_index: exit_jump.instruction,
+            exit_jump_index: exit_jump.instruction_index,
         });
 
         self.begin_scope();
         self.block();
         self.emit_backjump(loop_start);
 
-        self.patch_jump(exit_jump.argument);
+        self.patch_jump(exit_jump.get_argument_index());
         self.emit_op(OpCode::Pop);
         self.end_scope();
 
@@ -620,7 +627,7 @@ where
 
             self.emit_backjump(loop_start as u32);
             loop_start = increment_start;
-            self.patch_jump(body_jump.argument);
+            self.patch_jump(body_jump.get_argument_index());
         } else {
             self.error("Expected increment expression after conditional in for loop.");
         }
@@ -631,7 +638,7 @@ where
 
         self.enclosing_loop = Some(EnclosingLoop {
             start_jump_index: loop_start as u32,
-            exit_jump_index: exit_jump.instruction as u32,
+            exit_jump_index: exit_jump.instruction_index as u32,
         });
 
         self.begin_scope();
@@ -639,7 +646,7 @@ where
         self.end_scope();
 
         self.emit_backjump(loop_start as u32);
-        self.patch_jump(exit_jump.argument);
+        self.patch_jump(exit_jump.get_argument_index());
         self.emit_op(OpCode::Pop);
         self.end_scope();
 
