@@ -52,7 +52,6 @@ impl<'src> Scanner<'src> {
         self.line
     }
 
-    //TODO: test
     fn is_at_end(&self) -> bool {
         self.current_end >= self.end
     }
@@ -252,8 +251,20 @@ impl<'src> Scanner<'src> {
             b';' => return self.make_token(TokenType::Semicolon),
             b',' => return self.make_token(TokenType::Comma),
             b'.' => return self.make_token(TokenType::Dot),
-            b'-' => return self.make_token(TokenType::Minus),
-            b'+' => return self.make_token(TokenType::Plus),
+            b'-' => {
+                if self.match_current(b'=') {
+                    return self.make_token(TokenType::MinusEqual);
+                } else {
+                    return self.make_token(TokenType::Minus);
+                }
+            }
+            b'+' => {
+                if self.match_current(b'=') {
+                    return self.make_token(TokenType::PlusEqual);
+                } else {
+                    return self.make_token(TokenType::Plus);
+                }
+            }
             b'/' => return self.make_token(TokenType::Slash),
             b'*' => return self.make_token(TokenType::Star),
             b'=' => return self.make_token(TokenType::Equal),

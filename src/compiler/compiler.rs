@@ -97,7 +97,9 @@ where
                 TokenType::Comma        => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::Dot          => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::Minus        => {prefix: Some(Self::unary), infix: Some(Self::binary), precedence: Precedence::Term},
+                TokenType::MinusEqual   => {prefix: None, infix: None, precedence: Precedence::Term},
                 TokenType::Plus         => {prefix: None, infix: Some(Self::binary), precedence: Precedence::Term},
+                TokenType::PlusEqual    => {prefix: None, infix: None, precedence: Precedence::Term},
                 TokenType::Semicolon    => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::Slash        => {prefix: None, infix: Some(Self::binary), precedence: Precedence::Factor},
                 TokenType::Star         => {prefix: None, infix: Some(Self::binary), precedence: Precedence::Factor},
@@ -138,6 +140,10 @@ where
     }
 
     fn get_rule(&self, token: TokenType) -> &ParseRule<'a, 'src> {
+        debug_assert!(
+            self.parse_rule_table.get_count() > token as usize,
+            "Token index out of bounds in parse rule table.\nMight be missing parse rule for newly added tokens.",
+        );
         self.parse_rule_table.read(token as usize)
     }
 
@@ -145,8 +151,10 @@ where
         self.current_source
     }
 
-    pub const fn get_current_line(&self) -> u32 {
-        self.scanner.get_current_line()
+    pub fn get_current_line(&self) -> u32 {
+        self.previous
+            .as_ref()
+            .map_or_else(|| self.scanner.get_current_line(), |token| token.line)
     }
 
     fn get_instruction_count(&self) -> usize {
@@ -205,27 +213,23 @@ where
     }
 
     /// Convenience function to write an opcode to the current chunk.
-    fn emit_op(&mut self, op: OpCode) {
-        let line = self.get_current_line();
+    fn emit_op(&mut self, op: OpCode, line: u32) {
         self.current_chunk.write_opcode(op, line);
     }
 
     /// Convenience function to write an opcode with a u8 arg to the current chunk.
-    fn emit_op_with_byte(&mut self, op: OpCode, arg: u8) {
-        let line = self.get_current_line();
+    fn emit_op_with_byte(&mut self, op: OpCode, arg: u8, line: u32) {
         self.current_chunk.write_opcode_with_byte_arg(op, arg, line);
     }
 
     /// Convenience function to write an opcode with a u16 arg to the current chunk.
-    fn emit_op_with_double(&mut self, op: OpCode, arg: u16) {
-        let line = self.get_current_line();
+    fn emit_op_with_double(&mut self, op: OpCode, arg: u16, line: u32) {
         self.current_chunk
             .write_opcode_with_double_arg(op, arg, line);
     }
 
     /// Convenience function to write an opcode with a u32 arg to the current chunk.
-    fn emit_op_with_quad(&mut self, op: OpCode, arg: u32) {
-        let line = self.get_current_line();
+    fn emit_op_with_quad(&mut self, op: OpCode, arg: u32, line: u32) {
         self.current_chunk.write_opcode_with_quad(op, arg, line);
     }
 
@@ -247,7 +251,7 @@ where
             self.error("Jump distance is too far.");
         }
 
-        self.emit_op_with_double(op, arg as u16);
+        self.emit_op_with_double(op, arg as u16, self.get_current_line());
     }
 
     /// Convenience function to write a jump opcode for backpatching.
@@ -283,8 +287,7 @@ where
     }
 
     /// Returns constant index
-    fn emit_constant_with_op(&mut self, value: Value) -> u32 {
-        let line = self.get_current_line();
+    fn emit_constant_with_op(&mut self, value: Value, line: u32) -> u32 {
         self.current_chunk.add_constant_with_op(value, line)
     }
 
@@ -330,21 +333,29 @@ where
         let name = token.lexeme.get_str(source);
         let name = &name[1..name.len() - 1]; // Don't include the leading and trailing "
         let value = Value::object(ObjectNode::alloc_string(name, &mut self.heap).read());
-        self.emit_constant_with_op(value);
+        self.emit_constant_with_op(value, token.line);
     }
 
     fn literal(&mut self, _can_assign: bool) {
-        let op = match self.previous.as_ref().unwrap().token_type {
+        let (operator_type, token_line) = unsafe {
+            let token = self.previous.as_ref().unwrap_unchecked();
+            (token.token_type, token.line)
+        };
+
+        let op = match operator_type {
             TokenType::False => OpCode::False,
             TokenType::True => OpCode::True,
             TokenType::None => OpCode::None,
             _ => unreachable!(),
         };
-        self.emit_op(op);
+        self.emit_op(op, token_line);
     }
 
     fn unary(&mut self, _can_assign: bool) {
-        let operator_type = unsafe { self.previous.as_ref().unwrap_unchecked().token_type };
+        let (operator_type, token_line) = unsafe {
+            let token = self.previous.as_ref().unwrap_unchecked();
+            (token.token_type, token.line)
+        };
 
         self.parse_precedence(Precedence::Unary);
 
@@ -354,12 +365,15 @@ where
             _ => return,
         };
 
-        self.emit_op(op);
+        self.emit_op(op, token_line);
     }
 
     fn binary(&mut self, _can_assign: bool) {
         let next_token_type = unsafe { self.current.as_ref().unwrap_unchecked().token_type };
-        let operator_type = unsafe { self.previous.as_ref().unwrap_unchecked().token_type };
+        let (operator_type, token_line) = unsafe {
+            let token = self.previous.as_ref().unwrap_unchecked();
+            (token.token_type, token.line)
+        };
 
         let parse_rule = self.get_rule(operator_type);
         self.parse_precedence(parse_rule.precedence.add(1));
@@ -382,7 +396,7 @@ where
             TokenType::Slash => OpCode::Divide,
             _ => unreachable!(),
         };
-        self.emit_op(op);
+        self.emit_op(op, token_line);
     }
 
     fn grouping(&mut self, _can_assign: bool) {
@@ -394,16 +408,16 @@ where
     }
 
     fn number(&mut self, _can_assign: bool) {
-        let num: f64 = unsafe {
-            self.previous
-                .as_ref()
-                .unwrap_unchecked()
+        let (num, token_line) = unsafe {
+            let token = self.previous.as_ref().unwrap_unchecked();
+            let number = token
                 .lexeme
                 .get_str(self.get_current_source())
                 .parse()
-                .unwrap_unchecked()
+                .unwrap_unchecked();
+            (number, token.line)
         };
-        self.emit_constant_with_op(Value::number(num));
+        self.emit_constant_with_op(Value::number(num), token_line);
     }
 
     fn advance(&mut self) {
@@ -487,7 +501,7 @@ where
     fn expression_statement(&mut self) {
         // Parse expression which pushes a value onto the stack, and then pop it off again since this is a statement
         self.expression();
-        self.emit_op(OpCode::Pop);
+        self.emit_op(OpCode::Pop, self.get_current_line());
     }
 
     fn block(&mut self) {
@@ -519,14 +533,14 @@ where
             self.locals.pop();
         }
         if locals_to_pop > 0 {
-            self.emit_op_with_double(OpCode::PopN, locals_to_pop);
+            self.emit_op_with_double(OpCode::PopN, locals_to_pop, self.get_current_line());
         }
     }
 
     fn and(&mut self, _can_assign: bool) {
         let end_jump = self.emit_jump_backpatch(OpCode::JumpIfFalse);
 
-        self.emit_op(OpCode::Pop);
+        self.emit_op(OpCode::Pop, self.get_current_line());
         self.parse_precedence(Precedence::And);
 
         self.patch_jump(end_jump.get_argument_index());
@@ -534,8 +548,8 @@ where
 
     fn or(&mut self, _can_assign: bool) {
         let end_jump = self.emit_jump_backpatch(OpCode::JumpIfTrue);
+        self.emit_op(OpCode::Pop, self.get_current_line());
 
-        self.emit_op(OpCode::Pop);
         self.parse_precedence(Precedence::Or);
 
         self.patch_jump(end_jump.get_argument_index());
@@ -548,13 +562,14 @@ where
         }
 
         let then_jump = self.emit_jump_backpatch(OpCode::JumpIfFalse);
-        self.emit_op(OpCode::Pop);
+        self.emit_op(OpCode::Pop, self.get_current_line());
+
         self.statement();
 
         let else_jump = self.emit_jump_backpatch(OpCode::Jump);
 
         self.patch_jump(then_jump.get_argument_index());
-        self.emit_op(OpCode::Pop);
+        self.emit_op(OpCode::Pop, self.get_current_line());
 
         if self.match_and_advance(TokenType::Else) {
             if !self.is_current_token(TokenType::LeftBrace) {
@@ -574,7 +589,7 @@ where
         }
 
         let exit_jump = self.emit_jump_backpatch(OpCode::JumpIfFalse);
-        self.emit_op(OpCode::Pop);
+        self.emit_op(OpCode::Pop, self.get_current_line());
 
         self.enclosing_loop = Some(EnclosingLoop {
             start_jump_index: loop_start,
@@ -586,7 +601,7 @@ where
         self.emit_backjump(loop_start);
 
         self.patch_jump(exit_jump.get_argument_index());
-        self.emit_op(OpCode::Pop);
+        self.emit_op(OpCode::Pop, self.get_current_line());
         self.end_scope();
 
         self.enclosing_loop = None;
@@ -595,18 +610,15 @@ where
     fn for_statement(&mut self) {
         self.begin_scope();
 
-        // Compile optional variable declaration
-        if self.match_and_advance(TokenType::Comma) {
-            // Hello :)
-            // We don't do anything in this case as these are optional
-        } else if self.match_and_advance(TokenType::Let) {
+        // Compile variable declaration
+        if self.match_and_advance(TokenType::Let) {
             self.variable_declaration();
             self.consume(
                 TokenType::Comma,
                 "Expected ',' after for variable declaration.",
             );
         } else {
-            self.expression_statement();
+            self.error("Expected variable declaration in for loop.");
         }
 
         let mut loop_start = self.get_instruction_count();
@@ -616,14 +628,14 @@ where
         self.consume(TokenType::Comma, "Expected ','.");
 
         let exit_jump = self.emit_jump_backpatch(OpCode::JumpIfFalse);
-        self.emit_op(OpCode::Pop);
+        self.emit_op(OpCode::Pop, self.get_current_line());
 
         // Compile increment expression
         if !self.match_and_advance(TokenType::LeftBrace) {
             let body_jump = self.emit_jump_backpatch(OpCode::Jump);
             let increment_start = self.get_instruction_count();
             self.expression();
-            self.emit_op(OpCode::Pop);
+            self.emit_op(OpCode::Pop, self.get_current_line());
 
             self.emit_backjump(loop_start as u32);
             loop_start = increment_start;
@@ -647,7 +659,7 @@ where
 
         self.emit_backjump(loop_start as u32);
         self.patch_jump(exit_jump.get_argument_index());
-        self.emit_op(OpCode::Pop);
+        self.emit_op(OpCode::Pop, self.get_current_line());
         self.end_scope();
 
         self.enclosing_loop = None;
@@ -674,7 +686,7 @@ where
             }
             Some(enclosing_loop) => {
                 // Push false to the stack so the loop condition evaluates to false and exits.
-                self.emit_constant_with_op(Value::boolean(false));
+                self.emit_constant_with_op(Value::boolean(false), self.get_current_line());
                 self.emit_backjump(enclosing_loop.exit_jump_index);
             }
         }
@@ -748,9 +760,18 @@ where
             )
         };
 
-        // If the current token is an '=', then we are assigning instead of getting.
         let op = if can_assign && self.match_and_advance(TokenType::Equal) {
             self.expression();
+            set_op
+        } else if can_assign && self.match_and_advance(TokenType::PlusEqual) {
+            self.named_variable(name_token, can_assign);
+            self.expression();
+            self.emit_op(OpCode::Add, name_token.line);
+            set_op
+        } else if can_assign && self.match_and_advance(TokenType::MinusEqual) {
+            self.named_variable(name_token, can_assign);
+            self.expression();
+            self.emit_op(OpCode::Subtract, name_token.line);
             set_op
         } else {
             get_op
@@ -758,10 +779,10 @@ where
 
         match var_type {
             VariableType::Local => {
-                self.emit_op_with_double(op, slot as u16);
+                self.emit_op_with_double(op, slot as u16, name_token.line);
             }
             VariableType::Global => {
-                self.emit_op_with_quad(op, slot);
+                self.emit_op_with_quad(op, slot, name_token.line);
             }
         }
 
@@ -816,7 +837,7 @@ where
             return;
         }
 
-        self.emit_op_with_quad(OpCode::DefineGlobal, global_index);
+        self.emit_op_with_quad(OpCode::DefineGlobal, global_index, self.get_current_line());
     }
 
     fn variable_declaration(&mut self) {
@@ -827,7 +848,7 @@ where
         if self.match_and_advance(TokenType::Equal) {
             self.expression();
         } else {
-            self.emit_op(OpCode::None);
+            self.emit_op(OpCode::None, self.get_current_line());
         }
 
         self.define_variable(slot);
@@ -857,8 +878,8 @@ where
         self.consume(TokenType::EOF, "Expected end of file.");
 
         //Temporary None and return ops
-        self.emit_constant_with_op(Value::none());
-        self.emit_op(OpCode::Return);
+        self.emit_constant_with_op(Value::none(), self.get_current_line());
+        self.emit_op(OpCode::Return, self.get_current_line());
 
         #[cfg(debug_assertions)]
         if !self.had_error() {
