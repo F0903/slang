@@ -47,12 +47,12 @@ struct JumpIndecies {
 }
 
 impl JumpIndecies {
-    const INSTRUCTION_SIZE: u32 = 1; // 1 byte for opcode
-    const ARGUMENT_SIZE: u32 = 2; // 2 bytes for argument
-    const JUMP_SIZE: u32 = Self::INSTRUCTION_SIZE + Self::ARGUMENT_SIZE;
+    const OPCODE_SIZE: u32 = 1;
+    const ARGUMENT_SIZE: u32 = 2;
+    const JUMP_SIZE: u32 = Self::OPCODE_SIZE + Self::ARGUMENT_SIZE;
 
     pub const fn get_argument_index(&self) -> u32 {
-        self.instruction_index + Self::INSTRUCTION_SIZE
+        self.instruction_index + Self::OPCODE_SIZE
     }
 }
 
