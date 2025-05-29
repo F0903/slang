@@ -1,6 +1,6 @@
 # TODO
 
-Current chapter: <https://craftinginterpreters.com/global-variables.html> at "Assignment" chapter
+Current chapter: <https://craftinginterpreters.com/calls-and-functions.html>
 
 - Finish basic rough implementation through the book.
 - String interpolation.
