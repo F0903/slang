@@ -1,89 +1,71 @@
-mod environment;
+#![feature(str_from_raw_parts)]
+#![feature(ptr_as_ref_unchecked)]
+#![feature(specialization)]
+#![feature(maybe_uninit_slice)]
+
+mod collections;
+mod compiler;
+mod debug;
+mod encoding;
 mod error;
-mod expression;
-mod interpreter;
-mod lexer;
-mod parser;
-mod resolver;
-mod statement;
-mod stdlib;
-mod token;
+mod hashing;
+mod lexing;
+mod memory;
 mod utils;
 mod value;
+mod vm;
 
-use error::get_err_handler;
-use interpreter::Interpreter;
-use lexer::Lexer;
-use parser::Parser;
-use resolver::Resolver;
-use statement::Statement;
 use std::{
     env::args,
-    fs::{canonicalize, File},
-    io::{stdin, stdout, BufRead, Read, Write},
-    path::Path,
+    io::{BufRead, Read, Write},
 };
 
-use crate::value::{NativeFunction, Value};
+use vm::Vm;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-fn get_source_path() -> Option<String> {
-    let mut args = args();
-    args.nth(1)
+fn print_usage() {
+    println!("Usage: slang for REPL or slang <path> to run a file.");
 }
 
-fn run(source: String, interpreter: &mut Interpreter) -> Result<()> {
-    stdlib::register(interpreter);
-    interpreter.register_native(NativeFunction::new("hello_world".to_owned(), 0, |_, _| {
-        println!("Hello world!");
-        Ok(Value::None)
-    }));
-
-    let lexer = Lexer::new(source);
-    let parser = Parser::new(lexer);
-    let mut statements = parser.collect::<Vec<Statement>>();
-    let mut resolver = Resolver::new(interpreter);
-    resolver.resolve(statements.iter_mut());
-
-    if get_err_handler().had_error() {
-        return Ok(());
-    }
-
-    interpreter.interpret(statements.into_iter());
-    Ok(())
-}
-
-fn run_interactively() -> Result<()> {
-    let mut interpreter = Interpreter::new();
-    let mut stdout = stdout().lock();
-    let mut stdin = stdin().lock();
-    let mut strbuf = String::new();
+fn repl(vm: &mut Vm) -> Result<()> {
+    let mut input = std::io::stdin().lock();
+    let mut line_buf = String::new();
     loop {
-        stdout.write_all(b"> ")?;
-        stdout.flush()?;
-        let count = stdin.read_line(&mut strbuf)?;
-        if count == 0 {
+        fprint!("> ");
+        let read = input.read_line(&mut line_buf)?;
+        if read < 1 {
+            println!();
             break;
         }
-        run(strbuf.clone(), &mut interpreter).ok();
-        strbuf.clear();
+        interpret(line_buf.as_bytes(), vm)?;
+        line_buf.clear();
+        println!();
     }
     Ok(())
 }
 
-fn run_file(path: impl AsRef<Path>) -> Result<()> {
-    let path = canonicalize(path)?;
-    let mut interpreter = Interpreter::new();
-    let mut buf = String::new();
-    File::open(path)?.read_to_string(&mut buf)?;
-    run(buf, &mut interpreter)?;
+fn run_file(path: String, vm: &mut Vm) -> Result<()> {
+    let mut buf = vec![];
+    std::fs::File::open(path)?.read_to_end(&mut buf)?;
+    interpret(&buf, vm)
+}
+
+fn interpret(buf: &[u8], vm: &mut Vm) -> Result<()> {
+    //let mut vm = Vm::new(); // Create a new VM each time to debug the drop implementations.
+    vm.interpret(buf)?;
     Ok(())
 }
 
 fn main() -> Result<()> {
-    match get_source_path() {
-        Some(x) => run_file(x),
-        None => run_interactively(),
+    let mut args = args();
+    let mut vm = Vm::new();
+    match args.len() {
+        1 => repl(&mut vm),
+        2 => run_file(args.nth(1).unwrap(), &mut vm),
+        _ => {
+            print_usage();
+            return Err("ERROR: Invalid usage.".into());
+        }
     }
 }

@@ -1,7 +1,8 @@
 # Slang
 
-A simple interpreter for a custom scripting language called Slang (*s*imple-*lang*uage).
+A WIP simple custom scripting language called Slang (*s*imple-*lang*uage), using a bytecode interpreter.
+Written to learn the workings behind interpreted languages.
 
-For language syntax see syntax.ebnf or the test.slang file
+For language syntax see syntax.ebnf or the test.slang file (may not be complete or updated)
 
-WIP bytecode rewrite in bytecode branch
+Based on the the amazing book ["Crafting Interpreters"](https://craftinginterpreters.com/).

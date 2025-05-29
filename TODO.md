@@ -1,6 +1,9 @@
 # TODO
 
-- Classes
-- Reduce amount of cloning.
-- Better error reporting.
-- Have a go at implementing bytecode.
+Current chapter: <https://craftinginterpreters.com/calls-and-functions.html>
+
+- Finish basic rough implementation through the book.
+- String interpolation.
+- Const "variables"
+- Better error handling.
+- Language test suite.
