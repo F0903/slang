@@ -46,6 +46,12 @@ impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
     }
 
     pub fn set_at(&mut self, index: usize, value: T) {
+        if index < self.count {
+            unsafe {
+                self.stack[index].assume_init_drop(); // Drop the old value at index
+            }
+        }
+
         self.stack[index] = MaybeUninit::new(value);
     }
 
@@ -76,8 +82,8 @@ impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
 
 impl<T, const STACK_SIZE: usize> Drop for Stack<T, STACK_SIZE> {
     fn drop(&mut self) {
-        for i in 0..self.count {
-            unsafe { self.stack[i].assume_init_drop() };
+        unsafe {
+            self.stack[..self.count].assume_init_drop();
         }
         self.count = 0;
     }
