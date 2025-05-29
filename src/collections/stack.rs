@@ -1,8 +1,10 @@
 use std::{fmt::Debug, mem::MaybeUninit};
 
-use super::stack_iter::StackIter;
+use super::{stack_iter::StackIter, stack_offset::StackOffset};
 
-pub struct Stack<T, const STACK_SIZE: usize = 1024> {
+pub const DEFAULT_STACK_SIZE: usize = 1024;
+
+pub struct Stack<T, const STACK_SIZE: usize = DEFAULT_STACK_SIZE> {
     stack: [MaybeUninit<T>; STACK_SIZE],
     count: usize,
 }
@@ -25,28 +27,15 @@ impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
     }
 
     pub const fn push(&mut self, val: T) {
-        debug_assert!(self.count < STACK_SIZE, "stack overflow");
-        self.stack[self.count].write(val);
+        debug_assert!(self.count() < STACK_SIZE, "stack overflow");
+        self.stack[self.count()].write(val);
         self.count += 1;
     }
 
-    const fn get(&self, offset_from_top: usize) -> T {
-        debug_assert!(offset_from_top < self.count, "index is out of bounds");
-        unsafe { self.stack[self.count - 1 - offset_from_top].assume_init_read() }
-    }
-
-    const fn get_mut(&mut self, offset_from_top: usize) -> &mut T {
-        debug_assert!(offset_from_top < self.count, "index is out of bounds");
-        unsafe { self.stack[self.count - 1 - offset_from_top].assume_init_mut() }
-    }
-
-    pub const fn get_at(&self, index: usize) -> T {
-        debug_assert!(index < self.count, "index is out of bounds");
-        unsafe { self.stack[index].assume_init_read() }
-    }
-
     pub fn set_at(&mut self, index: usize, value: T) {
-        if index < self.count {
+        debug_assert!(index < STACK_SIZE, "index is out of bounds");
+
+        if index < self.count() {
             unsafe {
                 self.stack[index].assume_init_drop(); // Drop the old value at index
             }
@@ -56,7 +45,8 @@ impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
     }
 
     pub fn pop(&mut self) -> T {
-        let maybe_init = &mut self.stack[self.count - 1];
+        debug_assert!(self.count > 0, "cannot pop from an empty stack");
+        let maybe_init = &mut self.stack[self.count() - 1];
         let val = unsafe { maybe_init.assume_init_read() }; // First duplicate the value
         unsafe {
             maybe_init.assume_init_drop(); // Then drop the old
@@ -65,25 +55,55 @@ impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
         val
     }
 
-    pub const fn peek(&self, offset_from_top: usize) -> &T {
-        debug_assert!(offset_from_top < self.count, "index is out of bounds");
-        unsafe { self.stack[self.count - 1 - offset_from_top].assume_init_ref() }
+    pub const fn get_at(&self, index: usize) -> T {
+        debug_assert!(index < self.count(), "index is out of bounds");
+        unsafe { self.stack[index].assume_init_read() }
     }
 
-    pub const fn peek_mut(&mut self, offset_from_top: usize) -> &mut T {
-        debug_assert!(offset_from_top < self.count, "index is out of bounds");
-        unsafe { self.stack[self.count - 1 - offset_from_top].assume_init_mut() }
+    pub const fn get_ref_at(&self, index: usize) -> &T {
+        debug_assert!(index < self.count(), "index is out of bounds");
+        unsafe { self.stack[index].assume_init_ref() }
+    }
+
+    pub const fn get_mut_at(&mut self, index: usize) -> &mut T {
+        debug_assert!(index < self.count(), "index is out of bounds");
+        unsafe { self.stack[index].assume_init_mut() }
+    }
+
+    pub fn top_ref(&self) -> &T {
+        self.get_ref_at(self.count() - 1)
+    }
+
+    pub fn top_mut(&mut self) -> &mut T {
+        self.get_mut_at(self.count() - 1)
+    }
+
+    pub const fn top_offset(&self, offset_from_top: usize) -> T {
+        self.get_at(self.count() - 1 - offset_from_top)
+    }
+
+    pub const fn top_mut_offset(&mut self, offset_from_top: usize) -> &mut T {
+        self.get_mut_at(self.count() - 1 - offset_from_top)
+    }
+
+    pub const fn peek(&self, offset_from_top: usize) -> &T {
+        self.get_ref_at(self.count() - 1 - offset_from_top)
     }
 
     pub const fn iter<'a>(&'a self) -> StackIter<'a, T, STACK_SIZE> {
         StackIter::new(self)
+    }
+
+    pub fn offset<'a>(&'a mut self, offset_from_base: usize) -> StackOffset<'a, T, STACK_SIZE> {
+        StackOffset::new(self, offset_from_base)
     }
 }
 
 impl<T, const STACK_SIZE: usize> Drop for Stack<T, STACK_SIZE> {
     fn drop(&mut self) {
         unsafe {
-            self.stack[..self.count].assume_init_drop();
+            let ceil = self.count();
+            self.stack[..ceil].assume_init_drop();
         }
         self.count = 0;
     }

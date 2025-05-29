@@ -15,11 +15,24 @@ pub struct InternedString {
 }
 
 impl InternedString {
+    pub const fn empty() -> Self {
+        Self {
+            char_buf: HeapPtr::null(),
+            hash: 0,
+        }
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.char_buf.is_null()
+            || self.hash == 0
+            || (!self.char_buf.is_null() && self.as_str().is_empty())
+    }
+
     pub const fn as_slice(&self) -> &[u8] {
         self.char_buf.get().as_slice()
     }
 
-    pub const fn get_str(&self) -> &str {
+    pub const fn as_str(&self) -> &str {
         self.char_buf.get().as_str()
     }
 
@@ -81,7 +94,7 @@ impl Clone for InternedString {
 
 impl Dealloc for InternedString {
     fn dealloc(&mut self) {
-        dbg_println!("DEBUG RAWSTRING DEALLOC: {}", self.get_str());
+        dbg_println!("DEBUG RAWSTRING DEALLOC: {}", self.as_str());
         self.char_buf.dealloc();
     }
 }
@@ -95,7 +108,7 @@ impl PartialEq for InternedString {
 
 impl Display for InternedString {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.get_str())
+        f.write_str(self.as_str())
     }
 }
 

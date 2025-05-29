@@ -1,4 +1,4 @@
-use super::{chunk::Chunk, local::Local};
+use super::{FunctionType, chunk::Chunk, local::Local};
 use crate::{
     collections::{DynArray, Stack},
     dbg_println,
@@ -8,7 +8,10 @@ use crate::{
         token::{Precedence, Token, TokenType},
     },
     memory::HeapPtr,
-    value::{Value, object::ObjectNode},
+    value::{
+        Value,
+        object::{Function, InternedString, ObjectNode},
+    },
     vm::{VmHeap, opcode::OpCode},
 };
 
@@ -60,7 +63,8 @@ pub struct Compiler<'a, 'src> {
     current_source: &'src [u8],
     scanner: Scanner<'src>,
     heap: HeapPtr<VmHeap>,
-    current_chunk: HeapPtr<Chunk>,
+    current_function: Function,
+    current_function_type: FunctionType,
     current: Option<Token>,
     previous: Option<Token>,
     locals: Stack<Local, LOCAL_SLOTS>,
@@ -75,15 +79,23 @@ impl<'a, 'src> Compiler<'a, 'src>
 where
     'src: 'a,
 {
-    pub fn new(scanner: Scanner<'src>, heap: HeapPtr<VmHeap>, chunk: HeapPtr<Chunk>) -> Self {
+    pub fn new(scanner: Scanner<'src>, heap: HeapPtr<VmHeap>, function_type: FunctionType) -> Self {
+        let mut locals = Stack::new();
+        locals.push(Local::dummy()); // Reserve first slot as index 0 is used for the "main" function.
+
         Self {
             current_source: &[],
             scanner,
             heap,
-            current_chunk: chunk,
+            current_function: Function::new(
+                0,
+                HeapPtr::alloc(Chunk::new()),
+                InternedString::empty(),
+            ),
+            current_function_type: function_type,
             current: None,
             previous: None,
-            locals: Stack::new(),
+            locals,
             scope_depth: 0,
             enclosing_loop: None,
             had_error: false,
@@ -135,8 +147,12 @@ where
         }
     }
 
-    pub fn set_current_chunk(&mut self, chunk: HeapPtr<Chunk>) {
-        self.current_chunk = chunk;
+    fn get_current_chunk(&self) -> &Chunk {
+        &self.current_function.chunk
+    }
+
+    fn get_current_chunk_mut(&mut self) -> &mut Chunk {
+        &mut self.current_function.chunk
     }
 
     fn get_rule(&self, token: TokenType) -> &ParseRule<'a, 'src> {
@@ -158,7 +174,7 @@ where
     }
 
     fn get_instruction_count(&self) -> usize {
-        self.current_chunk.get_bytes_count()
+        self.get_current_chunk().get_bytes_count()
     }
 
     fn error_at_line(&mut self, line: u32, msg: &str) {
@@ -214,28 +230,30 @@ where
 
     /// Convenience function to write an opcode to the current chunk.
     fn emit_op(&mut self, op: OpCode, line: u32) {
-        self.current_chunk.write_opcode(op, line);
+        self.get_current_chunk_mut().write_opcode(op, line);
     }
 
     /// Convenience function to write an opcode with a u8 arg to the current chunk.
     fn emit_op_with_byte(&mut self, op: OpCode, arg: u8, line: u32) {
-        self.current_chunk.write_opcode_with_byte_arg(op, arg, line);
+        self.get_current_chunk_mut()
+            .write_opcode_with_byte_arg(op, arg, line);
     }
 
     /// Convenience function to write an opcode with a u16 arg to the current chunk.
     fn emit_op_with_double(&mut self, op: OpCode, arg: u16, line: u32) {
-        self.current_chunk
+        self.get_current_chunk_mut()
             .write_opcode_with_double_arg(op, arg, line);
     }
 
     /// Convenience function to write an opcode with a u32 arg to the current chunk.
     fn emit_op_with_quad(&mut self, op: OpCode, arg: u32, line: u32) {
-        self.current_chunk.write_opcode_with_quad(op, arg, line);
+        self.get_current_chunk_mut()
+            .write_opcode_with_quad(op, arg, line);
     }
 
     /// Convenience function to replace the last opcode in the current chunk.
     fn replace_last_op(&mut self, op: OpCode) {
-        self.current_chunk.replace_last_op(op);
+        self.get_current_chunk_mut().replace_last_op(op);
     }
 
     /// Convenience function to write a jump opcode.
@@ -267,7 +285,7 @@ where
     fn patch_jump(&mut self, offset: u32) {
         let (code, jump) = {
             (
-                self.current_chunk.get_code_ptr(),
+                self.get_current_chunk().get_code_ptr(),
                 self.get_instruction_count() as u32 - offset - (JumpIndecies::ARGUMENT_SIZE),
             )
         };
@@ -288,12 +306,13 @@ where
 
     /// Returns constant index
     fn emit_constant_with_op(&mut self, value: Value, line: u32) -> u32 {
-        self.current_chunk.add_constant_with_op(value, line)
+        self.get_current_chunk_mut()
+            .add_constant_with_op(value, line)
     }
 
     /// Returns constant index
     fn emit_constant(&mut self, value: Value) -> u32 {
-        self.current_chunk.add_constant(value)
+        self.get_current_chunk_mut().add_constant(value)
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) {
@@ -528,7 +547,7 @@ where
 
         // Pop all locals in scope
         let mut locals_to_pop = 0;
-        while self.locals.count() > 0 && self.locals.peek(0).depth > self.scope_depth {
+        while self.locals.count() > 0 && self.locals.peek(0).get_depth() > self.scope_depth {
             locals_to_pop += 1;
             self.locals.pop();
         }
@@ -724,13 +743,20 @@ where
     /// Returns None if no local variable with the name is found.
     fn resolve_local(&mut self, name_token: &Token) -> Option<u16> {
         for (i, local) in self.locals.iter().enumerate() {
-            if name_token.lexeme.get_str(self.get_current_source())
-                == local.name.lexeme.get_str(self.get_current_source())
-            {
-                if !local.is_initialized() {
-                    self.error("Can't read uninitialized variable.");
+            let local_name = local.get_name();
+
+            if let None = local_name {
+                // None is used for reserved slots, so just skip.
+                continue;
+            } else if let Some(local_name) = local_name {
+                if name_token.lexeme.get_str(self.get_current_source())
+                    == local_name.lexeme.get_str(self.get_current_source())
+                {
+                    if !local.is_initialized() {
+                        self.error("Can't read uninitialized variable.");
+                    }
+                    return Some(i as u16);
                 }
-                return Some(i as u16);
             }
         }
 
@@ -833,7 +859,7 @@ where
     fn define_variable(&mut self, global_index: u32) {
         if self.scope_depth > 0 {
             dbg_println!("DEFINING LAST DECLARED LOCAL VARIABLE");
-            self.locals.peek_mut(0).initialize(self.scope_depth);
+            self.locals.top_mut_offset(0).initialize(self.scope_depth);
             return;
         }
 
@@ -866,10 +892,9 @@ where
         }
     }
 
-    pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<HeapPtr<Chunk>> {
+    pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<Function> {
         self.current_source = source;
         self.scanner.set_source(source);
-        self.set_current_chunk(self.current_chunk.clone());
 
         self.advance();
         while !self.match_and_advance(TokenType::EOF) {
@@ -883,13 +908,18 @@ where
 
         #[cfg(debug_assertions)]
         if !self.had_error() {
-            disassemble_chunk(&mut self.current_chunk, "code");
+            let chunk_name = if self.current_function.get_name().is_empty() {
+                "<script>".to_owned()
+            } else {
+                self.current_function.get_name().as_str().to_owned()
+            };
+            disassemble_chunk(self.get_current_chunk_mut(), &chunk_name);
         }
 
         if self.had_error() {
             Err("Parser encountered errors!".into())
         } else {
-            Ok(self.current_chunk.clone())
+            Ok(self.current_function.clone())
         }
     }
 }

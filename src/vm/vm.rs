@@ -1,11 +1,11 @@
 use std::ptr::null_mut;
 
-use super::{VmHeap, opcode::OpCode};
+use super::{VmHeap, callframe::CallFrame, opcode::OpCode};
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
 use crate::{
     collections::{HashTable, Stack},
-    compiler::{Compiler, chunk::Chunk},
+    compiler::{Compiler, FunctionType, chunk::Chunk},
     dbg_println,
     error::{Error, Result},
     lexing::scanner::Scanner,
@@ -15,6 +15,9 @@ use crate::{
         object::{Object, ObjectManager, ObjectNode},
     },
 };
+
+pub const STACK_SIZE: usize = 1024;
+pub const CALLFRAMES_SIZE: usize = 256;
 
 macro_rules! binary_op_result {
     ($stack: expr, $op: tt) => {{
@@ -40,72 +43,76 @@ macro_rules! binary_op_from_bool {
 }
 
 pub struct Vm {
-    ip: *mut u8,
-    stack: Stack<Value>,
+    stack: Stack<Value, STACK_SIZE>,
     heap: HeapPtr<VmHeap>,
+    callframes: Stack<CallFrame, CALLFRAMES_SIZE>,
 }
 
 impl Vm {
     pub fn new() -> Self {
         Self {
-            ip: null_mut(),
             stack: Stack::new(),
             heap: HeapPtr::alloc(VmHeap {
                 objects: ObjectManager::new(),
                 interned_strings: HashTable::new(),
                 globals: HashTable::new(),
             }),
+            callframes: Stack::new(),
         }
     }
 
     fn read_byte(&mut self) -> u8 {
         unsafe {
-            let val = self.ip.read();
-            self.ip = self.ip.add(1);
+            let frame = self.callframes.top_mut();
+            let val = frame.ip.read();
+            frame.ip = frame.ip.add(1);
             val
         }
     }
 
     fn read_double(&mut self) -> u16 {
         unsafe {
-            let val = self.ip.cast::<u16>().read();
-            self.ip = self.ip.add(2);
+            let frame = self.callframes.top_mut();
+            let val = frame.ip.cast::<u16>().read();
+            frame.ip = frame.ip.add(2);
             val
         }
     }
 
     fn read_quad(&mut self) -> u32 {
         unsafe {
-            let val = self.ip.cast::<u32>().read();
-            self.ip = self.ip.add(4);
+            let frame = self.callframes.top_mut();
+            let val = frame.ip.cast::<u32>().read();
+            frame.ip = frame.ip.add(4);
             val
         }
     }
 
     /// Reads a constant from the chunk with a u32 index.
-    fn read_constant_quad<'a>(&mut self, chunk: &'a mut Chunk) -> &'a Value {
+    fn read_constant_quad(&mut self) -> &Value {
         let index = self.read_quad();
-        chunk.get_constant(index)
+        let frame = self.callframes.top_mut();
+        frame.function.chunk.get_constant(index)
     }
 
     /// Reads a constant from the chunk with a u8 index.
-    fn read_constant<'a>(&mut self, chunk: &'a mut Chunk) -> &'a Value {
+    fn read_constant(&mut self) -> &Value {
         let index = self.read_byte();
-        chunk.get_constant(index as u32)
+        let frame = self.callframes.top_mut();
+        frame.function.chunk.get_constant(index as u32)
     }
 
     pub fn interpret<'src>(&mut self, source: &'src [u8]) -> Result<()> {
-        let mut compiler = Compiler::new(
-            Scanner::new(),
-            self.heap.clone(),
-            HeapPtr::alloc(Chunk::new()),
-        );
-        let mut chunk = compiler
+        let mut compiler = Compiler::new(Scanner::new(), self.heap.clone(), FunctionType::Script);
+        let function = compiler
             .compile(source)
-            .map_err(|e| Error::CompileTime(e.to_string()))?
-            .dealloc_on_drop();
+            .map_err(|e| Error::CompileTime(e.to_string()))?;
 
-        self.ip = chunk.get_code_ptr();
+        self.callframes.push(CallFrame {
+            ip: function.chunk.get_code_ptr(),
+            function,
+            stack_offset: 0,
+        });
 
         loop {
             #[cfg(debug_assertions)]
@@ -113,45 +120,53 @@ impl Vm {
                 print!("\n");
                 print!("{:?}", &self.stack);
                 unsafe {
-                    let offset = self.ip.offset_from(chunk.get_code_ptr());
-                    disassemble_instruction(&mut chunk, offset as usize);
+                    let frame = self.callframes.top_mut();
+                    let offset = frame.ip.offset_from(frame.function.chunk.get_code_ptr());
+                    disassemble_instruction(&mut frame.function.chunk, offset as usize);
                 }
                 //println!("DEBUG HEAP: {:?}", &self.heap);
                 print!("\t");
             }
 
-            let chunk = &mut chunk;
             let instruction = self.read_byte();
             match OpCode::from_code(instruction) {
                 OpCode::Backjump => {
                     let offset = self.read_double();
-                    self.ip = unsafe { self.ip.sub(offset as usize) };
+                    let frame = self.callframes.top_mut();
+                    frame.ip = unsafe { frame.ip.sub(offset as usize) };
                 }
                 OpCode::Jump => {
                     let offset = self.read_double();
-                    self.ip = unsafe { self.ip.add(offset as usize) };
+                    let frame = self.callframes.top_mut();
+                    frame.ip = unsafe { frame.ip.add(offset as usize) };
                 }
                 OpCode::JumpIfTrue => {
                     let offset = self.read_double();
+                    let frame = self.callframes.top_mut();
                     if !self.stack.peek(0).is_falsey() {
-                        self.ip = unsafe { self.ip.add(offset as usize) };
+                        frame.ip = unsafe { frame.ip.add(offset as usize) };
                     }
                 }
                 OpCode::JumpIfFalse => {
                     let offset = self.read_double();
+                    let frame = self.callframes.top_mut();
                     if self.stack.peek(0).is_falsey() {
-                        self.ip = unsafe { self.ip.add(offset as usize) };
+                        frame.ip = unsafe { frame.ip.add(offset as usize) };
                     }
                 }
                 OpCode::SetLocal => {
                     let slot = self.read_double();
+                    let frame = self.callframes.top_ref();
                     let value = self.stack.peek(0).clone();
                     dbg_println!("SETTING LOCAL {} = {}", slot, value);
-                    self.stack.set_at(slot as usize, value);
+                    self.stack
+                        .offset(frame.stack_offset)
+                        .set_at(slot as usize, value);
                 }
                 OpCode::GetLocal => {
                     let slot = self.read_double();
-                    let local = self.stack.get_at(slot as usize);
+                    let frame = self.callframes.top_ref();
+                    let local = self.stack.offset(frame.stack_offset).get_at(slot as usize);
                     dbg_println!("GETTING LOCAL {} = {}", slot, local);
                     self.stack.push(local);
                 }
@@ -165,11 +180,18 @@ impl Vm {
                     self.stack.pop();
                 }
                 OpCode::SetGlobal => {
-                    let name_value = self.read_constant_quad(chunk);
+                    let name_value = self.read_constant_quad();
                     let name_object = unsafe { name_value.as_object_ptr().assume_init() };
                     let name_object_string = match name_object.get_object() {
                         Object::String(s) => s.clone(),
+                        _ => {
+                            return Err(Error::Runtime(format!(
+                                "Expected string object for global name, got: {:?}",
+                                name_object.get_object()
+                            )));
+                        }
                     };
+
                     let value = self.stack.peek(0).clone();
                     dbg_println!("SETTING GLOBAL {} = {}", name_object_string, value);
                     if self
@@ -186,11 +208,18 @@ impl Vm {
                     }
                 }
                 OpCode::GetGlobal => {
-                    let name_value = self.read_constant_quad(chunk);
+                    let name_value = self.read_constant_quad();
                     let name_object = unsafe { name_value.as_object_ptr().assume_init() };
                     let name_object_string = match name_object.get_object() {
                         Object::String(s) => s.clone(),
+                        _ => {
+                            return Err(Error::Runtime(format!(
+                                "Expected string object for global name, got: {:?}",
+                                name_object.get_object()
+                            )));
+                        }
                     };
+
                     let global = self.heap.globals.get(&name_object_string);
                     match global {
                         Some(global) => {
@@ -216,11 +245,18 @@ impl Vm {
                     }
                 }
                 OpCode::DefineGlobal => {
-                    let name_value = self.read_constant_quad(chunk);
+                    let name_value = self.read_constant_quad();
                     let name_object = unsafe { name_value.as_object_ptr().assume_init() };
                     let name_object_string = match name_object.get_object() {
                         Object::String(s) => s.clone(),
+                        _ => {
+                            return Err(Error::Runtime(format!(
+                                "Expected string object for global name, got: {:?}",
+                                name_object.get_object()
+                            )));
+                        }
                     };
+
                     let global_value = self.stack.peek(0).clone();
                     dbg_println!(
                         "DEFINING GLOBAL: {} = ({})",
@@ -233,9 +269,9 @@ impl Vm {
                     self.stack.pop();
                 }
                 OpCode::Constant => {
-                    let constant = self.read_constant_quad(chunk);
+                    let constant = self.read_constant_quad().clone();
                     dbg_println!("PUSHING CONSTANT: {}", constant);
-                    self.stack.push(constant.clone());
+                    self.stack.push(constant);
                 }
                 OpCode::None => self.stack.push(Value::none()),
                 OpCode::True => self.stack.push(Value::boolean(true)),
@@ -267,7 +303,16 @@ impl Vm {
                                     );
                                     self.stack.push(new_string) // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
                                 }
+                                _ => {
+                                    return Err(Error::Runtime(format!(
+                                        "Cannot add string and non-string object: {:?} + {:?}",
+                                        a_str, second
+                                    )));
+                                }
                             },
+                            Object::Function(_) => {
+                                return Err(Error::Runtime(format!("Cannot add two functions",)));
+                            }
                         }
                     } else {
                         let result = first + second;
@@ -282,7 +327,7 @@ impl Vm {
                     self.stack.push(Value::boolean(val.is_falsey()));
                 }
                 OpCode::Negate => {
-                    let val = self.stack.peek_mut(0);
+                    let val = self.stack.top_mut_offset(0);
                     *val = (-(*val).clone())?;
                 }
                 OpCode::Return => {

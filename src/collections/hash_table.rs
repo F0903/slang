@@ -181,7 +181,7 @@ impl<V: std::fmt::Debug> HashTable<InternedString, V> {
 
         let bucket = self.find_bucket(H::hash(key_name.as_bytes()));
         if let Some(entry) = &bucket.entry {
-            if entry.key.get_str() == key_name {
+            if entry.key.as_str() == key_name {
                 return Some(entry);
             }
         }

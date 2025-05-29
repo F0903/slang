@@ -256,8 +256,9 @@ impl Display for Value {
                 let obj_wrapper = self.casts.object.assume_init_ref();
                 let obj_ptr = obj_wrapper.get_object();
                 match &*obj_ptr {
-                    Object::String(s) => {
-                        f.write_fmt(format_args!("String object: {}", s.get_str()))
+                    Object::String(s) => f.write_fmt(format_args!("String object: {}", s.as_str())),
+                    Object::Function(func) => {
+                        f.write_fmt(format_args!("Function object: {}", func.get_name()))
                     }
                 }
             },

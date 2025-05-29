@@ -23,7 +23,7 @@ impl<'a, T, const STACK_SIZE: usize> Iterator for StackIter<'a, T, STACK_SIZE> {
             return None;
         }
 
-        let item = self.stack.peek(self.index as usize);
+        let item = self.stack.get_ref_at(self.index as usize);
         self.index -= 1;
         Some(item)
     }

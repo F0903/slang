@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 
 use super::{InternedString, Object, ObjectManager};
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
 };
 /// A container for objects that "links" them together as a linked list.
 /// This is used to keep track of all objects in the VM.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ObjectNode {
     obj: HeapPtr<Object>,
     next: HeapPtr<ObjectNode>,
@@ -47,28 +47,6 @@ impl ObjectNode {
 
     pub const fn get_next_object_ptr(&self) -> HeapPtr<ObjectNode> {
         self.next
-    }
-}
-
-impl Display for ObjectNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "{}",
-            match self.obj.get() {
-                Object::String(x) => x,
-            }
-        ))
-    }
-}
-
-impl Debug for ObjectNode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "ObjectContainer: {}",
-            match self.obj.get() {
-                Object::String(x) => x,
-            }
-        ))
     }
 }
 
