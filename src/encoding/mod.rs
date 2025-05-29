@@ -1,3 +1,5 @@
+//TODO: Have another go at an EncodedDynArray that uses these.
+
 pub use rle::RLE;
 
 use crate::collections::DynArray;

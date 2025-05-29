@@ -1,12 +1,9 @@
-mod borrowed_ptr_iter;
 mod dynarray;
-mod encoded_dynarray;
 mod hash_table;
-mod owned_ptr_iter;
+mod owned_iter;
 mod stack;
 mod stack_iter;
 
 pub use dynarray::DynArray;
-pub use encoded_dynarray::EncodedDynArray;
 pub use hash_table::HashTable;
 pub use stack::Stack;

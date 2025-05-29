@@ -1,11 +1,7 @@
 use std::{mem::MaybeUninit, ptr::null_mut};
 
-use super::{borrowed_ptr_iter::BorrowedIter, owned_ptr_iter::OwnedPtrIter};
+use super::owned_iter::OwnedIter;
 use crate::{dbg_println, memory::reallocate};
-
-trait GrowArray {
-    fn grow_array_to(&mut self, to: usize);
-}
 
 #[derive(Debug)]
 pub struct DynArray<T: std::fmt::Debug> {
@@ -45,13 +41,6 @@ impl<T: std::fmt::Debug> DynArray<T> {
 
     pub(crate) const fn get_raw_ptr(&self) -> *mut T {
         self.data
-    }
-
-    /// ASSUMES CALLER FREES OLD DATA
-    pub(crate) fn set_backing_data(&mut self, new_data: *mut T, new_count: usize, new_cap: usize) {
-        self.data = new_data;
-        self.count = new_count;
-        self.capacity = new_cap;
     }
 
     /// BE CAREFUL
@@ -155,40 +144,33 @@ impl<T: std::fmt::Debug> DynArray<T> {
         unsafe { std::slice::from_raw_parts_mut(self.data, self.count) }
     }
 
-    pub const fn iter<'a>(&'a self) -> BorrowedIter<'a, T> {
+    pub fn iter<'a>(&'a self) -> std::slice::Iter<'a, T> {
         if self.data.is_null() {
-            return BorrowedIter::new(&[]);
+            return [].iter();
         }
 
-        BorrowedIter::new(self.as_slice())
+        self.as_slice().iter()
     }
 
     /// An iterator over the memory of the array (the whole capacity), which may contain uninitialized values.
-    pub const fn memory_iter<'a>(&'a self) -> BorrowedIter<'a, MaybeUninit<T>> {
+    pub fn memory_iter<'a>(&'a self) -> std::slice::Iter<'a, MaybeUninit<T>> {
         if self.data.is_null() {
-            return BorrowedIter::new(&[]);
+            return [].iter();
         }
 
-        BorrowedIter::new(unsafe { std::slice::from_raw_parts(self.data.cast(), self.capacity) })
+        unsafe { std::slice::from_raw_parts(self.data.cast(), self.capacity) }.iter()
     }
-}
 
-impl<T: std::fmt::Debug> Clone for DynArray<T> {
-    fn clone(&self) -> Self {
-        let mut new_array = Self::new_with_cap(self.count, None);
+    /// An iterator over the memory of the array (the whole capacity), which may contain uninitialized values.
+    /// This aditionally is a mutable iterator, so be careful.
+    pub fn memory_iter_mut<'a>(&'a self) -> std::slice::IterMut<'a, MaybeUninit<T>> {
         if self.data.is_null() {
-            return new_array;
+            return [].iter_mut();
         }
 
-        unsafe {
-            std::ptr::copy_nonoverlapping(self.data, new_array.data, self.count);
-        }
-        new_array.count = self.count;
-        new_array
+        unsafe { std::slice::from_raw_parts_mut(self.data.cast(), self.capacity).iter_mut() }
     }
-}
 
-impl<T: std::fmt::Debug> GrowArray for DynArray<T> {
     fn grow_array_to(&mut self, to: usize) {
         let old_cap = self.capacity;
         self.capacity = to;
@@ -205,6 +187,21 @@ impl<T: std::fmt::Debug> GrowArray for DynArray<T> {
                 }
             }
         }
+    }
+}
+
+impl<T: std::fmt::Debug> Clone for DynArray<T> {
+    fn clone(&self) -> Self {
+        let mut new_array = Self::new_with_cap(self.count, None);
+        if self.data.is_null() {
+            return new_array;
+        }
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(self.data, new_array.data, self.count);
+        }
+        new_array.count = self.count;
+        new_array
     }
 }
 
@@ -244,9 +241,9 @@ impl<T: std::fmt::Debug> Drop for DynArray<T> {
 
 impl<T: std::fmt::Debug> IntoIterator for DynArray<T> {
     type Item = T;
-    type IntoIter = OwnedPtrIter<T>;
+    type IntoIter = OwnedIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        OwnedPtrIter::new(self.data, self.count)
+        OwnedIter::new(self.data, self.count)
     }
 }

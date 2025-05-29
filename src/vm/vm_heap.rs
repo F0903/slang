@@ -16,15 +16,9 @@ pub struct VmHeap {
 
 impl VmHeap {
     fn dealloc_interned_strings(&mut self) {
-        for bucket in self.interned_strings.get_raw_data().memory_iter() {
-            let bucket = unsafe { bucket.assume_init_read() };
-            let entry = bucket.entry;
-            match entry {
-                Some(mut entry) => {
-                    entry.key.dealloc();
-                }
-                None => (),
-            }
+        for entry in self.interned_strings.entries_mut() {
+            // Deallocate the key of each entry in the interned strings table
+            entry.key.dealloc();
         }
     }
 }

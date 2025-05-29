@@ -32,8 +32,25 @@ impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K,
         }
     }
 
-    pub fn get_raw_data(&mut self) -> &mut DynArray<Bucket<K, V>> {
-        &mut self.data
+    /// Return iterator over the entries in the hash table.
+    pub fn entries(&self) -> impl Iterator<Item = &Entry<K, V>> {
+        // Return entries that are Some and not tombstones
+        self.data
+            .memory_iter()
+            .map(|x| unsafe { x.assume_init_ref() })
+            .filter(|x| !x.tombstone)
+            .filter_map(|x| x.entry.as_ref())
+    }
+
+    /// Return a mutable iterator over the entries in the hash table.
+    /// Be careful (please)
+    pub fn entries_mut(&self) -> impl Iterator<Item = &mut Entry<K, V>> {
+        // Return entries that are Some and not tombstones
+        self.data
+            .memory_iter_mut()
+            .map(|x| unsafe { x.assume_init_mut() })
+            .filter(|x| !x.tombstone)
+            .filter_map(|x| x.entry.as_mut())
     }
 
     fn find_bucket(&mut self, hash: u32) -> &mut Bucket<K, V> {

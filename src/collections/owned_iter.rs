@@ -1,11 +1,11 @@
 #[derive(Debug)]
-pub struct OwnedPtrIter<T> {
+pub struct OwnedIter<T> {
     data: *mut T,
     count: usize,
     index: usize,
 }
 
-impl<T> OwnedPtrIter<T> {
+impl<T> OwnedIter<T> {
     pub const fn new(data: *mut T, count: usize) -> Self {
         Self {
             data,
@@ -15,7 +15,7 @@ impl<T> OwnedPtrIter<T> {
     }
 }
 
-impl<T> Iterator for OwnedPtrIter<T> {
+impl<T> Iterator for OwnedIter<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
