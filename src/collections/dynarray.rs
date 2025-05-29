@@ -44,7 +44,7 @@ impl<T: std::fmt::Debug> DynArray<T> {
     }
 
     /// BE CAREFUL
-    pub(crate) const fn set_count(&mut self, new_count: usize) {
+    pub(super) const fn set_count(&mut self, new_count: usize) {
         self.count = new_count;
     }
 
@@ -76,7 +76,14 @@ impl<T: std::fmt::Debug> DynArray<T> {
         }
 
         unsafe {
-            self.data.add(index).write(val);
+            let value = self.data.add(index);
+
+            if index < self.count {
+                // Shift everything over once for our element to be inserted.
+                value.copy_to(value.add(1), self.count - index);
+            }
+
+            value.write(val);
             self.count += 1;
         }
     }
@@ -99,7 +106,7 @@ impl<T: std::fmt::Debug> DynArray<T> {
 
         unsafe {
             let base = self.data.add(self.count);
-            std::ptr::copy_nonoverlapping(val, base, count);
+            val.copy_to_nonoverlapping(base, count);
             self.count += count
         }
     }
@@ -117,22 +124,55 @@ impl<T: std::fmt::Debug> DynArray<T> {
     }
 
     pub fn replace(&self, index: usize, new_val: T) {
-        unsafe { self.data.add(index).write(new_val) }
+        debug_assert!(index < self.count, "Index out of bounds: {}", index);
+        unsafe {
+            let value = self.data.add(index);
+            // Drop the old value at index
+            std::ptr::drop_in_place(value);
+            value.write(new_val)
+        }
     }
 
-    pub const fn get(&self, offset: usize) -> Option<&T> {
-        unsafe { self.data.add(offset).as_ref() }
-    }
-
-    pub const fn get_unchecked(&self, offset: usize) -> &T {
+    /// Gets a reference to the value at the given offset within the capacity of the array.
+    pub fn get_memory(&self, offset: usize) -> &T {
+        debug_assert!(
+            offset < self.capacity,
+            "Index out of bounds: {} (count: {})",
+            offset,
+            self.count
+        );
         unsafe { self.data.add(offset).as_ref_unchecked() }
     }
 
-    pub const fn get_mut(&mut self, offset: usize) -> Option<&mut T> {
-        unsafe { self.data.add(offset).as_mut() }
+    /// Gets a mutable reference to the value at the given offset within the capacity of the array.
+    pub fn get_memory_mut(&self, offset: usize) -> &mut T {
+        debug_assert!(
+            offset < self.capacity,
+            "Index out of bounds: {} (count: {})",
+            offset,
+            self.count
+        );
+        unsafe { self.data.add(offset).as_mut_unchecked() }
     }
 
-    pub const fn get_mut_unchecked(&mut self, offset: usize) -> &mut T {
+    /// Gets a reference to the value at the given offset within the element count of the array.
+    pub fn get(&self, offset: usize) -> &T {
+        debug_assert!(
+            offset < self.count,
+            "Index out of bounds: {} (count: {})",
+            offset,
+            self.count
+        );
+        unsafe { self.data.add(offset).as_ref_unchecked() }
+    }
+
+    pub fn get_mut(&mut self, offset: usize) -> &mut T {
+        debug_assert!(
+            offset < self.count,
+            "Index out of bounds: {} (count: {})",
+            offset,
+            self.count
+        );
         unsafe { self.data.add(offset).as_mut_unchecked() }
     }
 
@@ -177,7 +217,6 @@ impl<T: std::fmt::Debug> DynArray<T> {
         self.data = reallocate::<T>(self.data.cast(), old_cap, self.capacity).cast();
 
         // Copy init value to each new slot
-        // Yes, I know this is not the safest way, but it is faster that cloning each and easier.
         if let Some(init) = &self.init_value {
             let copy_start = old_cap;
             let copy_end = self.capacity;
@@ -198,7 +237,7 @@ impl<T: std::fmt::Debug> Clone for DynArray<T> {
         }
 
         unsafe {
-            std::ptr::copy_nonoverlapping(self.data, new_array.data, self.count);
+            self.data.copy_to_nonoverlapping(new_array.data, self.count);
         }
         new_array.count = self.count;
         new_array
@@ -208,6 +247,13 @@ impl<T: std::fmt::Debug> Clone for DynArray<T> {
 // Specialization to make string conversion and raw byte handling easier
 impl DynArray<u8> {
     pub fn read_cast<A>(&self, byte_offset: usize) -> A {
+        debug_assert!(
+            byte_offset < self.count,
+            "Index out of bounds: {} (count: {})",
+            byte_offset,
+            self.count
+        );
+
         // First offset by n-bytes and then cast
         unsafe { self.data.add(byte_offset).cast::<A>().read() }
     }
@@ -230,9 +276,17 @@ impl<T: std::fmt::Debug> Drop for DynArray<T> {
         }
 
         dbg_println!("DEBUG DYNARRAY DROP: {:?}", self);
+
         unsafe {
-            std::ptr::drop_in_place(self.as_mut_slice());
+            if self.init_value.is_some() {
+                std::ptr::drop_in_place(self.as_mut_slice());
+            } else {
+                // If we don't have an init value, we only drop up until self.count which is guaranteed to be initialized.
+                let values = std::slice::from_raw_parts_mut(self.data, self.count);
+                std::ptr::drop_in_place(values);
+            }
         }
+
         self.data = reallocate::<T>(self.data.cast(), self.capacity, 0).cast();
         self.capacity = 0;
         self.count = 0;

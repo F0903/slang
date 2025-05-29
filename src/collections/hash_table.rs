@@ -60,13 +60,13 @@ impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K,
         let mut tombstone_index = None;
         let mut index = hash as usize % capacity;
         loop {
-            let bucket = self.data.get_unchecked(index);
+            let bucket = self.data.get_memory(index);
             if !bucket.tombstone {
                 let entry = bucket.entry.as_ref();
                 match entry {
                     Some(entry) => {
                         if entry.key.get_hash() == hash {
-                            return self.data.get_mut_unchecked(index);
+                            return self.data.get_memory_mut(index);
                         }
                     }
                     None => {
@@ -75,7 +75,7 @@ impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K,
                         } else {
                             index
                         };
-                        return self.data.get_mut_unchecked(return_index);
+                        return self.data.get_memory_mut(return_index);
                     }
                 }
             } else {
