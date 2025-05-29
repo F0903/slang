@@ -1,25 +1,28 @@
 use super::DynArray;
-use crate::{hashing::HashMethod, value::object::InternedString};
+use crate::{
+    hashing::{HashMethod, Hashable},
+    value::object::InternedString,
+};
 
 const TABLE_MAX_LOAD: f32 = 0.75;
 
 #[derive(Debug)]
-pub struct Entry<T> {
-    pub key: InternedString,
-    pub value: Option<T>,
+pub struct Entry<K, V> {
+    pub key: K,
+    pub value: Option<V>,
 }
 
 #[derive(Debug)]
-pub(crate) struct Bucket<T> {
+pub(crate) struct Bucket<K, V> {
     tombstone: bool,
-    pub(crate) entry: Option<Entry<T>>,
+    pub(crate) entry: Option<Entry<K, V>>,
 }
 
-pub struct HashTable<T: std::fmt::Debug> {
-    data: DynArray<Bucket<T>>,
+pub struct HashTable<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> {
+    data: DynArray<Bucket<K, V>>,
 }
 
-impl<T: std::fmt::Debug> HashTable<T> {
+impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K, V> {
     pub fn new() -> Self {
         Self {
             data: DynArray::new(Some(Bucket {
@@ -29,11 +32,11 @@ impl<T: std::fmt::Debug> HashTable<T> {
         }
     }
 
-    pub fn get_raw_data(&mut self) -> &mut DynArray<Bucket<T>> {
+    pub fn get_raw_data(&mut self) -> &mut DynArray<Bucket<K, V>> {
         &mut self.data
     }
 
-    fn find_bucket(&mut self, hash: u32) -> &mut Bucket<T> {
+    fn find_bucket(&mut self, hash: u32) -> &mut Bucket<K, V> {
         let capacity = self.data.get_capacity();
 
         // Find first empty bucket, or if not, return the first tombstone
@@ -93,7 +96,7 @@ impl<T: std::fmt::Debug> HashTable<T> {
     }
 
     // Returns true if the key was inserted, false if it was already present (thus overwritten)
-    pub fn set(&mut self, key: InternedString, value: Option<T>) -> bool {
+    pub fn set(&mut self, key: K, value: Option<V>) -> bool {
         if self.data.get_count() as f32 + 1_f32 > self.data.get_capacity() as f32 * TABLE_MAX_LOAD {
             self.grow();
         }
@@ -116,7 +119,7 @@ impl<T: std::fmt::Debug> HashTable<T> {
         new_key
     }
 
-    pub fn get(&mut self, key: &InternedString) -> Option<&Entry<T>> {
+    pub fn get(&mut self, key: &K) -> Option<&Entry<K, V>> {
         if self.data.get_count() == 0 {
             return None;
         }
@@ -130,21 +133,7 @@ impl<T: std::fmt::Debug> HashTable<T> {
         None
     }
 
-    pub fn get_by_str<H: HashMethod>(&mut self, key_name: &str) -> Option<&Entry<T>> {
-        if self.data.get_count() == 0 {
-            return None;
-        }
-
-        let bucket = self.find_bucket(H::hash(key_name.as_bytes()));
-        if let Some(entry) = &bucket.entry {
-            if entry.key.get_str() == key_name {
-                return Some(entry);
-            }
-        }
-        None
-    }
-
-    pub fn delete_by_hash(&mut self, hash: u32) -> Option<Entry<T>> {
+    pub fn delete_by_hash(&mut self, hash: u32) -> Option<Entry<K, V>> {
         if self.data.get_count() == 0 {
             return None;
         }
@@ -159,12 +148,33 @@ impl<T: std::fmt::Debug> HashTable<T> {
         entry
     }
 
-    pub fn delete(&mut self, key: &InternedString) -> Option<Entry<T>> {
+    pub fn delete(&mut self, key: &InternedString) -> Option<Entry<K, V>> {
         self.delete_by_hash(key.get_hash())
     }
 }
 
-impl<T: std::fmt::Debug> std::fmt::Debug for HashTable<T> {
+impl<V: std::fmt::Debug> HashTable<InternedString, V> {
+    pub fn get_by_str<H: HashMethod>(
+        &mut self,
+        key_name: &str,
+    ) -> Option<&Entry<InternedString, V>> {
+        if self.data.get_count() == 0 {
+            return None;
+        }
+
+        let bucket = self.find_bucket(H::hash(key_name.as_bytes()));
+        if let Some(entry) = &bucket.entry {
+            if entry.key.get_str() == key_name {
+                return Some(entry);
+            }
+        }
+        None
+    }
+}
+
+impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> std::fmt::Debug
+    for HashTable<K, V>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HashTable")
             .field("count", &self.data.get_count())
@@ -181,7 +191,7 @@ impl<T: std::fmt::Debug> std::fmt::Debug for HashTable<T> {
                     .memory_iter()
                     .map(|x| unsafe { x.assume_init_ref() })
                     .filter(|x| x.entry.is_some())
-                    .collect::<Vec<&Bucket<T>>>(),
+                    .collect::<Vec<&Bucket<K, V>>>(),
             )
             .finish()
     }

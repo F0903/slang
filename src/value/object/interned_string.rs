@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::{
     collections::DynArray,
     dbg_println,
-    hashing::{GlobalHashMethod, HashMethod},
+    hashing::{GlobalHashMethod, HashMethod, Hashable},
     memory::{Dealloc, HeapPtr},
     vm::VmHeap,
 };
@@ -96,5 +96,11 @@ impl PartialEq for InternedString {
 impl Display for InternedString {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.get_str())
+    }
+}
+
+impl Hashable for InternedString {
+    fn get_hash(&self) -> u32 {
+        self.hash
     }
 }

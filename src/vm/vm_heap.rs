@@ -10,8 +10,8 @@ use crate::{
 
 pub struct VmHeap {
     pub objects: ObjectManager,
-    pub interned_strings: HashTable<InternedString>,
-    pub globals: HashTable<Value>,
+    pub interned_strings: HashTable<InternedString, ()>,
+    pub globals: HashTable<InternedString, Value>,
 }
 
 impl VmHeap {
