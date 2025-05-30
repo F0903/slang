@@ -979,13 +979,11 @@ where
         compiler.consume(TokenType::LeftBrace, "Expected '{' before function body.");
         compiler.block();
 
-        let function = match compiler.compile() {
-            Ok(chunk) => chunk,
-            Err(err) => {
-                self.error(&format!("Failed to compile function: {}", err));
-                return;
-            }
-        };
+        if compiler.had_error() {
+            self.error(&format!("Failed to compile function!"));
+        }
+
+        let function = compiler.pack_function();
         let value = Value::object(
             ObjectNode::alloc(Object::Function(function), &mut self.heap.objects).read(),
         );
@@ -1015,11 +1013,7 @@ where
         }
     }
 
-    fn compile(&mut self) -> CompilerResult<Function> {
-        self.advance();
-        while !self.match_and_advance(TokenType::EOF) {
-            self.declaration();
-        }
+    fn pack_function(&mut self) -> Function {
         self.emit_empty_return();
 
         #[cfg(debug_assertions)]
@@ -1032,18 +1026,23 @@ where
             disassemble_chunk(self.get_current_chunk_mut(), &chunk_name);
         }
 
-        if self.had_error() {
-            Err("Parser encountered errors!".into())
-        } else {
-            Ok(self.current_function.clone())
-        }
+        self.current_function.clone()
     }
 
-    pub fn compile_source(&mut self, source: &'src [u8]) -> CompilerResult<Function> {
+    pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<Function> {
         self.current_source = source;
         self.scanner.set_source(source);
 
-        self.compile()
+        self.advance();
+        while !self.match_and_advance(TokenType::EOF) {
+            self.declaration();
+        }
+
+        if self.had_error() {
+            Err("Parser encountered errors!".into())
+        } else {
+            Ok(self.pack_function())
+        }
     }
 }
 

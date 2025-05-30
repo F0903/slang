@@ -198,7 +198,7 @@ impl Vm {
             FunctionType::Script,
         );
         let function = compiler
-            .compile_source(source)
+            .compile(source)
             .map_err(|e| Error::CompileTime(e.to_string()))?;
 
         self.callframes.push(CallFrame {
