@@ -95,7 +95,9 @@ impl Clone for InternedString {
 impl Dealloc for InternedString {
     fn dealloc(&mut self) {
         dbg_println!("DEBUG RAWSTRING DEALLOC: {}", self.as_str());
-        self.char_buf.dealloc();
+        if !self.char_buf.is_null() {
+            self.char_buf.dealloc();
+        }
     }
 }
 

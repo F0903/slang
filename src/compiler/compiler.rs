@@ -7,13 +7,15 @@ use crate::{
         scanner::Scanner,
         token::{Precedence, Token, TokenType},
     },
-    memory::HeapPtr,
+    memory::{Dealloc, HeapPtr},
     value::{
         Value,
-        object::{Function, InternedString, ObjectNode},
+        object::{Function, InternedString, Object, ObjectNode},
     },
     vm::{VmHeap, opcode::OpCode},
 };
+
+const MAX_FUNCTION_ARITY: u8 = 255; // Maximum number of arguments a function can have.
 
 const LOCAL_SLOTS: usize = 1024;
 
@@ -61,7 +63,7 @@ impl JumpIndecies {
 
 pub struct Compiler<'a, 'src> {
     current_source: &'src [u8],
-    scanner: Scanner<'src>,
+    scanner: HeapPtr<Scanner<'src>>,
     heap: HeapPtr<VmHeap>,
     current_function: Function,
     current_function_type: FunctionType,
@@ -79,7 +81,11 @@ impl<'a, 'src> Compiler<'a, 'src>
 where
     'src: 'a,
 {
-    pub fn new(scanner: Scanner<'src>, heap: HeapPtr<VmHeap>, function_type: FunctionType) -> Self {
+    pub fn new(
+        scanner: HeapPtr<Scanner<'src>>,
+        heap: HeapPtr<VmHeap>,
+        function_type: FunctionType,
+    ) -> Self {
         let mut locals = Stack::new();
         locals.push(Local::dummy()); // Reserve first slot as index 0 is used for the "main" function.
 
@@ -87,11 +93,7 @@ where
             current_source: &[],
             scanner,
             heap,
-            current_function: Function::new(
-                0,
-                HeapPtr::alloc(Chunk::new()),
-                InternedString::empty(),
-            ),
+            current_function: Function::new(0, HeapPtr::alloc(Chunk::new()), None),
             current_function_type: function_type,
             current: None,
             previous: None,
@@ -102,7 +104,7 @@ where
             panic_mode: false,
             parse_rule_table: define_parse_rule_table! {
                 // REMEMBER TO ADD EVERY NEW TOKEN HERE
-                TokenType::LeftParen    => {prefix: Some(Self::grouping), infix: None, precedence: Precedence::None},
+                TokenType::LeftParen    => {prefix: Some(Self::grouping), infix: Some(Self::call), precedence: Precedence::Call},
                 TokenType::RightParen   => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::LeftBrace    => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::RightBrace   => {prefix: None, infix: None, precedence: Precedence::None},
@@ -313,6 +315,11 @@ where
     /// Returns constant index
     fn emit_constant(&mut self, value: Value) -> u32 {
         self.get_current_chunk_mut().add_constant(value)
+    }
+
+    fn emit_empty_return(&mut self) {
+        self.emit_op(OpCode::None, self.get_current_line());
+        self.emit_op(OpCode::Return, self.get_current_line());
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) {
@@ -711,6 +718,22 @@ where
         }
     }
 
+    fn return_statement(&mut self) {
+        if self.current_function_type == FunctionType::Script {
+            self.error("Cannot use 'return' in top-level code.");
+        }
+
+        if self.is_current_token(TokenType::RightBrace) {
+            self.emit_empty_return();
+        } else {
+            self.expression();
+            if !self.is_current_token(TokenType::RightBrace) {
+                self.error("Expected '}' after return expression.\n The return statement must be the last statement in a block.");
+            }
+            self.emit_op(OpCode::Return, self.get_current_line());
+        }
+    }
+
     fn statement(&mut self) {
         dbg_println!("\nPARSING STATEMENT");
 
@@ -726,6 +749,8 @@ where
             self.while_statement();
         } else if self.match_and_advance(TokenType::Continue) {
             self.continue_statement();
+        } else if self.match_and_advance(TokenType::Return) {
+            self.return_statement();
         } else if self.match_and_advance(TokenType::Break) {
             self.break_statement();
         } else {
@@ -856,13 +881,18 @@ where
         self.identifier_constant(&name_token)
     }
 
-    fn define_variable(&mut self, global_index: u32) {
-        if self.scope_depth > 0 {
-            dbg_println!("DEFINING LAST DECLARED LOCAL VARIABLE");
-            self.locals.top_mut_offset(0).initialize(self.scope_depth);
+    fn initialize_local(&mut self) {
+        // We are not in a local scope, so just return.
+        if self.scope_depth < 1 {
             return;
         }
 
+        dbg_println!("DEFINING LAST DECLARED LOCAL VARIABLE");
+        self.locals.top_mut_offset(0).initialize(self.scope_depth);
+    }
+
+    fn define_variable(&mut self, global_index: u32) {
+        self.initialize_local();
         self.emit_op_with_quad(OpCode::DefineGlobal, global_index, self.get_current_line());
     }
 
@@ -880,9 +910,102 @@ where
         self.define_variable(slot);
     }
 
+    fn argument_list(&mut self) -> u8 {
+        let mut arg_count = 0;
+        if !self.is_current_token(TokenType::RightParen) {
+            loop {
+                self.expression();
+                if arg_count >= MAX_FUNCTION_ARITY {
+                    self.error(&format!(
+                        "Function cannot have more than {} arguments.",
+                        MAX_FUNCTION_ARITY
+                    ));
+                }
+                arg_count += 1;
+                if self.match_and_advance(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(TokenType::RightParen, "Expected ')' after argument list.");
+        arg_count
+    }
+
+    fn call(&mut self, _can_assign: bool) {
+        let arg_count = self.argument_list();
+        self.emit_op_with_byte(OpCode::Call, arg_count, self.get_current_line());
+    }
+
+    fn function(&mut self, function_type: FunctionType) {
+        let mut compiler = Compiler::new(self.scanner.clone(), self.heap.clone(), function_type);
+
+        if self.current_function_type != FunctionType::Script {
+            // Since we (the current compiler 'self') hit the fn token, the previous token is the function name.
+            // which we set in the new Compiler that will compile the function.
+            let previous_token = self
+                .get_previous_token()
+                .cloned()
+                .expect("Expected function name token.");
+            let func_name = InternedString::new(
+                previous_token.lexeme.get_str(self.current_source),
+                &mut self.heap,
+            );
+            compiler.current_function.set_name(Some(func_name));
+        }
+
+        compiler.begin_scope();
+        compiler.consume(TokenType::LeftParen, "Expected '(' after function name.");
+        if !compiler.is_current_token(TokenType::RightParen) {
+            // Loop through parameters seperated by commas
+            loop {
+                if compiler.current_function.arity >= MAX_FUNCTION_ARITY {
+                    compiler.error(&format!(
+                        "Function cannot have more than {} parameters.",
+                        MAX_FUNCTION_ARITY
+                    ));
+                }
+                let constant = compiler.parse_variable("Expected parameter name.");
+                compiler.define_variable(constant);
+                compiler.current_function.arity += 1;
+                if !compiler.match_and_advance(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+        compiler.consume(
+            TokenType::RightParen,
+            "Expected ')' after function parameters.",
+        );
+        compiler.consume(TokenType::LeftBrace, "Expected '{' before function body.");
+        compiler.block();
+
+        let function = match compiler.compile() {
+            Ok(chunk) => chunk,
+            Err(err) => {
+                self.error(&format!("Failed to compile function: {}", err));
+                return;
+            }
+        };
+        let value = Value::object(
+            ObjectNode::alloc(Object::Function(function), &mut self.heap.objects).read(),
+        );
+        self.emit_constant_with_op(value, self.get_current_line());
+    }
+
+    fn fn_declaration(&mut self) {
+        dbg_println!("\n PARSING FUNCTION DECL");
+
+        let global = self.parse_variable("Expected function name.");
+        self.initialize_local();
+        self.function(FunctionType::Function);
+        self.define_variable(global);
+    }
+
     fn declaration(&mut self) {
         if self.match_and_advance(TokenType::Let) {
             self.variable_declaration();
+        } else if self.match_and_advance(TokenType::Fn) {
+            self.fn_declaration();
         } else {
             self.statement();
         }
@@ -892,27 +1015,20 @@ where
         }
     }
 
-    pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<Function> {
-        self.current_source = source;
-        self.scanner.set_source(source);
-
+    fn compile(&mut self) -> CompilerResult<Function> {
         self.advance();
         while !self.match_and_advance(TokenType::EOF) {
             self.declaration();
         }
-        self.consume(TokenType::EOF, "Expected end of file.");
-
-        //Temporary None and return ops
-        self.emit_constant_with_op(Value::none(), self.get_current_line());
-        self.emit_op(OpCode::Return, self.get_current_line());
+        self.emit_empty_return();
 
         #[cfg(debug_assertions)]
         if !self.had_error() {
-            let chunk_name = if self.current_function.get_name().is_empty() {
-                "<script>".to_owned()
-            } else {
-                self.current_function.get_name().as_str().to_owned()
-            };
+            let chunk_name = match self.current_function.get_name() {
+                Some(name) => name.as_str(),
+                None => "<script>",
+            }
+            .to_owned();
             disassemble_chunk(self.get_current_chunk_mut(), &chunk_name);
         }
 
@@ -921,5 +1037,19 @@ where
         } else {
             Ok(self.current_function.clone())
         }
+    }
+
+    pub fn compile_source(&mut self, source: &'src [u8]) -> CompilerResult<Function> {
+        self.current_source = source;
+        self.scanner.set_source(source);
+
+        self.compile()
+    }
+}
+
+impl Drop for Compiler<'_, '_> {
+    fn drop(&mut self) {
+        self.scanner.dealloc();
+        self.heap.dealloc();
     }
 }

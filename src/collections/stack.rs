@@ -48,10 +48,16 @@ impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
         debug_assert!(self.count > 0, "cannot pop from an empty stack");
         let maybe_init = &mut self.stack[self.count() - 1];
         let val = unsafe { maybe_init.assume_init_read() }; // First duplicate the value
-        unsafe {
-            maybe_init.assume_init_drop(); // Then drop the old
-        }
         self.count -= 1;
+        val
+    }
+
+    pub fn pop_n(&mut self, n: usize) -> &mut [T] {
+        debug_assert!(self.count >= n, "cannot pop more than available elements");
+        let count = self.count();
+        let maybe_init = &mut self.stack[count - n..];
+        let val = unsafe { maybe_init.assume_init_mut() }; // First duplicate the value
+        self.count -= n;
         val
     }
 

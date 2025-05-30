@@ -57,6 +57,7 @@ pub fn disassemble_instruction(chunk: &mut Chunk, offset: usize) -> usize {
         OpCode::Jump | OpCode::JumpIfFalse | OpCode::JumpIfTrue => {
             jump_instruction(&opcode, chunk, offset, 1)
         }
+        OpCode::Call => byte_instruction(&opcode, chunk, offset),
         OpCode::PopN | OpCode::GetLocal | OpCode::SetLocal => {
             double_instruction(&opcode, chunk, offset)
         }

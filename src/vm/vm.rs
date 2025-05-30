@@ -1,23 +1,21 @@
-use std::ptr::null_mut;
-
 use super::{VmHeap, callframe::CallFrame, opcode::OpCode};
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
 use crate::{
     collections::{HashTable, Stack},
-    compiler::{Compiler, FunctionType, chunk::Chunk},
+    compiler::{Compiler, FunctionType},
     dbg_println,
     error::{Error, Result},
     lexing::scanner::Scanner,
     memory::{Dealloc, HeapPtr},
     value::{
         Value,
-        object::{Object, ObjectManager, ObjectNode},
+        object::{Function, InternedString, NativeFunction, Object, ObjectManager, ObjectNode},
     },
 };
 
-pub const STACK_SIZE: usize = 1024;
-pub const CALLFRAMES_SIZE: usize = 256;
+pub const STACK_MAX: usize = 1024;
+pub const MAX_CALLFRAMES: usize = 256;
 
 macro_rules! binary_op_result {
     ($stack: expr, $op: tt) => {{
@@ -43,9 +41,9 @@ macro_rules! binary_op_from_bool {
 }
 
 pub struct Vm {
-    stack: Stack<Value, STACK_SIZE>,
+    stack: Stack<Value, STACK_MAX>,
     heap: HeapPtr<VmHeap>,
-    callframes: Stack<CallFrame, CALLFRAMES_SIZE>,
+    callframes: Stack<CallFrame, MAX_CALLFRAMES>,
 }
 
 impl Vm {
@@ -102,17 +100,101 @@ impl Vm {
         frame.function.chunk.get_constant(index as u32)
     }
 
+    pub fn get_stack_trace(&self) -> String {
+        let mut str_buf = String::new();
+        for frame in self.callframes.iter() {
+            let instruction = unsafe {
+                let ip_offset = frame.ip.offset_from(frame.function.chunk.get_code_ptr());
+                frame.ip.sub((ip_offset as usize) - 1).read()
+            }; // -1 to get the previous instruction that failed
+
+            let function_name = frame.function.get_name();
+            str_buf.push_str(&format!(
+                "[line {}] in {}",
+                frame.function.chunk.get_line_number(instruction as usize),
+                function_name
+                    .as_ref()
+                    .map(|name| name.as_str())
+                    .unwrap_or("<script>")
+            ));
+        }
+        str_buf
+    }
+
+    fn call(&mut self, function: Function, arg_count: u8) -> Result<()> {
+        if arg_count != function.arity {
+            return Err(Error::Runtime(format!(
+                "Expected {} arguments, got {} for function '{}'",
+                function.arity,
+                arg_count,
+                function
+                    .get_name()
+                    .as_ref()
+                    .map(|x| x.as_str())
+                    .unwrap_or("<script>")
+            )));
+        }
+
+        if self.callframes.count() >= MAX_CALLFRAMES {
+            return Err(Error::Runtime("Call stack overflow".to_owned()));
+        }
+
+        let frame = self.callframes.top_mut();
+        frame.ip = function.chunk.get_code_ptr();
+        frame.function = function;
+        frame.stack_offset = self.stack.count() - arg_count as usize - 1; // -1 for the function itself
+        Ok(())
+    }
+
+    fn call_value(&mut self, callee: Value, arg_count: u8) -> Result<()> {
+        if callee.is_object() {
+            let obj_ptr = callee.as_object_ptr();
+            match unsafe { obj_ptr.assume_init_ref().get_object() } {
+                Object::Function(func) => return self.call(func.clone(), arg_count),
+                Object::NativeFunction(native_func) => {
+                    let args = self.stack.pop_n(arg_count as usize);
+                    let result = (native_func.function)(arg_count, args)?;
+                    self.stack.push(result);
+                }
+                _ => return Err(Error::Runtime("Cannot call non-function object".to_owned())),
+            }
+        }
+        Ok(())
+    }
+
+    pub fn register_native_function(&mut self, name: &str, function: NativeFunction) {
+        let func_name = InternedString::new(name, &mut self.heap);
+        let func_value = Value::object(
+            ObjectNode::alloc(Object::NativeFunction(function), &mut self.heap.objects).read(),
+        );
+
+        self.stack.push(Value::object(
+            ObjectNode::alloc(Object::String(func_name.clone()), &mut self.heap.objects).read(),
+        ));
+        self.stack.push(func_value.clone());
+        self.heap.globals.set(func_name, Some(func_value));
+        self.stack.pop();
+        self.stack.pop();
+
+        // The stack pushes and pops are due to future garbage collection proofing.
+    }
+
     pub fn interpret<'src>(&mut self, source: &'src [u8]) -> Result<()> {
-        let mut compiler = Compiler::new(Scanner::new(), self.heap.clone(), FunctionType::Script);
+        let mut compiler = Compiler::new(
+            HeapPtr::alloc(Scanner::new()),
+            self.heap.clone(),
+            FunctionType::Script,
+        );
         let function = compiler
-            .compile(source)
+            .compile_source(source)
             .map_err(|e| Error::CompileTime(e.to_string()))?;
 
         self.callframes.push(CallFrame {
             ip: function.chunk.get_code_ptr(),
-            function,
+            function: function.clone(),
             stack_offset: 0,
         });
+        self.call(function, 0)?;
 
         loop {
             #[cfg(debug_assertions)]
@@ -130,6 +212,22 @@ impl Vm {
 
             let instruction = self.read_byte();
             match OpCode::from_code(instruction) {
+                OpCode::Return => {
+                    let result = self.stack.pop();
+                    self.callframes.pop();
+                    if self.callframes.count() < 1 {
+                        self.stack.pop(); // Pop the "main" function itself (exiting the program)
+                        return Ok(());
+                    }
+                    self.stack.push(result);
+                }
+                OpCode::Call => {
+                    let arg_count = self.read_byte();
+                    let callee = self.stack.peek(arg_count as usize);
+                    if let Err(e) = self.call_value(callee.clone(), arg_count) {
+                        return Err(Error::Runtime(format!("Function call failed: {}", e)));
+                    }
+                }
                 OpCode::Backjump => {
                     let offset = self.read_double();
                     let frame = self.callframes.top_mut();
@@ -313,6 +411,11 @@ impl Vm {
                             Object::Function(_) => {
                                 return Err(Error::Runtime(format!("Cannot add two functions",)));
                             }
+                            Object::NativeFunction(_) => {
+                                return Err(Error::Runtime(format!(
+                                    "Cannot add two native functions"
+                                )));
+                            }
                         }
                     } else {
                         let result = first + second;
@@ -329,10 +432,6 @@ impl Vm {
                 OpCode::Negate => {
                     let val = self.stack.top_mut_offset(0);
                     *val = (-(*val).clone())?;
-                }
-                OpCode::Return => {
-                    dbg_println!("{}", self.stack.pop());
-                    return Ok(());
                 }
             }
         }

@@ -76,6 +76,7 @@ where
         if self.is_null() {
             return;
         }
+
         unsafe {
             drop(Box::from_raw(self.mem));
         }
@@ -91,7 +92,12 @@ where
         if self.is_null() {
             return;
         }
+
         self.take().dealloc();
+        unsafe {
+            drop(Box::from_raw(self.mem));
+        }
+        self.mem = ptr::null_mut();
     }
 }
 

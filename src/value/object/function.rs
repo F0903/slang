@@ -6,18 +6,22 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub struct Function {
-    pub arity: u32,
+    pub arity: u8,
     pub chunk: HeapPtr<Chunk>,
-    name: InternedString,
+    name: Option<InternedString>,
 }
 
 impl Function {
-    pub fn new(arity: u32, chunk: HeapPtr<Chunk>, name: InternedString) -> Self {
+    pub fn new(arity: u8, chunk: HeapPtr<Chunk>, name: Option<InternedString>) -> Self {
         Self { arity, chunk, name }
     }
 
-    pub fn get_name(&self) -> &InternedString {
+    pub fn get_name(&self) -> &Option<InternedString> {
         &self.name
+    }
+
+    pub fn set_name(&mut self, name: Option<InternedString>) {
+        self.name = name;
     }
 }
 
@@ -26,7 +30,9 @@ impl Dealloc for Function {
         if !self.chunk.is_null() {
             self.chunk.dealloc();
         }
-        self.name.dealloc();
+        if let Some(name) = &mut self.name {
+            name.dealloc();
+        }
     }
 }
 

@@ -20,6 +20,7 @@ const fn is_alpha(ch: u8) -> bool {
     (ch >= b'a' && ch <= b'z') || (ch >= b'A' && ch <= b'Z') || ch == b'_'
 }
 
+#[derive(Debug)]
 pub struct Scanner<'src> {
     start: *const u8,
     current_start: *const u8,

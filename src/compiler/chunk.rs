@@ -116,7 +116,7 @@ impl Chunk {
         self.constants.read(index as usize)
     }
 
-    pub fn get_line_number(&mut self, index: usize) -> u32 {
+    pub fn get_line_number(&self, index: usize) -> u32 {
         self.line_numbers_map.copy_read(index)
     }
 }
