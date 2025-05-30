@@ -1024,7 +1024,7 @@ where
 
         #[cfg(debug_assertions)]
         if !self.had_error() {
-            let chunk_name = match self.current_function.get_name() {
+            let chunk_name = match &self.current_function.name {
                 Some(name) => name.as_str(),
                 None => "<script>",
             }

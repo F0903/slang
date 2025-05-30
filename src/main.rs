@@ -62,13 +62,14 @@ fn run_file(path: String, vm: &mut Vm) -> Result<()> {
 
 fn interpret(buf: &[u8], vm: &mut Vm) -> Result<()> {
     //let mut vm = Vm::new(); // Create a new VM each time to debug the drop implementations.
-    vm.register_native_function(
-        "clock",
-        NativeFunction::new(|_arg_count, _args| {
+    vm.register_native_function(NativeFunction::new(
+        |_args| {
             let elapsed = START_TIME.elapsed().as_secs_f64();
             Ok(Value::number(elapsed))
-        }),
-    );
+        },
+        0,
+        "clock".to_owned(),
+    ));
     vm.interpret(buf)?;
     Ok(())
 }

@@ -2,15 +2,17 @@ use crate::{error::Result, value::Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NativeFunction {
-    pub function: fn(u8, &[Value]) -> Result<Value>,
+    pub function: fn(&[Value]) -> Result<Value>,
+    pub arity: u8,
+    pub name: String,
 }
 
 impl NativeFunction {
-    pub fn new(function: fn(u8, &[Value]) -> Result<Value>) -> Self {
-        Self { function }
-    }
-
-    pub fn call(&self, arity: u8, args: &[Value]) -> Result<Value> {
-        (self.function)(arity, args)
+    pub fn new(function: fn(&[Value]) -> Result<Value>, arity: u8, name: String) -> Self {
+        Self {
+            function,
+            arity,
+            name,
+        }
     }
 }

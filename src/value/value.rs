@@ -258,10 +258,10 @@ impl Display for Value {
                 match &*obj_ptr {
                     Object::String(s) => f.write_fmt(format_args!("String object: {}", s.as_str())),
                     Object::Function(func) => {
-                        f.write_fmt(format_args!("Function object: {:?}", func.get_name()))
+                        f.write_fmt(format_args!("Function object: {:?}", func.name))
                     }
                     Object::NativeFunction(func) => {
-                        f.write_fmt(format_args!("NativeFunction object: {:?}", func.function))
+                        f.write_fmt(format_args!("NativeFunction object: {:?}", func))
                     }
                 }
             },

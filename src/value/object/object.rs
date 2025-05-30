@@ -46,14 +46,12 @@ impl Display for Object {
             Object::String(x) => f.write_fmt(format_args!("String = {}", x.as_str())),
             Object::Function(x) => f.write_fmt(format_args!(
                 "Function = {}",
-                x.get_name()
+                x.name
                     .as_ref()
                     .map(|x| x.as_str().to_owned())
                     .unwrap_or("unnamed function".to_owned())
             )),
-            Object::NativeFunction(x) => {
-                f.write_fmt(format_args!("NativeFunction = {:?}", x.function))
-            }
+            Object::NativeFunction(x) => f.write_fmt(format_args!("NativeFunction = {:?}", x)),
         }
     }
 }
@@ -62,10 +60,8 @@ impl Debug for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Object::String(x) => f.write_fmt(format_args!("String = {:?}", x.as_str())),
-            Object::Function(x) => f.write_fmt(format_args!("Function = {:?}", x.get_name())),
-            Object::NativeFunction(x) => {
-                f.write_fmt(format_args!("NativeFunction = {:?}", x.function))
-            }
+            Object::Function(x) => f.write_fmt(format_args!("Function = {:?}", x.name)),
+            Object::NativeFunction(x) => f.write_fmt(format_args!("NativeFunction = {:?}", x)),
         }
     }
 }

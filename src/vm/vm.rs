@@ -108,7 +108,7 @@ impl Vm {
                 frame.ip.sub((ip_offset as usize) - 1).read()
             }; // -1 to get the previous instruction that failed
 
-            let function_name = frame.function.get_name();
+            let function_name = &frame.function.name;
             str_buf.push_str(&format!(
                 "[line {}] in {}",
                 frame.function.chunk.get_line_number(instruction as usize),
@@ -128,7 +128,7 @@ impl Vm {
                 function.arity,
                 arg_count,
                 function
-                    .get_name()
+                    .name
                     .as_ref()
                     .map(|x| x.as_str())
                     .unwrap_or("<script>")
@@ -146,15 +146,27 @@ impl Vm {
         Ok(())
     }
 
+    fn native_call(&mut self, native_func: NativeFunction, arg_count: u8) -> Result<()> {
+        if arg_count != native_func.arity {
+            return Err(Error::Runtime(format!(
+                "Expected {} arguments, got {} for function '{}'",
+                native_func.arity, arg_count, native_func.name
+            )));
+        }
+
+        let args = self.stack.pop_n(arg_count as usize);
+        let result = (native_func.function)(args)?;
+        self.stack.push(result);
+        Ok(())
+    }
+
     fn call_value(&mut self, callee: Value, arg_count: u8) -> Result<()> {
         if callee.is_object() {
             let obj_ptr = callee.as_object_ptr();
             match unsafe { obj_ptr.assume_init_ref().get_object() } {
                 Object::Function(func) => return self.call(func.clone(), arg_count),
                 Object::NativeFunction(native_func) => {
-                    let args = self.stack.pop_n(arg_count as usize);
-                    let result = (native_func.function)(arg_count, args)?;
-                    self.stack.push(result);
+                    return self.native_call(native_func.clone(), arg_count);
                 }
                 _ => return Err(Error::Runtime("Cannot call non-function object".to_owned())),
             }
@@ -162,8 +174,8 @@ impl Vm {
         Ok(())
     }
 
-    pub fn register_native_function(&mut self, name: &str, function: NativeFunction) {
-        let func_name = InternedString::new(name, &mut self.heap);
+    pub fn register_native_function(&mut self, function: NativeFunction) {
+        let func_name = InternedString::new(&function.name, &mut self.heap);
         let func_value = Value::object(
             ObjectNode::alloc(Object::NativeFunction(function), &mut self.heap.objects).read(),
         );
