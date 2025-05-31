@@ -54,7 +54,10 @@ impl Dealloc for ObjectNode {
     fn dealloc(&mut self) {
         dbg_println!("DEBUG OBJECT CONTAINER DEALLOC: {:?}", self);
         // Don't dealloc the next node
-        self.obj.dealloc();
+        if !self.obj.is_null() {
+            self.obj.dealloc();
+            self.obj = HeapPtr::null();
+        }
     }
 }
 

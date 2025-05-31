@@ -1,6 +1,6 @@
 use std::{fmt::Debug, mem::MaybeUninit};
 
-use super::{stack_iter::StackIter, stack_offset::StackOffset};
+use super::{stack_iter::StackIter, stack_offset::StackOffset, stack_rev_iter::StackRevIter};
 
 pub const DEFAULT_STACK_SIZE: usize = 1024;
 
@@ -96,12 +96,18 @@ impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
         self.get_ref_at(self.count() - 1 - offset_from_top)
     }
 
-    pub const fn iter<'a>(&'a self) -> StackIter<'a, T, STACK_SIZE> {
+    /// Returns an iterator that iterates from the bottom of the stack to the top
+    pub const fn bottom_iter<'a>(&'a self) -> StackRevIter<'a, T, STACK_SIZE> {
+        StackRevIter::new(self)
+    }
+
+    /// Returns an iterator that iterates from the top of the stack to the bottom
+    pub const fn top_iter<'a>(&'a self) -> StackIter<'a, T, STACK_SIZE> {
         StackIter::new(self)
     }
 
-    pub fn offset<'a>(&'a mut self, offset_from_base: usize) -> StackOffset<'a, T, STACK_SIZE> {
-        StackOffset::new(self, offset_from_base)
+    pub fn offset<'a>(&'a mut self, base_offset: usize) -> StackOffset<'a, T, STACK_SIZE> {
+        StackOffset::new(self, base_offset)
     }
 }
 

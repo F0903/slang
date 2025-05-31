@@ -97,6 +97,7 @@ impl Dealloc for InternedString {
         dbg_println!("DEBUG RAWSTRING DEALLOC: {}", self.as_str());
         if !self.char_buf.is_null() {
             self.char_buf.dealloc();
+            self.char_buf = HeapPtr::null();
         }
     }
 }

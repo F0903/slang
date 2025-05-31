@@ -25,9 +25,12 @@ impl Dealloc for Function {
     fn dealloc(&mut self) {
         if !self.chunk.is_null() {
             self.chunk.dealloc();
+            self.chunk = HeapPtr::null();
         }
+
         if let Some(name) = &mut self.name {
             name.dealloc();
+            self.name = None;
         }
     }
 }

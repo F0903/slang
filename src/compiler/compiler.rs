@@ -767,7 +767,7 @@ where
 
     /// Returns None if no local variable with the name is found.
     fn resolve_local(&mut self, name_token: &Token) -> Option<u16> {
-        for (i, local) in self.locals.iter().enumerate() {
+        for (i, local) in self.locals.bottom_iter().enumerate() {
             let local_name = local.get_name();
 
             if let None = local_name {
@@ -881,19 +881,22 @@ where
         self.identifier_constant(&name_token)
     }
 
-    fn initialize_local(&mut self) {
+    /// Returns true if the we actually initialized a loca, and false if we are in global scope.
+    fn initialize_local(&mut self) -> bool {
         // We are not in a local scope, so just return.
         if self.scope_depth < 1 {
-            return;
+            return false;
         }
 
         dbg_println!("DEFINING LAST DECLARED LOCAL VARIABLE");
         self.locals.top_mut_offset(0).initialize(self.scope_depth);
+        true
     }
 
     fn define_variable(&mut self, global_index: u32) {
-        self.initialize_local();
-        self.emit_op_with_quad(OpCode::DefineGlobal, global_index, self.get_current_line());
+        if !self.initialize_local() {
+            self.emit_op_with_quad(OpCode::DefineGlobal, global_index, self.get_current_line());
+        }
     }
 
     fn variable_declaration(&mut self) {

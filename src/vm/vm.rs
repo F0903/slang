@@ -102,7 +102,7 @@ impl Vm {
 
     pub fn get_stack_trace(&self) -> String {
         let mut str_buf = String::new();
-        for frame in self.callframes.iter() {
+        for frame in self.callframes.top_iter() {
             let instruction = unsafe {
                 let ip_offset = frame.ip.offset_from(frame.function.chunk.get_code_ptr());
                 frame.ip.sub((ip_offset as usize) - 1).read()
@@ -142,7 +142,7 @@ impl Vm {
         let frame = self.callframes.top_mut();
         frame.ip = function.chunk.get_code_ptr();
         frame.function = function;
-        frame.stack_offset = self.stack.count() - arg_count as usize - 1; // -1 for the function itself
+        frame.stack_base_offset = self.stack.count() - arg_count as usize - 1; // -1 to compensate for the function itself being on the stack
         Ok(())
     }
 
@@ -201,10 +201,13 @@ impl Vm {
             .compile(source)
             .map_err(|e| Error::CompileTime(e.to_string()))?;
 
+        self.stack.push(Value::object(
+            ObjectNode::alloc(Object::Function(function.clone()), &mut self.heap.objects).read(),
+        ));
         self.callframes.push(CallFrame {
             ip: function.chunk.get_code_ptr(),
             function: function.clone(),
-            stack_offset: 0,
+            stack_base_offset: 0,
         });
         self.call(function, 0)?;
 
@@ -270,21 +273,22 @@ impl Vm {
                     let value = self.stack.peek(0).clone();
                     dbg_println!("SETTING LOCAL {} = {}", slot, value);
                     self.stack
-                        .offset(frame.stack_offset)
+                        .offset(frame.stack_base_offset)
                         .set_at(slot as usize, value);
                 }
                 OpCode::GetLocal => {
                     let slot = self.read_double();
                     let frame = self.callframes.top_ref();
-                    let local = self.stack.offset(frame.stack_offset).get_at(slot as usize);
+                    let local = self
+                        .stack
+                        .offset(frame.stack_base_offset)
+                        .get_at(slot as usize);
                     dbg_println!("GETTING LOCAL {} = {}", slot, local);
                     self.stack.push(local);
                 }
                 OpCode::PopN => {
                     let n = self.read_double();
-                    for _ in 0..n {
-                        self.stack.pop();
-                    }
+                    self.stack.pop_n(n as usize);
                 }
                 OpCode::Pop => {
                     self.stack.pop();
@@ -452,10 +456,9 @@ impl Vm {
     fn free_objects(&self) {
         let mut obj_container_ptr = self.heap.objects.get_objects_head();
         while !obj_container_ptr.is_null() {
-            let next_obj_container_ptr = obj_container_ptr.get().get_next_object_ptr();
+            let next_obj_container_ptr = obj_container_ptr.get_next_object_ptr();
 
-            let mut obj_container = obj_container_ptr.take();
-            obj_container.dealloc();
+            obj_container_ptr.dealloc();
 
             obj_container_ptr = next_obj_container_ptr;
         }

@@ -5,6 +5,7 @@ use std::{
 };
 
 use super::{dealloc::Dealloc, drop_heap_ptr::DropHeapPtr};
+use crate::dbg_println;
 
 // A manual version of Box<T> that REQUIRES YOU TO MANUALLY CALL DEALLOC TO FREE MEMORY
 // This is useful for heap allocated objects that require multiple references to the same object and lowest overhead (thus not using Rc<RefCell<T>> or similar).
@@ -77,10 +78,13 @@ where
             return;
         }
 
+        dbg_println!("HEAPPTR DEALLOC (A): {:?}", self);
         unsafe {
-            drop(Box::from_raw(self.mem));
+            if std::mem::needs_drop::<T>() {
+                drop(Box::from_raw(self.mem));
+            }
+            self.mem = ptr::null_mut();
         }
-        self.mem = ptr::null_mut();
     }
 }
 
@@ -93,10 +97,8 @@ where
             return;
         }
 
+        dbg_println!("HEAPPTR DEALLOC (B): {:?}", self);
         self.take().dealloc();
-        unsafe {
-            drop(Box::from_raw(self.mem));
-        }
         self.mem = ptr::null_mut();
     }
 }
