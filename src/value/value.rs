@@ -4,8 +4,8 @@ use std::{
 };
 
 use super::{
-    ValueCasts,
     object::{Object, ObjectNode},
+    value_casts::ValueCasts,
     value_type::ValueType,
 };
 use crate::{error::Error, memory::HeapPtr};

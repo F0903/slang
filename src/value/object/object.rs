@@ -62,7 +62,7 @@ impl Debug for Object {
         match self {
             Object::String(x) => f.write_fmt(format_args!("String = {:?}", x.as_str())),
             Object::Function(x) => f.write_fmt(format_args!("Function = {:?}", x.name)),
-            Object::NativeFunction(x) => f.write_fmt(format_args!("NativeFunction")),
+            Object::NativeFunction(x) => f.write_fmt(format_args!("NativeFunction = {:?}", x)),
         }
     }
 }

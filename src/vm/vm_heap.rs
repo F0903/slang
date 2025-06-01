@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-use super::Vm;
 use crate::{
     collections::HashTable,
     dbg_println,

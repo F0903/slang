@@ -4,7 +4,7 @@ use std::{
     ptr::{self, null_mut},
 };
 
-use super::{Dealloc, drop_dealloc::DropDealloc};
+use super::Dealloc;
 use crate::dbg_println;
 
 // A manual version of Box<T> that REQUIRES YOU TO MANUALLY CALL DEALLOC TO FREE MEMORY
@@ -68,12 +68,13 @@ impl<T> Dealloc for HeapPtr<T>
 where
     T: Debug,
 {
+    // Despite specilization being unsound, I do not believe this case will cause UB
     default fn dealloc(&mut self) {
         if self.is_null() {
             return;
         }
 
-        dbg_println!("HEAPPTR DEALLOC (INNER DEALLOC): {:?}", self);
+        dbg_println!("HEAPPTR DEALLOC (INNER DROP): {:?}", self);
         unsafe {
             if std::mem::needs_drop::<T>() {
                 drop(Box::from_raw(self.mem));
@@ -92,9 +93,9 @@ where
             return;
         }
 
-        dbg_println!("HEAPPTR DEALLOC (INNER DROP): {:?}", self);
+        dbg_println!("HEAPPTR DEALLOC (INNER DEALLOC): {:?}", self);
         self.take().dealloc();
-        self.mem = ptr::null_mut();
+        self.mem = self::null_mut();
     }
 }
 
