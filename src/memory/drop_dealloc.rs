@@ -6,9 +6,9 @@ use std::{
 use super::HeapPtr;
 use crate::{dbg_println, memory::Dealloc};
 
-// A wrapper around `HeapPtr` that automatically deallocates the memory when dropped.
+// A wrapper around a Dealloc type that automatically deallocates the memory when dropped.
 pub struct DropDealloc<T: Dealloc + Debug> {
-    value: T,
+    inner: T,
 }
 
 impl<T> DropDealloc<T>
@@ -16,7 +16,7 @@ where
     T: Dealloc + Debug,
 {
     pub const fn new(value: T) -> Self {
-        Self { value }
+        Self { inner: value }
     }
 }
 
@@ -27,7 +27,7 @@ where
     type Target = <HeapPtr<T> as Deref>::Target;
 
     fn deref(&self) -> &Self::Target {
-        &self.value
+        &self.inner
     }
 }
 
@@ -36,7 +36,7 @@ where
     T: Dealloc + Debug,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.value
+        &mut self.inner
     }
 }
 
@@ -45,8 +45,8 @@ where
     T: Dealloc + Debug,
 {
     fn drop(&mut self) {
-        dbg_println!("DROPPING HEAPPTR: {:?}", self.value);
-        self.value.dealloc();
+        dbg_println!("DROPPING HEAPPTR: {:?}", self.inner);
+        self.inner.dealloc();
     }
 }
 
