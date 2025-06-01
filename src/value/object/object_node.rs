@@ -1,48 +1,38 @@
 use std::fmt::Debug;
 
-use super::{InternedString, Object, ObjectManager};
+use super::{InternedString, Object};
 use crate::{
     dbg_println,
     memory::{Dealloc, HeapPtr},
     vm::VmHeap,
 };
+
 /// A container for objects that "links" them together as a linked list.
 /// This is used to keep track of all objects in the VM.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ObjectNode {
-    obj: HeapPtr<Object>,
+    obj: Object,
     next: HeapPtr<ObjectNode>,
 }
 
 impl ObjectNode {
-    pub fn alloc(obj: Object, objects: &mut ObjectManager) -> HeapPtr<Self> {
+    pub fn alloc(obj: Object, heap: &mut VmHeap) -> HeapPtr<Self> {
         dbg_println!("DEBUG OBJECT ALLOC: {:?}", obj);
 
-        let head = objects.get_objects_head();
+        let head = heap.get_objects_head();
 
-        // Having an additional alloc here for this container type (which is essentially just two pointers) is not optimal, but rust does not allow recursive types without indirection (a pointer) so it cannot be avoided.
-        let me = HeapPtr::alloc(Self {
-            obj: HeapPtr::alloc(obj),
-            next: head,
-        });
-        objects.set_objects_head(me.clone());
+        let me = HeapPtr::alloc(Self { obj, next: head });
+        heap.set_objects_head(me.clone());
         me
     }
 
     // Convinience function to allocate a string object
     pub fn alloc_string(str: &str, heap: &mut VmHeap) -> HeapPtr<Self> {
-        Self::alloc(
-            Object::String(InternedString::new(str, heap)),
-            &mut heap.objects,
-        )
-    }
-
-    pub const fn get_object_ptr(&self) -> HeapPtr<Object> {
-        self.obj
+        Self::alloc(Object::String(InternedString::new(str, heap)), heap)
     }
 
     pub fn get_object(&self) -> &Object {
-        self.obj.get()
+        &self.obj
     }
 
     pub const fn get_next_object_ptr(&self) -> HeapPtr<ObjectNode> {
@@ -52,12 +42,10 @@ impl ObjectNode {
 
 impl Dealloc for ObjectNode {
     fn dealloc(&mut self) {
-        dbg_println!("DEBUG OBJECT CONTAINER DEALLOC: {:?}", self);
-        // Don't dealloc the next node
-        if !self.obj.is_null() {
-            self.obj.dealloc();
-            self.obj = HeapPtr::null();
-        }
+        dbg_println!("DEBUG OBJECTNODE DEALLOC: {:?}", self);
+        self.obj.dealloc();
+
+        // We don't deallocate the next node here, as we want the rest of the objects to remain.
     }
 }
 

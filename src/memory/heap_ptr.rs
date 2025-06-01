@@ -4,7 +4,7 @@ use std::{
     ptr::{self, null_mut},
 };
 
-use super::{dealloc::Dealloc, drop_heap_ptr::DropHeapPtr};
+use super::{Dealloc, drop_dealloc::DropDealloc};
 use crate::dbg_println;
 
 // A manual version of Box<T> that REQUIRES YOU TO MANUALLY CALL DEALLOC TO FREE MEMORY
@@ -21,11 +21,6 @@ where
         // Using Box::leak is more efficient than manually allocating due to some internal Rust optimizations.
         let mem = Box::leak(Box::new(obj));
         Self { mem }
-    }
-
-    /// Automatically deallocates the memory when this pointer is dropped.
-    pub const fn dealloc_on_drop(self) -> DropHeapPtr<T> {
-        DropHeapPtr::new(self)
     }
 
     pub const fn from_raw(ptr: *mut T) -> Self {
@@ -45,10 +40,10 @@ where
     }
 
     /// This will take ownership of the object and return it.
-    /// This means that it is up to the caller to make sure it is dropped/deallocated.
+    /// This makes the underlying value be exposed to the normal drop rules.
     pub fn take(mut self) -> T {
         let val = unsafe { *Box::from_raw(self.mem) };
-        self.mem = null_mut(); // Just to be sure
+        self.mem = null_mut();
         val
     }
 
@@ -78,7 +73,7 @@ where
             return;
         }
 
-        dbg_println!("HEAPPTR DEALLOC (A): {:?}", self);
+        dbg_println!("HEAPPTR DEALLOC (INNER DEALLOC): {:?}", self);
         unsafe {
             if std::mem::needs_drop::<T>() {
                 drop(Box::from_raw(self.mem));
@@ -97,7 +92,7 @@ where
             return;
         }
 
-        dbg_println!("HEAPPTR DEALLOC (B): {:?}", self);
+        dbg_println!("HEAPPTR DEALLOC (INNER DROP): {:?}", self);
         self.take().dealloc();
         self.mem = ptr::null_mut();
     }

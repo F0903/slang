@@ -1,6 +1,5 @@
 use std::{
     fmt::{Debug, Display},
-    mem::MaybeUninit,
     ops::{Add, Div, Mul, Neg, Sub},
 };
 
@@ -9,21 +8,19 @@ use super::{
     object::{Object, ObjectNode},
     value_type::ValueType,
 };
-use crate::error::Error;
+use crate::{error::Error, memory::HeapPtr};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Value {
     value_type: ValueType,
     casts: ValueCasts,
 }
 
 impl Value {
-    pub const fn object(value: ObjectNode) -> Self {
+    pub const fn object(object_node: HeapPtr<ObjectNode>) -> Self {
         Self {
             value_type: ValueType::Object,
-            casts: ValueCasts {
-                object: MaybeUninit::new(value),
-            },
+            casts: ValueCasts { object_node },
         }
     }
 
@@ -56,8 +53,8 @@ impl Value {
         unsafe { self.casts.boolean }
     }
 
-    pub const fn as_object_ptr(&self) -> MaybeUninit<ObjectNode> {
-        unsafe { self.casts.object }
+    pub const fn as_object_ptr(&self) -> HeapPtr<ObjectNode> {
+        unsafe { self.casts.object_node }
     }
 
     pub fn is_falsey(&self) -> bool {
@@ -148,9 +145,7 @@ impl PartialEq for Value {
             match self.value_type {
                 ValueType::Bool => self.casts.boolean == other.casts.boolean,
                 ValueType::Number => self.casts.number == other.casts.number,
-                ValueType::Object => {
-                    self.casts.object.assume_init_ref() == other.casts.object.assume_init_ref()
-                }
+                ValueType::Object => *self.casts.object_node == *other.casts.object_node,
                 ValueType::None => other.value_type == ValueType::None,
             }
         }
@@ -166,9 +161,7 @@ impl PartialOrd for Value {
             match self.value_type {
                 ValueType::Bool => self.casts.boolean && !other.casts.boolean,
                 ValueType::Number => self.casts.number > other.casts.number,
-                ValueType::Object => {
-                    self.casts.object.assume_init_ref() > other.casts.object.assume_init_ref()
-                }
+                ValueType::Object => *self.casts.object_node > *other.casts.object_node,
                 ValueType::None => false,
             }
         }
@@ -185,9 +178,7 @@ impl PartialOrd for Value {
                         || self.casts.boolean == other.casts.boolean
                 }
                 ValueType::Number => self.casts.number >= other.casts.number,
-                ValueType::Object => {
-                    self.casts.object.assume_init_ref() >= other.casts.object.assume_init_ref()
-                }
+                ValueType::Object => *self.casts.object_node >= *other.casts.object_node,
                 ValueType::None => false,
             }
         }
@@ -201,9 +192,7 @@ impl PartialOrd for Value {
             match self.value_type {
                 ValueType::Bool => !self.casts.boolean && other.casts.boolean,
                 ValueType::Number => self.casts.number < other.casts.number,
-                ValueType::Object => {
-                    self.casts.object.assume_init_ref() < other.casts.object.assume_init_ref()
-                }
+                ValueType::Object => *self.casts.object_node < *other.casts.object_node,
                 ValueType::None => false,
             }
         }
@@ -220,9 +209,7 @@ impl PartialOrd for Value {
                         || self.casts.boolean == other.casts.boolean
                 }
                 ValueType::Number => self.casts.number <= other.casts.number,
-                ValueType::Object => {
-                    self.casts.object.assume_init_ref() <= other.casts.object.assume_init_ref()
-                }
+                ValueType::Object => *self.casts.object_node <= *other.casts.object_node,
                 ValueType::None => false,
             }
         }
@@ -253,10 +240,39 @@ impl Display for Value {
                 f.write_fmt(format_args!("[{}] = {}", self.value_type, self.as_number()))
             }
             ValueType::Object => unsafe {
-                let obj_wrapper = self.casts.object.assume_init_ref();
-                let obj_ptr = obj_wrapper.get_object();
-                match &*obj_ptr {
+                let obj = self.casts.object_node.get_object();
+                match obj {
                     Object::String(s) => f.write_fmt(format_args!("String object: {}", s.as_str())),
+                    Object::Function(func) => {
+                        f.write_fmt(format_args!("Function object: {:?}", func.name))
+                    }
+                    Object::NativeFunction(func) => {
+                        f.write_fmt(format_args!("NativeFunction object: {:?}", func))
+                    }
+                }
+            },
+            ValueType::None => f.write_str("None"),
+        }
+    }
+}
+
+impl Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.value_type {
+            ValueType::Bool => f.write_fmt(format_args!(
+                "[{}] = {}",
+                self.value_type,
+                self.as_boolean()
+            )),
+            ValueType::Number => {
+                f.write_fmt(format_args!("[{}] = {}", self.value_type, self.as_number()))
+            }
+            ValueType::Object => unsafe {
+                let obj = self.casts.object_node.get_object();
+                match obj {
+                    Object::String(s) => {
+                        f.write_fmt(format_args!("String object: {:?}", s.as_str()))
+                    }
                     Object::Function(func) => {
                         f.write_fmt(format_args!("Function object: {:?}", func.name))
                     }

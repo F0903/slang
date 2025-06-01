@@ -7,10 +7,10 @@ use crate::{
     dbg_println,
     error::{Error, Result},
     lexing::scanner::Scanner,
-    memory::{Dealloc, HeapPtr},
+    memory::{Dealloc, DeallocOnDrop, HeapPtr},
     value::{
         Value,
-        object::{Function, InternedString, NativeFunction, Object, ObjectManager, ObjectNode},
+        object::{Function, InternedString, NativeFunction, Object, ObjectNode},
     },
 };
 
@@ -51,7 +51,7 @@ impl Vm {
         Self {
             stack: Stack::new(),
             heap: HeapPtr::alloc(VmHeap {
-                objects: ObjectManager::new(),
+                objects_head: HeapPtr::null(),
                 interned_strings: HashTable::new(),
                 globals: HashTable::new(),
             }),
@@ -163,7 +163,7 @@ impl Vm {
     fn call_value(&mut self, callee: Value, arg_count: u8) -> Result<()> {
         if callee.is_object() {
             let obj_ptr = callee.as_object_ptr();
-            match unsafe { obj_ptr.assume_init_ref().get_object() } {
+            match obj_ptr.get_object() {
                 Object::Function(func) => return self.call(func.clone(), arg_count),
                 Object::NativeFunction(native_func) => {
                     return self.native_call(native_func.clone(), arg_count);
@@ -176,13 +176,15 @@ impl Vm {
 
     pub fn register_native_function(&mut self, function: NativeFunction) {
         let func_name = InternedString::new(&function.name, &mut self.heap);
-        let func_value = Value::object(
-            ObjectNode::alloc(Object::NativeFunction(function), &mut self.heap.objects).read(),
-        );
-
-        self.stack.push(Value::object(
-            ObjectNode::alloc(Object::String(func_name.clone()), &mut self.heap.objects).read(),
+        let func_value = Value::object(ObjectNode::alloc(
+            Object::NativeFunction(function),
+            &mut self.heap,
         ));
+
+        self.stack.push(Value::object(ObjectNode::alloc(
+            Object::String(func_name.clone()),
+            &mut self.heap,
+        )));
         self.stack.push(func_value.clone());
         self.heap.globals.set(func_name, Some(func_value));
         self.stack.pop();
@@ -196,14 +198,16 @@ impl Vm {
             HeapPtr::alloc(Scanner::new()),
             self.heap.clone(),
             FunctionType::Script,
-        );
+        )
+        .dealloc_on_drop();
         let function = compiler
             .compile(source)
             .map_err(|e| Error::CompileTime(e.to_string()))?;
 
-        self.stack.push(Value::object(
-            ObjectNode::alloc(Object::Function(function.clone()), &mut self.heap.objects).read(),
-        ));
+        self.stack.push(Value::object(ObjectNode::alloc(
+            Object::Function(function.clone()),
+            &mut self.heap,
+        )));
         self.callframes.push(CallFrame {
             ip: function.chunk.get_code_ptr(),
             function: function.clone(),
@@ -221,7 +225,6 @@ impl Vm {
                     let offset = frame.ip.offset_from(frame.function.chunk.get_code_ptr());
                     disassemble_instruction(&mut frame.function.chunk, offset as usize);
                 }
-                //println!("DEBUG HEAP: {:?}", &self.heap);
                 print!("\t");
             }
 
@@ -295,13 +298,13 @@ impl Vm {
                 }
                 OpCode::SetGlobal => {
                     let name_value = self.read_constant_quad();
-                    let name_object = unsafe { name_value.as_object_ptr().assume_init() };
-                    let name_object_string = match name_object.get_object() {
+                    let name_object_node = name_value.as_object_ptr();
+                    let name_object_string = match name_object_node.get_object() {
                         Object::String(s) => s.clone(),
                         _ => {
                             return Err(Error::Runtime(format!(
                                 "Expected string object for global name, got: {:?}",
-                                name_object.get_object()
+                                name_object_node.get_object()
                             )));
                         }
                     };
@@ -323,13 +326,13 @@ impl Vm {
                 }
                 OpCode::GetGlobal => {
                     let name_value = self.read_constant_quad();
-                    let name_object = unsafe { name_value.as_object_ptr().assume_init() };
-                    let name_object_string = match name_object.get_object() {
+                    let name_object_node = name_value.as_object_ptr();
+                    let name_object_string = match name_object_node.get_object() {
                         Object::String(s) => s.clone(),
                         _ => {
                             return Err(Error::Runtime(format!(
                                 "Expected string object for global name, got: {:?}",
-                                name_object.get_object()
+                                name_object_node.get_object()
                             )));
                         }
                     };
@@ -360,13 +363,13 @@ impl Vm {
                 }
                 OpCode::DefineGlobal => {
                     let name_value = self.read_constant_quad();
-                    let name_object = unsafe { name_value.as_object_ptr().assume_init() };
-                    let name_object_string = match name_object.get_object() {
+                    let name_object_node = name_value.as_object_ptr();
+                    let name_object_string = match name_object_node.get_object() {
                         Object::String(s) => s.clone(),
                         _ => {
                             return Err(Error::Runtime(format!(
                                 "Expected string object for global name, got: {:?}",
-                                name_object.get_object()
+                                name_object_node.get_object()
                             )));
                         }
                     };
@@ -401,20 +404,15 @@ impl Vm {
                     let first = self.stack.pop();
                     if first.is_object() && second.is_object() {
                         let first = first.as_object_ptr();
-                        let first = unsafe { first.assume_init_ref() };
                         let second = second.as_object_ptr();
-                        let second = unsafe { second.assume_init_ref() };
-                        match &*first.get_object() {
+                        match first.get_object() {
                             Object::String(a_str) => match &*second.get_object() {
                                 Object::String(b_str) => {
                                     let concat = b_str.concat(&a_str, &mut self.heap);
-                                    let new_string = Value::object(
-                                        ObjectNode::alloc(
-                                            Object::String(concat),
-                                            &mut self.heap.objects,
-                                        )
-                                        .take(),
-                                    );
+                                    let new_string = Value::object(ObjectNode::alloc(
+                                        Object::String(concat),
+                                        &mut self.heap,
+                                    ));
                                     self.stack.push(new_string) // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
                                 }
                                 _ => {
@@ -454,7 +452,7 @@ impl Vm {
     }
 
     fn free_objects(&self) {
-        let mut obj_container_ptr = self.heap.objects.get_objects_head();
+        let mut obj_container_ptr = self.heap.get_objects_head();
         while !obj_container_ptr.is_null() {
             let next_obj_container_ptr = obj_container_ptr.get_next_object_ptr();
 

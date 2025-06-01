@@ -1,5 +1,5 @@
 mod dealloc;
-mod drop_heap_ptr;
+mod drop_dealloc;
 mod global_alloc;
 mod heap_ptr;
 
@@ -9,6 +9,7 @@ use std::{
 };
 
 pub use dealloc::Dealloc;
+pub use drop_dealloc::{DeallocOnDrop, DropDealloc};
 pub use heap_ptr::HeapPtr;
 
 fn allocate<T>(layout: Layout) -> *mut T {

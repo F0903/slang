@@ -3,6 +3,7 @@ use std::fmt::{Debug, Display};
 use super::{InternedString, function::Function, native_function::NativeFunction};
 use crate::memory::Dealloc;
 
+#[derive(Clone)]
 pub enum Object {
     String(InternedString),
     Function(Function),
@@ -12,7 +13,7 @@ pub enum Object {
 impl Dealloc for Object {
     fn dealloc(&mut self) {
         match self {
-            Self::String(_) => (), // Since all strings are interned and pointing to shared memory, we don't want to dealloc here
+            Self::String(_) => (), // Since all strings are interned and pointing to shared memory, we don't want to dealloc here.
             Self::Function(function) => {
                 function.dealloc();
             }
@@ -61,7 +62,7 @@ impl Debug for Object {
         match self {
             Object::String(x) => f.write_fmt(format_args!("String = {:?}", x.as_str())),
             Object::Function(x) => f.write_fmt(format_args!("Function = {:?}", x.name)),
-            Object::NativeFunction(x) => f.write_fmt(format_args!("NativeFunction = {:?}", x)),
+            Object::NativeFunction(x) => f.write_fmt(format_args!("NativeFunction")),
         }
     }
 }

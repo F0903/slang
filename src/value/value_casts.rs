@@ -1,22 +1,10 @@
-use std::{fmt::Debug, mem::MaybeUninit};
-
 use super::ObjectNode;
+use crate::memory::HeapPtr;
 
 pub(super) union ValueCasts {
     pub(super) boolean: bool,
     pub(super) number: f64,
-    pub(super) object: MaybeUninit<ObjectNode>,
-}
-
-impl Debug for ValueCasts {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        unsafe {
-            f.write_fmt(format_args!(
-                "ValueCasts: bool=[{}] f64=[{:.5}] object=[{:?}]",
-                self.boolean, self.number, self.object
-            ))
-        }
-    }
+    pub(super) object_node: HeapPtr<ObjectNode>,
 }
 
 impl Clone for ValueCasts {
@@ -24,7 +12,7 @@ impl Clone for ValueCasts {
         // IMPORTANT: initialize with the largest value
         unsafe {
             ValueCasts {
-                object: self.object,
+                object_node: self.object_node,
             }
         }
     }

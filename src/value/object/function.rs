@@ -1,6 +1,7 @@
 use super::InternedString;
 use crate::{
     compiler::chunk::Chunk,
+    dbg_println,
     memory::{Dealloc, HeapPtr},
 };
 
@@ -23,6 +24,7 @@ impl Function {
 
 impl Dealloc for Function {
     fn dealloc(&mut self) {
+        dbg_println!("DEBUG FUNCTION DEALLOC: {:?}", self);
         if !self.chunk.is_null() {
             self.chunk.dealloc();
             self.chunk = HeapPtr::null();

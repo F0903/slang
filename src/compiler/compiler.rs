@@ -61,6 +61,7 @@ impl JumpIndecies {
     }
 }
 
+#[derive(Debug)]
 pub struct Compiler<'a, 'src> {
     current_source: &'src [u8],
     scanner: HeapPtr<Scanner<'src>>,
@@ -358,7 +359,7 @@ where
         let source = self.get_current_source();
         let name = token.lexeme.get_str(source);
         let name = &name[1..name.len() - 1]; // Don't include the leading and trailing "
-        let value = Value::object(ObjectNode::alloc_string(name, &mut self.heap).read());
+        let value = Value::object(ObjectNode::alloc_string(name, &mut self.heap));
         self.emit_constant_with_op(value, token.line);
     }
 
@@ -761,7 +762,7 @@ where
     /// Returns the index of the constant.
     fn identifier_constant(&mut self, name_token: &Token) -> u32 {
         let lexeme = name_token.lexeme.get_str(self.get_current_source());
-        let value = Value::object(ObjectNode::alloc_string(lexeme, &mut self.heap).read());
+        let value = Value::object(ObjectNode::alloc_string(lexeme, &mut self.heap));
         self.emit_constant(value)
     }
 
@@ -987,9 +988,10 @@ where
         }
 
         let function = compiler.pack_function();
-        let value = Value::object(
-            ObjectNode::alloc(Object::Function(function), &mut self.heap.objects).read(),
-        );
+        let value = Value::object(ObjectNode::alloc(
+            Object::Function(function),
+            &mut self.heap,
+        ));
         self.emit_constant_with_op(value, self.get_current_line());
     }
 
@@ -1049,9 +1051,14 @@ where
     }
 }
 
-impl Drop for Compiler<'_, '_> {
-    fn drop(&mut self) {
-        self.scanner.dealloc();
-        self.heap.dealloc();
+impl Dealloc for Compiler<'_, '_> {
+    fn dealloc(&mut self) {
+        dbg_println!("DEBUG COMPILER DEALLOC: {:?}", self);
+        if !self.scanner.is_null() {
+            self.scanner.dealloc();
+            self.scanner = HeapPtr::null()
+        }
+
+        // We do not dealloc the heap, as it is managed by the VM.
     }
 }

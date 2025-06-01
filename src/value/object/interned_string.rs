@@ -82,22 +82,23 @@ impl InternedString {
     }
 }
 
+impl Dealloc for InternedString {
+    // We rely on manual dealloc instead of Drop, as these are interned in the VM heap, thereby all potentially sharing memory.
+    fn dealloc(&mut self) {
+        dbg_println!("DEBUG RAWSTRING DEALLOC: {}", self.as_str());
+        if !self.char_buf.is_null() {
+            self.char_buf.dealloc();
+            self.char_buf = HeapPtr::null();
+        }
+    }
+}
+
 impl Clone for InternedString {
     /// COPIES OF THE STRING WILL POINT TO THE SAME MEMORY
     fn clone(&self) -> Self {
         Self {
             char_buf: self.char_buf.clone(),
             hash: self.hash,
-        }
-    }
-}
-
-impl Dealloc for InternedString {
-    fn dealloc(&mut self) {
-        dbg_println!("DEBUG RAWSTRING DEALLOC: {}", self.as_str());
-        if !self.char_buf.is_null() {
-            self.char_buf.dealloc();
-            self.char_buf = HeapPtr::null();
         }
     }
 }
