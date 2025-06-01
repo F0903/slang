@@ -6,7 +6,7 @@ use std::{
 use super::HeapPtr;
 use crate::{dbg_println, memory::Dealloc};
 
-// A wrapper around a Dealloc type that automatically deallocates the memory when dropped.
+/// A wrapper around a Dealloc type that automatically deallocates the memory when dropped.
 pub struct DropDealloc<T: Dealloc + Debug> {
     inner: T,
 }
