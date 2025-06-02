@@ -13,6 +13,6 @@ native_functions! {
     #[arity(0)]
     pub fn time_since_start(_args: &[Value]) -> Result<Value> {
         let elapsed = START_TIME.elapsed().as_secs_f64();
-        Ok(Value::number(elapsed))
+        Ok(Value::Number(elapsed))
     }
 }

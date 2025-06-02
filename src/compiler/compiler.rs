@@ -379,7 +379,7 @@ impl<'src> Compiler<'src> {
             (name, token.line)
         };
 
-        let value = Value::object(ObjectNode::alloc_string(name, &mut self.heap));
+        let value = Value::Object(ObjectNode::alloc_string(name, &mut self.heap));
         self.emit_constant_with_op(value, line);
     }
 
@@ -464,7 +464,7 @@ impl<'src> Compiler<'src> {
                 .unwrap_unchecked();
             (number, token.line)
         };
-        self.emit_constant_with_op(Value::number(num), token_line);
+        self.emit_constant_with_op(Value::Number(num), token_line);
     }
 
     fn advance(&mut self) {
@@ -721,7 +721,7 @@ impl<'src> Compiler<'src> {
             }
             Some(enclosing_loop) => {
                 // Push false to the stack so the loop condition evaluates to false and exits.
-                self.emit_constant_with_op(Value::boolean(false), self.get_current_line());
+                self.emit_constant_with_op(Value::Bool(false), self.get_current_line());
                 self.emit_backjump(enclosing_loop.exit_jump_index);
             }
         }
@@ -770,7 +770,7 @@ impl<'src> Compiler<'src> {
     /// Returns the index of the constant.
     fn identifier_constant(&mut self, name_token: &Token) -> u32 {
         let lexeme = name_token.lexeme.get_str(self.get_current_source());
-        let value = Value::object(ObjectNode::alloc_string(lexeme, &mut self.heap));
+        let value = Value::Object(ObjectNode::alloc_string(lexeme, &mut self.heap));
         self.emit_constant(value)
     }
 
@@ -1019,7 +1019,7 @@ impl<'src> Compiler<'src> {
             ));
         }
 
-        let value = Value::object(ObjectNode::alloc(
+        let value = Value::Object(ObjectNode::alloc(
             Object::Function(function),
             &mut self.heap,
         ));

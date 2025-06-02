@@ -9,6 +9,7 @@ use crate::{
     error::{Error, Result},
     lexing::scanner::Scanner,
     memory::{Dealloc, DeallocOnDrop, HeapPtr},
+    unwrap_enum,
     value::{
         Value,
         object::{Function, InternedString, NativeFunction, Object, ObjectNode},
@@ -37,7 +38,7 @@ macro_rules! binary_op_try {
 macro_rules! binary_op_from_bool {
     ($stack: expr, $op: tt) => {{
         let val = binary_op_result!($stack, $op);
-        $stack.push(Value::boolean(val));
+        $stack.push(Value::Bool(val));
     }};
 }
 
@@ -188,19 +189,26 @@ impl Vm {
             )));
         }
 
-        let obj_ptr = callee.as_object_ptr();
-        match obj_ptr.get_object() {
-            Object::Function(func) => self.call(func.clone(), arg_count),
-            Object::NativeFunction(native_func) => self.native_call(native_func.clone(), arg_count),
-            _ => Err(Error::Runtime(
-                "Cannot call non-function object!".to_owned(),
-            )),
+        match callee {
+            Value::Object(obj) => match obj.get_object() {
+                Object::Function(func) => self.call(func.clone(), arg_count),
+                Object::NativeFunction(native_func) => {
+                    self.native_call(native_func.clone(), arg_count)
+                }
+                _ => Err(Error::Runtime(
+                    "Cannot call non-function object!".to_owned(),
+                )),
+            },
+            _ => Err(Error::Runtime(format!(
+                "Cannot call non-object value!: {}",
+                callee
+            ))),
         }
     }
 
     pub fn register_native_function(&mut self, function: NativeFunction) {
         let func_name = InternedString::new(&function.name, &mut self.heap);
-        let func_value = Value::object(ObjectNode::alloc(
+        let func_value = Value::Object(ObjectNode::alloc(
             Object::NativeFunction(function),
             &mut self.heap,
         ));
@@ -214,6 +222,21 @@ impl Vm {
         }
     }
 
+    fn read_name_string(&mut self) -> Result<InternedString> {
+        let name_value = self.read_constant_quad();
+        let name_object_node = unwrap_enum!(name_value, Value::Object);
+        let name_object_string = match name_object_node.get_object() {
+            Object::String(s) => s.clone(),
+            _ => {
+                return Err(Error::Runtime(format!(
+                    "Expected string object, found: {:?}",
+                    name_object_node.get_object()
+                )));
+            }
+        };
+        Ok(name_object_string)
+    }
+
     pub fn interpret<'src>(&mut self, source: &'src [u8]) -> Result<()> {
         let mut compiler = Compiler::new(
             HeapPtr::alloc(Scanner::new()),
@@ -225,7 +248,7 @@ impl Vm {
             .compile(source)
             .map_err(|e| Error::CompileTime(e.to_string()))?;
 
-        self.stack.push(Value::object(ObjectNode::alloc(
+        self.stack.push(Value::Object(ObjectNode::alloc(
             Object::Function(function.clone()),
             &mut self.heap,
         )));
@@ -314,92 +337,42 @@ impl Vm {
                     self.stack.pop();
                 }
                 OpCode::SetGlobal => {
-                    let name_value = self.read_constant_quad();
-                    let name_object_node = name_value.as_object_ptr();
-                    let name_object_string = match name_object_node.get_object() {
-                        Object::String(s) => s.clone(),
-                        _ => {
-                            return Err(Error::Runtime(format!(
-                                "Expected string object for global name, got: {:?}",
-                                name_object_node.get_object()
-                            )));
-                        }
-                    };
-
+                    let name_string = self.read_name_string()?;
                     let value = self.stack.peek(0).clone();
-                    dbg_println!("SETTING GLOBAL {} = {}", name_object_string, value);
-                    if self
-                        .heap
-                        .globals
-                        .set(name_object_string.clone(), Some(value))
-                    {
+                    dbg_println!("SETTING GLOBAL {} = {}", name_string, value);
+                    if self.heap.globals.set(name_string.clone(), Some(value)) {
                         // If the variable did not already exist at this point, return error
-                        self.heap.globals.delete(&name_object_string);
+                        self.heap.globals.delete(&name_string);
                         return Err(Error::Runtime(format!(
                             "Undefined variable '{}'",
-                            name_object_string
+                            name_string
                         )));
                     }
                 }
                 OpCode::GetGlobal => {
-                    let name_value = self.read_constant_quad();
-                    let name_object_node = name_value.as_object_ptr();
-                    let name_object_string = match name_object_node.get_object() {
-                        Object::String(s) => s.clone(),
-                        _ => {
-                            return Err(Error::Runtime(format!(
-                                "Expected string object for global name, got: {:?}",
-                                name_object_node.get_object()
-                            )));
-                        }
-                    };
-
-                    let global = self.heap.globals.get(&name_object_string);
+                    let name_string = self.read_name_string()?;
+                    let global = self.heap.globals.get(&name_string);
                     match global {
                         Some(global) => {
                             let global_value = global.value.clone().ok_or_else(|| {
-                                Error::Runtime(format!(
-                                    "Variable '{}' had no value",
-                                    name_object_string
-                                ))
+                                Error::Runtime(format!("Variable '{}' had no value", name_string))
                             })?;
-                            dbg_println!(
-                                "GETTING GLOBAL: {} = ({})",
-                                name_object_string,
-                                global_value
-                            );
+                            dbg_println!("GETTING GLOBAL: {} = ({})", name_string, global_value);
                             self.stack.push(global_value);
                         }
                         None => {
                             return Err(Error::Runtime(format!(
                                 "Undefined variable '{}'",
-                                name_object_string
+                                name_string
                             )));
                         }
                     }
                 }
                 OpCode::DefineGlobal => {
-                    let name_value = self.read_constant_quad();
-                    let name_object_node = name_value.as_object_ptr();
-                    let name_object_string = match name_object_node.get_object() {
-                        Object::String(s) => s.clone(),
-                        _ => {
-                            return Err(Error::Runtime(format!(
-                                "Expected string object for global name, got: {:?}",
-                                name_object_node.get_object()
-                            )));
-                        }
-                    };
-
+                    let name_string = self.read_name_string()?;
                     let global_value = self.stack.peek(0).clone();
-                    dbg_println!(
-                        "DEFINING GLOBAL: {} = ({})",
-                        name_object_string,
-                        global_value
-                    );
-                    self.heap
-                        .globals
-                        .set(name_object_string, Some(global_value));
+                    dbg_println!("DEFINING GLOBAL: {} = ({})", name_string, global_value);
+                    self.heap.globals.set(name_string, Some(global_value));
                     self.stack.pop();
                 }
                 OpCode::Constant => {
@@ -407,9 +380,9 @@ impl Vm {
                     dbg_println!("PUSHING CONSTANT: {}", constant);
                     self.stack.push(constant);
                 }
-                OpCode::None => self.stack.push(Value::none()),
-                OpCode::True => self.stack.push(Value::boolean(true)),
-                OpCode::False => self.stack.push(Value::boolean(false)),
+                OpCode::None => self.stack.push(Value::None),
+                OpCode::True => self.stack.push(Value::Bool(true)),
+                OpCode::False => self.stack.push(Value::Bool(false)),
                 OpCode::Is => binary_op_from_bool!(self.stack, ==),
                 OpCode::IsNot => binary_op_from_bool!(self.stack, !=),
                 OpCode::Greater => binary_op_from_bool!(self.stack, >),
@@ -420,13 +393,13 @@ impl Vm {
                     let second = self.stack.pop();
                     let first = self.stack.pop();
                     if first.is_object() && second.is_object() {
-                        let first = first.as_object_ptr();
-                        let second = second.as_object_ptr();
+                        let first = unwrap_enum!(first, Value::Object);
+                        let second = unwrap_enum!(second, Value::Object);
                         match first.get_object() {
                             Object::String(a_str) => match &*second.get_object() {
                                 Object::String(b_str) => {
                                     let concat = b_str.concat(&a_str, &mut self.heap);
-                                    let new_string = Value::object(ObjectNode::alloc(
+                                    let new_string = Value::Object(ObjectNode::alloc(
                                         Object::String(concat),
                                         &mut self.heap,
                                     ));
@@ -458,7 +431,7 @@ impl Vm {
                 OpCode::Divide => binary_op_try!(self.stack, /),
                 OpCode::Not => {
                     let val = self.stack.pop();
-                    self.stack.push(Value::boolean(val.is_falsey()));
+                    self.stack.push(Value::Bool(val.is_falsey()));
                 }
                 OpCode::Negate => {
                     let val = self.stack.top_mut_offset(0);
