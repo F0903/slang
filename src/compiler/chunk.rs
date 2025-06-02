@@ -70,7 +70,7 @@ impl Chunk {
     }
 
     pub fn read_byte(&self, index: usize) -> u8 {
-        *self.code.read(index)
+        self.code.copy_read(index)
     }
 
     pub fn read_double(&self, index: usize) -> u16 {
@@ -113,7 +113,7 @@ impl Chunk {
     }
 
     pub fn get_constant(&self, index: u32) -> &Value {
-        self.constants.read(index as usize)
+        self.constants.get(index as usize)
     }
 
     pub fn get_line_number(&self, index: usize) -> u32 {

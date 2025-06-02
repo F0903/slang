@@ -82,8 +82,10 @@ impl InternedString {
     }
 }
 
+//TODO: make some sort of StringInterner struct that handles them so we don't accidentally double free.
 impl Dealloc for InternedString {
     // We rely on manual dealloc instead of Drop, as these are interned in the VM heap, thereby all potentially sharing memory.
+    /// DO NOT CALL OUTSIDE VMHEAP
     fn dealloc(&mut self) {
         dbg_println!("DEBUG RAWSTRING DEALLOC: {}", self.as_str());
         if !self.char_buf.is_null() {

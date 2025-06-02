@@ -7,40 +7,40 @@ fn simple_instruction(instruction: &OpCode) -> usize {
     1
 }
 
-fn constant_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
+fn constant_instruction(instruction: &OpCode, chunk: &Chunk, offset: usize) -> usize {
     let constant_index = chunk.read_byte(offset + 1);
     let constant_value = chunk.get_constant(constant_index as u32);
     print!("{:?}[{}] = {}", instruction, constant_index, constant_value);
     2
 }
 
-fn quad_constant_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
+fn quad_constant_instruction(instruction: &OpCode, chunk: &Chunk, offset: usize) -> usize {
     let constant_index = chunk.read_quad(offset + 1);
     let constant_value = chunk.get_constant(constant_index);
     print!("{:?}[{}] = {}", instruction, constant_index, constant_value);
     5
 }
 
-fn byte_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
+fn byte_instruction(instruction: &OpCode, chunk: &Chunk, offset: usize) -> usize {
     let arg = chunk.read_byte(offset + 1);
     print!("{:?}[{:?}]", instruction, arg);
     2
 }
 
-fn double_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize) -> usize {
+fn double_instruction(instruction: &OpCode, chunk: &Chunk, offset: usize) -> usize {
     let arg = chunk.read_double(offset + 1);
     print!("{:?}[{:?}]", instruction, arg);
     3
 }
 
-fn jump_instruction(instruction: &OpCode, chunk: &mut Chunk, offset: usize, sign: isize) -> usize {
+fn jump_instruction(instruction: &OpCode, chunk: &Chunk, offset: usize, sign: isize) -> usize {
     let jump = chunk.read_double(offset + 1);
     let destination = offset as isize + 3 + (sign * jump as isize);
     print!("{:?} {:?} -> {:?}", instruction, offset, destination);
     3
 }
 
-pub fn disassemble_instruction(chunk: &mut Chunk, offset: usize) -> usize {
+pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
     print!("{:0>4} ", offset);
 
     let line = chunk.get_line_number(offset);
@@ -86,7 +86,7 @@ pub fn disassemble_instruction(chunk: &mut Chunk, offset: usize) -> usize {
     inst_offset
 }
 
-pub fn disassemble_chunk(chunk: &mut Chunk, name: &str) {
+pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
     println!("=== {} ===", name);
 
     let mut offset = 0;

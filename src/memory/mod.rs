@@ -4,7 +4,7 @@ mod drop_dealloc;
 mod global_alloc;
 mod heap_ptr;
 
-pub use alloc::reallocate;
+pub(crate) use alloc::reallocate;
 
 pub use dealloc::Dealloc;
 pub use drop_dealloc::{DeallocOnDrop, DropDealloc};

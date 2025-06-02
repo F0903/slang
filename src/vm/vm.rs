@@ -5,6 +5,7 @@ use crate::{
     collections::{HashTable, Stack},
     compiler::{Compiler, FunctionType},
     dbg_println,
+    debug::disassemble_chunk,
     error::{Error, Result},
     lexing::scanner::Scanner,
     memory::{Dealloc, DeallocOnDrop, HeapPtr},
@@ -139,10 +140,29 @@ impl Vm {
             return Err(Error::Runtime("Call stack overflow".to_owned()));
         }
 
-        let frame = self.callframes.top_mut();
-        frame.ip = function.chunk.get_code_ptr();
-        frame.function = function;
-        frame.stack_base_offset = self.stack.count() - arg_count as usize - 1; // -1 to compensate for the function itself being on the stack
+        dbg_println!(
+            "CALLING FUNCTION: {} with {} args",
+            function
+                .name
+                .as_ref()
+                .map(|x| x.as_str())
+                .unwrap_or("<script>"),
+            arg_count
+        );
+        disassemble_chunk(
+            &function.chunk,
+            function
+                .name
+                .as_ref()
+                .map(|x| x.as_str())
+                .unwrap_or("<script>"),
+        );
+
+        self.callframes.push(CallFrame {
+            ip: function.chunk.get_code_ptr(),
+            function: function.clone(),
+            stack_base_offset: self.stack.count() - arg_count as usize,
+        });
         Ok(())
     }
 
@@ -161,17 +181,21 @@ impl Vm {
     }
 
     fn call_value(&mut self, callee: Value, arg_count: u8) -> Result<()> {
-        if callee.is_object() {
-            let obj_ptr = callee.as_object_ptr();
-            match obj_ptr.get_object() {
-                Object::Function(func) => return self.call(func.clone(), arg_count),
-                Object::NativeFunction(native_func) => {
-                    return self.native_call(native_func.clone(), arg_count);
-                }
-                _ => return Err(Error::Runtime("Cannot call non-function object".to_owned())),
-            }
+        if !callee.is_object() {
+            return Err(Error::Runtime(format!(
+                "Cannot call non-object value!: {}",
+                callee
+            )));
         }
-        Ok(())
+
+        let obj_ptr = callee.as_object_ptr();
+        match obj_ptr.get_object() {
+            Object::Function(func) => self.call(func.clone(), arg_count),
+            Object::NativeFunction(native_func) => self.native_call(native_func.clone(), arg_count),
+            _ => Err(Error::Runtime(
+                "Cannot call non-function object!".to_owned(),
+            )),
+        }
     }
 
     pub fn register_native_function(&mut self, function: NativeFunction) {
@@ -181,16 +205,13 @@ impl Vm {
             &mut self.heap,
         ));
 
-        self.stack.push(Value::object(ObjectNode::alloc(
-            Object::String(func_name.clone()),
-            &mut self.heap,
-        )));
-        self.stack.push(func_value.clone());
         self.heap.globals.set(func_name, Some(func_value));
-        self.stack.pop();
-        self.stack.pop();
+    }
 
-        // The stack pushes and pops are due to future garbage collection proofing.
+    pub fn register_native_functions(&mut self, functions: &[NativeFunction]) {
+        for function in functions {
+            self.register_native_function(*function);
+        }
     }
 
     pub fn interpret<'src>(&mut self, source: &'src [u8]) -> Result<()> {
@@ -217,26 +238,22 @@ impl Vm {
 
         loop {
             #[cfg(debug_assertions)]
-            {
-                print!("\n");
-                print!("{:?}", &self.stack);
-                unsafe {
-                    let frame = self.callframes.top_mut();
-                    let offset = frame.ip.offset_from(frame.function.chunk.get_code_ptr());
-                    disassemble_instruction(&mut frame.function.chunk, offset as usize);
-                }
-                print!("\t");
+            unsafe {
+                println!("\n{:?} ", &self.stack);
+                let frame = self.callframes.top_mut();
+                let offset = frame.ip.offset_from(frame.function.chunk.get_code_ptr());
+                disassemble_instruction(&mut frame.function.chunk, offset as usize);
             }
-
             let instruction = self.read_byte();
             match OpCode::from_code(instruction) {
                 OpCode::Return => {
                     let result = self.stack.pop();
-                    self.callframes.pop();
-                    if self.callframes.count() < 1 {
+                    let frame = self.callframes.pop();
+                    if self.callframes.count() == 1 {
                         self.stack.pop(); // Pop the "main" function itself (exiting the program)
                         return Ok(());
                     }
+                    self.stack.pop_n(frame.function.arity as usize + 1); // Pop arguments and the function itself
                     self.stack.push(result);
                 }
                 OpCode::Call => {

@@ -13,7 +13,8 @@ fn free<T>(ptr: *mut T, layout: Layout) {
     }
 }
 
-pub fn reallocate<T>(mut ptr: *mut u8, old_cap: usize, new_cap: usize) -> *mut u8 {
+// Only expose the reallocate function for DynArray, as dynamically allocating a single object should be done through the `HeapPtr` type.
+pub(crate) fn reallocate<T>(mut ptr: *mut u8, old_cap: usize, new_cap: usize) -> *mut u8 {
     let old_layout = Layout::array::<T>(old_cap).unwrap();
     let new_layout = Layout::array::<T>(new_cap).unwrap();
 

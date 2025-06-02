@@ -231,23 +231,20 @@ impl PartialOrd for Value {
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.value_type {
-            ValueType::Bool => f.write_fmt(format_args!(
-                "[{}] = {}",
-                self.value_type,
-                self.as_boolean()
-            )),
-            ValueType::Number => {
-                f.write_fmt(format_args!("[{}] = {}", self.value_type, self.as_number()))
-            }
+            ValueType::Bool => f.write_fmt(format_args!("{}", self.as_boolean())),
+            ValueType::Number => f.write_fmt(format_args!("{}", self.as_number())),
             ValueType::Object => unsafe {
                 let obj = self.casts.object_node.get_object();
                 match obj {
-                    Object::String(s) => f.write_fmt(format_args!("String object: {}", s.as_str())),
-                    Object::Function(func) => {
-                        f.write_fmt(format_args!("Function object: {:?}", func.name))
-                    }
+                    Object::String(s) => f.write_str(s.as_str()),
+                    Object::Function(func) => f.write_fmt(format_args!(
+                        "fn {:?}[{}] = {:?}",
+                        func.name,
+                        func.arity,
+                        func.chunk.get_code_ptr()
+                    )),
                     Object::NativeFunction(func) => {
-                        f.write_fmt(format_args!("NativeFunction object: {:?}", func))
+                        f.write_fmt(format_args!("native fn {:?}[{}]", func.name, func.arity))
                     }
                 }
             },

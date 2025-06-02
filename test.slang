@@ -1,7 +1,15 @@
 ? comment
 
-for let a = 0, a < 5, a += 1 {
-    let b = 0
-    continue
-    b = b + 1
+fn add(a, b) {
+    return a + b
 }
+
+let added = add(3, 2)
+print_line(added)
+
+fn hello() {
+    return "hello"
+}
+
+let a = hello()
+print_line(a)

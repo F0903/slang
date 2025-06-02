@@ -6,9 +6,9 @@ use super::{
     token::{Token, TokenType},
 };
 
-type ScannerResult = std::result::Result<Token, ScannerError>;
+type ScannerResult<'t> = std::result::Result<&'t Token, ScannerError>;
 
-fn error(message: impl ToString) -> ScannerResult {
+fn error<'t>(message: impl ToString) -> ScannerResult<'t> {
     Err(ScannerError::new(message))
 }
 
@@ -27,6 +27,8 @@ pub struct Scanner<'src> {
     current_end: *const u8,
     end: *const u8,
     line: u32,
+    current_token: Option<Token>,
+    previous_token: Option<Token>,
     _src_lifetime: std::marker::PhantomData<&'src ()>,
 }
 
@@ -38,6 +40,8 @@ impl<'src> Scanner<'src> {
             current_end: null(),
             end: null(),
             line: 1,
+            current_token: None,
+            previous_token: None,
             _src_lifetime: std::marker::PhantomData,
         }
     }
@@ -53,11 +57,19 @@ impl<'src> Scanner<'src> {
         self.line
     }
 
+    pub fn get_current_token(&'src self) -> Option<&'src Token> {
+        self.current_token.as_ref()
+    }
+
+    pub fn get_previous_token(&self) -> Option<&Token> {
+        self.previous_token.as_ref()
+    }
+
     fn is_at_end(&self) -> bool {
         self.current_end >= self.end
     }
 
-    fn make_token(&self, typ: TokenType) -> ScannerResult {
+    fn make_token(&mut self, typ: TokenType) -> &Token {
         let start = unsafe { self.current_start.offset_from(self.start) as usize };
         let len = unsafe { self.current_end.offset_from(self.current_start) as usize };
         let end = start + len;
@@ -76,11 +88,14 @@ impl<'src> Scanner<'src> {
         #[cfg(not(debug_assertions))]
         let lexeme_span = Span::new(start, end);
 
-        Ok(Token::new(typ, lexeme_span, self.line))
+        let token = Token::new(typ, lexeme_span, self.line);
+        self.previous_token = self.current_token.take();
+        self.current_token = Some(token);
+        self.current_token.as_ref().unwrap()
     }
 
     // Gets the current character and advances to the next
-    pub(crate) fn get_and_advance(&mut self) -> u8 {
+    fn get_and_advance(&mut self) -> u8 {
         unsafe {
             let ch = *self.current_end;
             self.current_end = self.current_end.add(1);
@@ -134,7 +149,7 @@ impl<'src> Scanner<'src> {
         }
     }
 
-    fn string(&mut self) -> ScannerResult {
+    fn string<'t>(&'t mut self) -> ScannerResult<'t> {
         while self.peek() != b'"' && !self.is_at_end() {
             if self.peek() == b'\n' {
                 self.line += 1;
@@ -147,10 +162,11 @@ impl<'src> Scanner<'src> {
         }
 
         self.get_and_advance();
-        self.make_token(TokenType::String)
+        let token = self.make_token(TokenType::String);
+        Ok(token)
     }
 
-    fn number(&mut self) -> ScannerResult {
+    fn number<'t>(&'t mut self) -> ScannerResult<'t> {
         while is_digit(self.peek()) {
             self.get_and_advance();
         }
@@ -163,7 +179,8 @@ impl<'src> Scanner<'src> {
             }
         }
 
-        self.make_token(TokenType::Number)
+        let token = self.make_token(TokenType::Number);
+        Ok(token)
     }
 
     fn check_keywords(&self, start: usize, keywords: &[(&str, TokenType)]) -> TokenType {
@@ -220,20 +237,22 @@ impl<'src> Scanner<'src> {
         }
     }
 
-    fn identifier(&mut self) -> ScannerResult {
+    fn identifier<'t>(&'t mut self) -> ScannerResult<'t> {
         while is_alpha(self.peek()) || is_digit(self.peek()) {
             self.get_and_advance();
         }
         let typ = self.identifier_type();
-        self.make_token(typ)
+        let token = self.make_token(typ);
+        Ok(token)
     }
 
-    pub fn scan(&mut self) -> ScannerResult {
+    pub fn scan<'t>(&'t mut self) -> ScannerResult<'t> {
         self.skip_whitespace();
         self.current_start = self.current_end;
 
         if self.is_at_end() {
-            return self.make_token(TokenType::EOF);
+            let token = self.make_token(TokenType::EOF);
+            return Ok(token);
         }
 
         let ch = self.get_and_advance();
@@ -244,49 +263,49 @@ impl<'src> Scanner<'src> {
             return self.number();
         }
 
-        match ch {
-            b'(' => return self.make_token(TokenType::LeftParen),
-            b')' => return self.make_token(TokenType::RightParen),
-            b'{' => return self.make_token(TokenType::LeftBrace),
-            b'}' => return self.make_token(TokenType::RightBrace),
-            b';' => return self.make_token(TokenType::Semicolon),
-            b',' => return self.make_token(TokenType::Comma),
-            b'.' => return self.make_token(TokenType::Dot),
+        let token = match ch {
+            b'(' => self.make_token(TokenType::LeftParen),
+            b')' => self.make_token(TokenType::RightParen),
+            b'{' => self.make_token(TokenType::LeftBrace),
+            b'}' => self.make_token(TokenType::RightBrace),
+            b';' => self.make_token(TokenType::Semicolon),
+            b',' => self.make_token(TokenType::Comma),
+            b'.' => self.make_token(TokenType::Dot),
             b'-' => {
                 if self.match_current(b'=') {
-                    return self.make_token(TokenType::MinusEqual);
+                    self.make_token(TokenType::MinusEqual)
                 } else {
-                    return self.make_token(TokenType::Minus);
+                    self.make_token(TokenType::Minus)
                 }
             }
             b'+' => {
                 if self.match_current(b'=') {
-                    return self.make_token(TokenType::PlusEqual);
+                    self.make_token(TokenType::PlusEqual)
                 } else {
-                    return self.make_token(TokenType::Plus);
+                    self.make_token(TokenType::Plus)
                 }
             }
-            b'/' => return self.make_token(TokenType::Slash),
-            b'*' => return self.make_token(TokenType::Star),
-            b'=' => return self.make_token(TokenType::Equal),
+            b'/' => self.make_token(TokenType::Slash),
+            b'*' => self.make_token(TokenType::Star),
+            b'=' => self.make_token(TokenType::Equal),
             b'<' => {
                 if self.match_current(b'=') {
-                    return self.make_token(TokenType::LessEqual);
+                    self.make_token(TokenType::LessEqual)
                 } else {
-                    return self.make_token(TokenType::Less);
+                    self.make_token(TokenType::Less)
                 }
             }
             b'>' => {
                 if self.match_current(b'=') {
-                    return self.make_token(TokenType::GreaterEqual);
+                    self.make_token(TokenType::GreaterEqual)
                 } else {
-                    return self.make_token(TokenType::Greater);
+                    self.make_token(TokenType::Greater)
                 }
             }
-            b'"' => return self.string(),
-            _ => (),
-        }
+            b'"' => self.string()?,
+            _ => return error(format!("Unexpected character '{}'", ch)),
+        };
 
-        error(format!("Unexpected character '{}'", ch))
+        Ok(token)
     }
 }

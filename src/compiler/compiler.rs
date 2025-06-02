@@ -21,12 +21,12 @@ const LOCAL_SLOTS: usize = 1024;
 
 type CompilerResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-type ParseFn<'a, 'src> = fn(&mut Compiler<'a, 'src>, bool);
+type ParseFn<'src> = fn(&mut Compiler<'src>, bool);
 
 #[derive(Debug)]
-struct ParseRule<'a, 'src> {
-    prefix: Option<ParseFn<'a, 'src>>,
-    infix: Option<ParseFn<'a, 'src>>,
+struct ParseRule<'src> {
+    prefix: Option<ParseFn<'src>>,
+    infix: Option<ParseFn<'src>>,
     precedence: Precedence,
 }
 
@@ -62,26 +62,21 @@ impl JumpIndecies {
 }
 
 #[derive(Debug)]
-pub struct Compiler<'a, 'src> {
+pub struct Compiler<'src> {
     current_source: &'src [u8],
     scanner: HeapPtr<Scanner<'src>>,
     heap: HeapPtr<VmHeap>,
     current_function: Function,
     current_function_type: FunctionType,
-    current: Option<Token>,
-    previous: Option<Token>,
     locals: Stack<Local, LOCAL_SLOTS>,
     scope_depth: i32,
     enclosing_loop: Option<EnclosingLoop>,
     had_error: bool,
     panic_mode: bool,
-    parse_rule_table: DynArray<ParseRule<'a, 'src>>,
+    parse_rule_table: DynArray<ParseRule<'src>>,
 }
 
-impl<'a, 'src> Compiler<'a, 'src>
-where
-    'src: 'a,
-{
+impl<'src> Compiler<'src> {
     pub fn new(
         scanner: HeapPtr<Scanner<'src>>,
         heap: HeapPtr<VmHeap>,
@@ -96,8 +91,6 @@ where
             heap,
             current_function: Function::new(0, HeapPtr::alloc(Chunk::new()), None),
             current_function_type: function_type,
-            current: None,
-            previous: None,
             locals,
             scope_depth: 0,
             enclosing_loop: None,
@@ -150,6 +143,22 @@ where
         }
     }
 
+    fn fork(&self, function_type: FunctionType) -> Self {
+        Self {
+            current_source: self.current_source,
+            scanner: self.scanner.clone(),
+            heap: self.heap.clone(),
+            current_function: Function::new(0, HeapPtr::alloc(Chunk::new()), None),
+            current_function_type: function_type,
+            locals: Stack::new(),
+            scope_depth: 0,
+            enclosing_loop: None,
+            had_error: false,
+            panic_mode: false,
+            parse_rule_table: self.parse_rule_table.clone(),
+        }
+    }
+
     fn get_current_chunk(&self) -> &Chunk {
         &self.current_function.chunk
     }
@@ -158,21 +167,28 @@ where
         &mut self.current_function.chunk
     }
 
-    fn get_rule(&self, token: TokenType) -> &ParseRule<'a, 'src> {
+    fn get_rule(&self, token: TokenType) -> &ParseRule<'src> {
         debug_assert!(
             self.parse_rule_table.get_count() > token as usize,
             "Token index out of bounds in parse rule table.\nMight be missing parse rule for newly added tokens.",
         );
-        self.parse_rule_table.read(token as usize)
+        self.parse_rule_table.get(token as usize)
     }
 
     pub const fn get_current_source(&self) -> &'src [u8] {
         self.current_source
     }
 
+    fn get_current_token(&self) -> Option<&Token> {
+        self.scanner.get_current_token()
+    }
+
+    fn get_previous_token(&self) -> Option<&Token> {
+        self.scanner.get_previous_token()
+    }
+
     pub fn get_current_line(&self) -> u32 {
-        self.previous
-            .as_ref()
+        self.get_previous_token()
             .map_or_else(|| self.scanner.get_current_line(), |token| token.line)
     }
 
@@ -212,7 +228,7 @@ where
     }
 
     fn error(&mut self, msg: &str) {
-        if let Some(prev) = &self.previous {
+        if let Some(prev) = self.get_previous_token() {
             self.error_at_token(&prev.clone(), msg);
         } else {
             self.error_at_line(self.get_current_line(), msg);
@@ -325,7 +341,8 @@ where
 
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
-        let previous_token_type = unsafe { self.previous.as_ref().unwrap_unchecked().token_type };
+        let previous_token_type =
+            unsafe { self.get_previous_token().unwrap_unchecked().token_type };
         let prefix_rule = self.get_rule(previous_token_type).prefix;
         let can_assign = precedence <= Precedence::Assignment;
         match prefix_rule {
@@ -338,12 +355,12 @@ where
 
         while precedence
             <= self
-                .get_rule(unsafe { self.current.as_ref().unwrap_unchecked().token_type })
+                .get_rule(unsafe { self.get_current_token().unwrap_unchecked().token_type })
                 .precedence
         {
             self.advance();
             let previous_token_type =
-                unsafe { self.previous.as_ref().unwrap_unchecked().token_type };
+                unsafe { self.get_previous_token().unwrap_unchecked().token_type };
             let infix_rule = self.get_rule(previous_token_type).infix;
             infix_rule.unwrap()(self, can_assign);
         }
@@ -354,18 +371,21 @@ where
     }
 
     fn string(&mut self, _can_assign: bool) {
-        let token = self.previous.as_ref().unwrap();
+        let (name, line) = {
+            let token = self.get_previous_token().expect("Expected a string token.");
+            let source = self.get_current_source();
+            let name = token.lexeme.get_str(source);
+            let name = &name[1..name.len() - 1]; // Don't include the leading and trailing "
+            (name, token.line)
+        };
 
-        let source = self.get_current_source();
-        let name = token.lexeme.get_str(source);
-        let name = &name[1..name.len() - 1]; // Don't include the leading and trailing "
         let value = Value::object(ObjectNode::alloc_string(name, &mut self.heap));
-        self.emit_constant_with_op(value, token.line);
+        self.emit_constant_with_op(value, line);
     }
 
     fn literal(&mut self, _can_assign: bool) {
         let (operator_type, token_line) = unsafe {
-            let token = self.previous.as_ref().unwrap_unchecked();
+            let token = self.get_previous_token().unwrap_unchecked();
             (token.token_type, token.line)
         };
 
@@ -380,7 +400,7 @@ where
 
     fn unary(&mut self, _can_assign: bool) {
         let (operator_type, token_line) = unsafe {
-            let token = self.previous.as_ref().unwrap_unchecked();
+            let token = self.get_previous_token().unwrap_unchecked();
             (token.token_type, token.line)
         };
 
@@ -396,9 +416,9 @@ where
     }
 
     fn binary(&mut self, _can_assign: bool) {
-        let next_token_type = unsafe { self.current.as_ref().unwrap_unchecked().token_type };
+        let next_token_type = unsafe { self.get_current_token().unwrap_unchecked().token_type };
         let (operator_type, token_line) = unsafe {
-            let token = self.previous.as_ref().unwrap_unchecked();
+            let token = self.get_previous_token().unwrap_unchecked();
             (token.token_type, token.line)
         };
 
@@ -436,7 +456,7 @@ where
 
     fn number(&mut self, _can_assign: bool) {
         let (num, token_line) = unsafe {
-            let token = self.previous.as_ref().unwrap_unchecked();
+            let token = self.get_previous_token().unwrap_unchecked();
             let number = token
                 .lexeme
                 .get_str(self.get_current_source())
@@ -448,28 +468,16 @@ where
     }
 
     fn advance(&mut self) {
-        dbg_println!(
-            "Advancing... last: {:?}, current: {:?}",
-            &self.previous,
-            &self.current
-        );
-        self.previous = self.current.clone();
-        self.current = loop {
-            match self.scanner.scan() {
-                Ok(x) => break Some(x),
-                Err(err) => {
-                    self.error(err.get_message());
-                }
-            }
+        if let Err(err) = self.scanner.scan() {
+            self.error(err.get_message());
+            return;
         }
-    }
 
-    fn get_previous_token(&self) -> Option<&Token> {
-        self.previous.as_ref()
-    }
-
-    fn get_current_token(&self) -> Option<&Token> {
-        self.current.as_ref()
+        dbg_println!(
+            "Advanced to next token.\n\tlast: {:?}, current: {:?}",
+            self.get_previous_token(),
+            self.get_current_token()
+        );
     }
 
     fn expression(&mut self) {
@@ -926,7 +934,12 @@ where
                     ));
                 }
                 arg_count += 1;
-                if self.match_and_advance(TokenType::Comma) {
+                if self.is_current_token(TokenType::RightParen) {
+                    break;
+                } else if self.match_and_advance(TokenType::Comma) {
+                    continue;
+                } else {
+                    self.error("Expected ',' or ')' after function argument.");
                     break;
                 }
             }
@@ -941,9 +954,9 @@ where
     }
 
     fn function(&mut self, function_type: FunctionType) {
-        let mut compiler = Compiler::new(self.scanner.clone(), self.heap.clone(), function_type);
+        let mut compiler = self.fork(function_type);
 
-        if self.current_function_type != FunctionType::Script {
+        if function_type != FunctionType::Script {
             // Since we (the current compiler 'self') hit the fn token, the previous token is the function name.
             // which we set in the new Compiler that will compile the function.
             let previous_token = self
@@ -983,11 +996,29 @@ where
         compiler.consume(TokenType::LeftBrace, "Expected '{' before function body.");
         compiler.block();
 
+        let function = compiler.pack_function();
+
+        #[cfg(debug_assertions)]
+        {
+            println!("COMPILED FUNCTION: {:?}", function);
+            let chunk_name = match &function.name {
+                Some(name) => name.as_str(),
+                None => "<script>",
+            }
+            .to_owned();
+            disassemble_chunk(&function.chunk, &chunk_name);
+        }
         if compiler.had_error() {
-            self.error(&format!("Failed to compile function!"));
+            self.error(&format!(
+                "Function {} had errors during compilation!",
+                function
+                    .name
+                    .as_ref()
+                    .map(|x| x.as_str().to_owned())
+                    .unwrap_or("<unknown function>".to_owned())
+            ));
         }
 
-        let function = compiler.pack_function();
         let value = Value::object(ObjectNode::alloc(
             Object::Function(function),
             &mut self.heap,
@@ -996,7 +1027,7 @@ where
     }
 
     fn fn_declaration(&mut self) {
-        dbg_println!("\n PARSING FUNCTION DECL");
+        dbg_println!("\nPARSING FUNCTION DECL");
 
         let global = self.parse_variable("Expected function name.");
         self.initialize_local();
@@ -1020,17 +1051,6 @@ where
 
     fn pack_function(&mut self) -> Function {
         self.emit_empty_return();
-
-        #[cfg(debug_assertions)]
-        if !self.had_error() {
-            let chunk_name = match &self.current_function.name {
-                Some(name) => name.as_str(),
-                None => "<script>",
-            }
-            .to_owned();
-            disassemble_chunk(self.get_current_chunk_mut(), &chunk_name);
-        }
-
         self.current_function.clone()
     }
 
@@ -1051,7 +1071,7 @@ where
     }
 }
 
-impl Dealloc for Compiler<'_, '_> {
+impl Dealloc for Compiler<'_> {
     fn dealloc(&mut self) {
         dbg_println!("DEBUG COMPILER DEALLOC: {:?}", self);
         if !self.scanner.is_null() {

@@ -119,10 +119,6 @@ impl<T: std::fmt::Debug> DynArray<T> {
         unsafe { self.data.add(index).read() }
     }
 
-    pub fn read(&self, index: usize) -> &T {
-        unsafe { &*self.data.add(index) }
-    }
-
     pub fn replace(&self, index: usize, new_val: T) {
         debug_assert!(index < self.count, "Index out of bounds: {}", index);
         unsafe {
@@ -155,25 +151,26 @@ impl<T: std::fmt::Debug> DynArray<T> {
         unsafe { self.data.add(offset).as_mut_unchecked() }
     }
 
-    /// Gets a reference to the value at the given offset within the element count of the array.
-    pub fn get(&self, offset: usize) -> &T {
+    /// Gets a reference to the value at the given index within the element count of the array.
+    pub fn get(&self, index: usize) -> &T {
         debug_assert!(
-            offset < self.count,
+            index < self.count,
             "Index out of bounds: {} (count: {})",
-            offset,
+            index,
             self.count
         );
-        unsafe { self.data.add(offset).as_ref_unchecked() }
+        unsafe { &*self.data.add(index) }
     }
 
-    pub fn get_mut(&mut self, offset: usize) -> &mut T {
+    /// Gets a mutable reference to the value at the given index within the element count of the array.
+    pub fn get_mut(&mut self, index: usize) -> &mut T {
         debug_assert!(
-            offset < self.count,
+            index < self.count,
             "Index out of bounds: {} (count: {})",
-            offset,
+            index,
             self.count
         );
-        unsafe { self.data.add(offset).as_mut_unchecked() }
+        unsafe { self.data.add(index).as_mut_unchecked() }
     }
 
     pub const fn as_slice(&self) -> &[T] {

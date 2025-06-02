@@ -30,10 +30,7 @@ impl Dealloc for Function {
             self.chunk = HeapPtr::null();
         }
 
-        if let Some(name) = &mut self.name {
-            name.dealloc();
-            self.name = None;
-        }
+        // Name is an interned string, so we don't deallocate it here.
     }
 }
 

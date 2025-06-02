@@ -5,4 +5,4 @@ Written to learn the workings behind interpreted languages.
 
 For language syntax see syntax.ebnf or the test.slang file (may not be complete or updated)
 
-Based on the the amazing book ["Crafting Interpreters"](https://craftinginterpreters.com/).
+Compiler and VM based on those from clox in the fantastic book ["Crafting Interpreters"](https://craftinginterpreters.com/).

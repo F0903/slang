@@ -1,14 +1,18 @@
 use crate::{error::Result, value::Value};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NativeFunction {
     pub function: fn(&[Value]) -> Result<Value>,
     pub arity: u8,
-    pub name: String,
+    pub name: &'static str,
 }
 
 impl NativeFunction {
-    pub fn new(function: fn(&[Value]) -> Result<Value>, arity: u8, name: String) -> Self {
+    pub const fn new(
+        function: fn(&[Value]) -> Result<Value>,
+        arity: u8,
+        name: &'static str,
+    ) -> Self {
         Self {
             function,
             arity,
@@ -16,3 +20,6 @@ impl NativeFunction {
         }
     }
 }
+
+unsafe impl Send for NativeFunction {}
+unsafe impl Sync for NativeFunction {}

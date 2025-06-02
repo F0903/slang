@@ -11,6 +11,7 @@ mod error;
 mod hashing;
 mod lexing;
 mod memory;
+mod std_lib;
 mod utils;
 mod value;
 mod vm;
@@ -18,15 +19,10 @@ mod vm;
 use std::{
     env::args,
     io::{BufRead, Read, Write},
-    sync::LazyLock,
-    time::Instant,
 };
 
 use error::{Error, Result};
-use value::{Value, object::NativeFunction};
 use vm::Vm;
-
-static START_TIME: LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
 
 fn print_usage() {
     println!("Usage: slang for REPL or slang <path> to run a file.");
@@ -62,22 +58,14 @@ fn run_file(path: String, vm: &mut Vm) -> Result<()> {
 
 fn interpret(buf: &[u8], vm: &mut Vm) -> Result<()> {
     //let mut vm = Vm::new(); // Create a new VM each time to debug the drop implementations.
-    vm.register_native_function(NativeFunction::new(
-        |_args| {
-            let elapsed = START_TIME.elapsed().as_secs_f64();
-            Ok(Value::number(elapsed))
-        },
-        0,
-        "clock".to_owned(),
-    ));
     vm.interpret(buf)?;
     Ok(())
 }
 
 fn main() -> Result<()> {
-    LazyLock::force(&START_TIME);
     let mut args = args();
     let mut vm = Vm::new();
+    std_lib::init(&mut vm);
     match args.len() {
         1 => repl(&mut vm),
         2 => run_file(args.nth(1).unwrap(), &mut vm),
