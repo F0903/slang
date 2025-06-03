@@ -9,7 +9,7 @@ const TABLE_MAX_LOAD: f32 = 0.75;
 #[derive(Debug)]
 pub struct Entry<K, V> {
     pub key: K,
-    pub value: Option<V>,
+    pub value: V,
 }
 
 #[derive(Debug)]
@@ -30,6 +30,10 @@ impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K,
                 entry: None,
             })),
         }
+    }
+
+    pub fn count(&self) -> usize {
+        self.data.get_count()
     }
 
     /// Return iterator over the entries in the hash table.
@@ -113,7 +117,7 @@ impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K,
     }
 
     // Returns true if the key was inserted, false if it was already present (thus overwritten)
-    pub fn set(&mut self, key: K, value: Option<V>) -> bool {
+    pub fn set(&mut self, key: K, value: V) -> bool {
         if self.data.get_count() as f32 + 1_f32 > self.data.get_capacity() as f32 * TABLE_MAX_LOAD {
             self.grow();
         }

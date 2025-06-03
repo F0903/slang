@@ -12,7 +12,7 @@ use crate::{
     unwrap_enum,
     value::{
         Value,
-        object::{Function, InternedString, NativeFunction, Object, ObjectNode},
+        object::{Function, InternedString, NativeFunction, Object, ObjectNode, StringInterner},
     },
 };
 
@@ -54,7 +54,7 @@ impl Vm {
             stack: Stack::new(),
             heap: HeapPtr::alloc(VmHeap {
                 objects_head: HeapPtr::null(),
-                interned_strings: HashTable::new(),
+                strings: StringInterner::new(),
                 globals: HashTable::new(),
             }),
             callframes: Stack::new(),
@@ -200,13 +200,13 @@ impl Vm {
     }
 
     pub fn register_native_function(&mut self, function: NativeFunction) {
-        let func_name = InternedString::new(&function.name, &mut self.heap);
+        let func_name = self.heap.strings.make_string(&function.name);
         let func_value = Value::Object(ObjectNode::alloc(
             Object::NativeFunction(function),
             &mut self.heap,
         ));
 
-        self.heap.globals.set(func_name, Some(func_value));
+        self.heap.globals.set(func_name, func_value);
     }
 
     pub fn register_native_functions(&mut self, functions: &[NativeFunction]) {
@@ -337,7 +337,7 @@ impl Vm {
                     let name_string = self.read_constant_string()?;
                     let value = self.stack.peek(0).clone();
                     dbg_println!("SETTING GLOBAL {} = {}", name_string, value);
-                    if self.heap.globals.set(name_string.clone(), Some(value)) {
+                    if self.heap.globals.set(name_string.clone(), value) {
                         // If the variable did not already exist at this point, return error
                         self.heap.globals.delete(&name_string);
                         return Err(Error::Runtime(format!(
@@ -351,9 +351,7 @@ impl Vm {
                     let global = self.heap.globals.get(&name_string);
                     match global {
                         Some(global) => {
-                            let global_value = global.value.clone().ok_or_else(|| {
-                                Error::Runtime(format!("Variable '{}' had no value", name_string))
-                            })?;
+                            let global_value = global.value.clone();
                             dbg_println!("GETTING GLOBAL: {} = ({})", name_string, global_value);
                             self.stack.push(global_value);
                         }
@@ -369,7 +367,7 @@ impl Vm {
                     let name_string = self.read_constant_string()?;
                     let global_value = self.stack.peek(0).clone();
                     dbg_println!("DEFINING GLOBAL: {} = ({})", name_string, global_value);
-                    self.heap.globals.set(name_string, Some(global_value));
+                    self.heap.globals.set(name_string, global_value);
                     self.stack.pop();
                 }
                 OpCode::Constant => {
@@ -395,7 +393,7 @@ impl Vm {
                         match first.get_object() {
                             Object::String(a_str) => match &*second.get_object() {
                                 Object::String(b_str) => {
-                                    let concat = b_str.concat(&a_str, &mut self.heap);
+                                    let concat = self.heap.strings.concat_strings(*b_str, *a_str);
                                     let new_string = Value::Object(ObjectNode::alloc(
                                         Object::String(concat),
                                         &mut self.heap,

@@ -10,7 +10,7 @@ use crate::{
     memory::{Dealloc, HeapPtr},
     value::{
         Value,
-        object::{Function, InternedString, Object, ObjectNode},
+        object::{Function, Object, ObjectNode},
     },
     vm::{VmHeap, opcode::OpCode},
 };
@@ -379,7 +379,10 @@ impl<'src> Compiler<'src> {
             (name, token.line)
         };
 
-        let value = Value::Object(ObjectNode::alloc_string(name, &mut self.heap));
+        let value = Value::Object(ObjectNode::alloc(
+            Object::String(self.heap.strings.make_string(name)),
+            &mut self.heap,
+        ));
         self.emit_constant_with_op(value, line);
     }
 
@@ -770,7 +773,10 @@ impl<'src> Compiler<'src> {
     /// Returns the index of the constant.
     fn identifier_constant(&mut self, name_token: &Token) -> u32 {
         let lexeme = name_token.lexeme.get_str(self.get_current_source());
-        let value = Value::Object(ObjectNode::alloc_string(lexeme, &mut self.heap));
+        let value = Value::Object(ObjectNode::alloc(
+            Object::String(self.heap.strings.make_string(lexeme)),
+            &mut self.heap,
+        ));
         self.emit_constant(value)
     }
 
@@ -963,10 +969,10 @@ impl<'src> Compiler<'src> {
                 .get_previous_token()
                 .cloned()
                 .expect("Expected function name token.");
-            let func_name = InternedString::new(
-                previous_token.lexeme.get_str(self.current_source),
-                &mut self.heap,
-            );
+            let func_name = self
+                .heap
+                .strings
+                .make_string(previous_token.lexeme.get_str(self.current_source));
             compiler.current_function.set_name(Some(func_name));
         }
 

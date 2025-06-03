@@ -6,24 +6,17 @@ use crate::{
     memory::{Dealloc, HeapPtr},
     value::{
         Value,
-        object::{InternedString, ObjectNode},
+        object::{InternedString, ObjectNode, StringInterner},
     },
 };
 
 pub struct VmHeap {
     pub objects_head: HeapPtr<ObjectNode>,
-    pub interned_strings: HashTable<InternedString, ()>,
     pub globals: HashTable<InternedString, Value>,
+    pub strings: StringInterner,
 }
 
 impl VmHeap {
-    fn dealloc_interned_strings(&mut self) {
-        for entry in self.interned_strings.entries_mut() {
-            // Deallocate the key of each entry in the interned strings table
-            entry.key.dealloc();
-        }
-    }
-
     pub fn get_objects_head(&self) -> HeapPtr<ObjectNode> {
         self.objects_head
     }
@@ -36,7 +29,7 @@ impl VmHeap {
     pub fn print_state(&self) {
         dbg_println!("==== VM HEAP ====\n");
         dbg_println!("Objects: {:?}\n", self.objects_head);
-        dbg_println!("Interned Strings: {:?}\n", self.interned_strings);
+        dbg_println!("Interned Strings: {:?}\n", self.strings);
         dbg_println!("=================\n");
     }
 }
@@ -44,7 +37,7 @@ impl VmHeap {
 impl Dealloc for VmHeap {
     fn dealloc(&mut self) {
         dbg_println!("DEBUG DROP VMHEAP");
-        self.dealloc_interned_strings();
+        self.strings.dealloc();
     }
 }
 

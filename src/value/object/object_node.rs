@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use super::{InternedString, Object};
+use super::Object;
 use crate::{
     dbg_println,
     memory::{Dealloc, HeapPtr},
@@ -24,11 +24,6 @@ impl ObjectNode {
         let me = HeapPtr::alloc(Self { obj, next: head });
         heap.set_objects_head(me.clone());
         me
-    }
-
-    // Convinience function to allocate a string object
-    pub fn alloc_string(str: &str, heap: &mut VmHeap) -> HeapPtr<Self> {
-        Self::alloc(Object::String(InternedString::new(str, heap)), heap)
     }
 
     pub fn get_object(&self) -> &Object {
