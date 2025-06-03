@@ -23,10 +23,6 @@ impl Value {
             Value::None => true,
         }
     }
-
-    pub fn is_object(&self) -> bool {
-        matches!(self, Value::Object(_))
-    }
 }
 
 impl Add for Value {

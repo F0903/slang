@@ -182,13 +182,6 @@ impl Vm {
     }
 
     fn call_value(&mut self, callee: Value, arg_count: u8) -> Result<()> {
-        if !callee.is_object() {
-            return Err(Error::Runtime(format!(
-                "Cannot call non-object value!: {}",
-                callee
-            )));
-        }
-
         match callee {
             Value::Object(obj) => match obj.get_object() {
                 Object::Function(func) => self.call(func.clone(), arg_count),
@@ -222,19 +215,23 @@ impl Vm {
         }
     }
 
-    fn read_name_string(&mut self) -> Result<InternedString> {
-        let name_value = self.read_constant_quad();
-        let name_object_node = unwrap_enum!(name_value, Value::Object);
-        let name_object_string = match name_object_node.get_object() {
+    fn read_constant_string(&mut self) -> Result<InternedString> {
+        let value = self.read_constant_quad();
+        let obj = unwrap_enum!(
+            value,
+            Value::Object,
+            "Expected Object value for constant string"
+        );
+        let string = match obj.get_object() {
             Object::String(s) => s.clone(),
             _ => {
                 return Err(Error::Runtime(format!(
                     "Expected string object, found: {:?}",
-                    name_object_node.get_object()
+                    obj.get_object()
                 )));
             }
         };
-        Ok(name_object_string)
+        Ok(string)
     }
 
     pub fn interpret<'src>(&mut self, source: &'src [u8]) -> Result<()> {
@@ -337,7 +334,7 @@ impl Vm {
                     self.stack.pop();
                 }
                 OpCode::SetGlobal => {
-                    let name_string = self.read_name_string()?;
+                    let name_string = self.read_constant_string()?;
                     let value = self.stack.peek(0).clone();
                     dbg_println!("SETTING GLOBAL {} = {}", name_string, value);
                     if self.heap.globals.set(name_string.clone(), Some(value)) {
@@ -350,7 +347,7 @@ impl Vm {
                     }
                 }
                 OpCode::GetGlobal => {
-                    let name_string = self.read_name_string()?;
+                    let name_string = self.read_constant_string()?;
                     let global = self.heap.globals.get(&name_string);
                     match global {
                         Some(global) => {
@@ -369,7 +366,7 @@ impl Vm {
                     }
                 }
                 OpCode::DefineGlobal => {
-                    let name_string = self.read_name_string()?;
+                    let name_string = self.read_constant_string()?;
                     let global_value = self.stack.peek(0).clone();
                     dbg_println!("DEFINING GLOBAL: {} = ({})", name_string, global_value);
                     self.heap.globals.set(name_string, Some(global_value));
@@ -392,9 +389,9 @@ impl Vm {
                 OpCode::Add => {
                     let second = self.stack.pop();
                     let first = self.stack.pop();
-                    if first.is_object() && second.is_object() {
-                        let first = unwrap_enum!(first, Value::Object);
-                        let second = unwrap_enum!(second, Value::Object);
+                    if let Value::Object(first) = first
+                        && let Value::Object(second) = second
+                    {
                         match first.get_object() {
                             Object::String(a_str) => match &*second.get_object() {
                                 Object::String(b_str) => {
