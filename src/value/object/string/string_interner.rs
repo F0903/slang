@@ -1,7 +1,6 @@
 use crate::{
     collections::{DynArray, HashTable},
     hashing::GlobalHashMethod,
-    memory::Dealloc,
     value::object::InternedString,
 };
 
@@ -38,8 +37,8 @@ impl StringInterner {
     }
 }
 
-impl Dealloc for StringInterner {
-    fn dealloc(&mut self) {
+impl Drop for StringInterner {
+    fn drop(&mut self) {
         let mut hashes_to_delete = DynArray::new_with_cap(self.strings.count(), None);
         for entry in self.strings.entries_mut() {
             // Deallocate the key of each entry in the interned strings table

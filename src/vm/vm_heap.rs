@@ -34,13 +34,6 @@ impl VmHeap {
     }
 }
 
-impl Dealloc for VmHeap {
-    fn dealloc(&mut self) {
-        dbg_println!("DEBUG DROP VMHEAP");
-        self.strings.dealloc();
-    }
-}
-
 impl Debug for VmHeap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // We can't call self.print_state here, since it is possible that self.objects or self.interned_strings have been deallocated.

@@ -13,9 +13,9 @@ pub struct Entry<K, V> {
 }
 
 #[derive(Debug)]
-pub(crate) struct Bucket<K, V> {
+pub struct Bucket<K, V> {
     tombstone: bool,
-    pub(crate) entry: Option<Entry<K, V>>,
+    pub entry: Option<Entry<K, V>>,
 }
 
 pub struct HashTable<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> {
