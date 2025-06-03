@@ -6,29 +6,32 @@ use crate::{
 
 const TABLE_MAX_LOAD: f32 = 0.75;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Entry<K, V> {
     pub key: K,
     pub value: V,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Bucket<K, V> {
     tombstone: bool,
     pub entry: Option<Entry<K, V>>,
 }
 
-pub struct HashTable<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> {
+pub struct HashTable<K: Hashable + PartialEq + Clone + std::fmt::Debug, V: std::fmt::Debug + Clone>
+{
     data: DynArray<Bucket<K, V>>,
 }
 
-impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K, V> {
+impl<K: Hashable + PartialEq + Clone + std::fmt::Debug, V: Clone + std::fmt::Debug>
+    HashTable<K, V>
+{
     pub fn new() -> Self {
         Self {
-            data: DynArray::new(Some(Bucket {
+            data: DynArray::new_with_init(Bucket {
                 tombstone: false,
                 entry: None,
-            })),
+            }),
         }
     }
 
@@ -48,13 +51,21 @@ impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K,
 
     /// Return a mutable iterator over the entries in the hash table.
     /// Be careful (please)
-    pub fn entries_mut(&self) -> impl Iterator<Item = &mut Entry<K, V>> {
+    pub fn entries_mut(&mut self) -> impl Iterator<Item = &mut Entry<K, V>> {
         // Return entries that are Some and not tombstones
         self.data
             .memory_iter_mut()
             .map(|x| unsafe { x.assume_init_mut() })
             .filter(|x| !x.tombstone)
             .filter_map(|x| x.entry.as_mut())
+    }
+
+    fn get_bucket_ref_at(&self, index: usize) -> &Bucket<K, V> {
+        unsafe { self.data.get_memory_unchecked(index) }
+    }
+
+    fn get_bucket_mut_at(&mut self, index: usize) -> &mut Bucket<K, V> {
+        unsafe { self.data.get_memory_mut_unchecked(index) }
     }
 
     fn find_bucket(&mut self, hash: u32) -> &mut Bucket<K, V> {
@@ -64,13 +75,13 @@ impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K,
         let mut tombstone_index = None;
         let mut index = hash as usize % capacity;
         loop {
-            let bucket = self.data.get_memory(index);
+            let bucket = self.get_bucket_ref_at(index);
             if !bucket.tombstone {
                 let entry = bucket.entry.as_ref();
                 match entry {
                     Some(entry) => {
                         if entry.key.get_hash() == hash {
-                            return self.data.get_memory_mut(index);
+                            return self.get_bucket_mut_at(index);
                         }
                     }
                     None => {
@@ -79,7 +90,7 @@ impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K,
                         } else {
                             index
                         };
-                        return self.data.get_memory_mut(return_index);
+                        return self.get_bucket_mut_at(return_index);
                     }
                 }
             } else {
@@ -95,12 +106,12 @@ impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K,
         let old_buckets = self.data.clone();
 
         // Reset data completely, but with increased capacity
-        self.data = DynArray::new_with_cap(
+        self.data = DynArray::new_with_cap_and_init(
             new_capacity,
-            Some(Bucket {
+            Bucket {
                 tombstone: false,
                 entry: None,
-            }),
+            },
         );
 
         // We need to count every entry from the beginning, since we are not copying over tombstones
@@ -113,7 +124,7 @@ impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K,
             }
         }
 
-        self.data.set_count(count);
+        unsafe { self.data.set_count(count) };
     }
 
     // Returns true if the key was inserted, false if it was already present (thus overwritten)
@@ -134,7 +145,7 @@ impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K,
         // Only increase the count if we are inserting a new key (not replacing an existing one or tombstone)
         let new_key = was_none && !was_tombstone;
         if new_key {
-            self.data.set_count(self.data.get_count() + 1);
+            unsafe { self.data.set_count(self.data.get_count() + 1) };
         }
 
         new_key
@@ -174,7 +185,7 @@ impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> HashTable<K,
     }
 }
 
-impl<V: std::fmt::Debug> HashTable<InternedString, V> {
+impl<V: std::fmt::Debug + Clone> HashTable<InternedString, V> {
     pub fn get_by_str<H: HashMethod>(
         &mut self,
         key_name: &str,
@@ -193,7 +204,7 @@ impl<V: std::fmt::Debug> HashTable<InternedString, V> {
     }
 }
 
-impl<K: Hashable + PartialEq + std::fmt::Debug, V: std::fmt::Debug> std::fmt::Debug
+impl<K: Hashable + PartialEq + Clone + std::fmt::Debug, V: Clone + std::fmt::Debug> std::fmt::Debug
     for HashTable<K, V>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

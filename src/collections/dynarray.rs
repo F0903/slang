@@ -24,17 +24,17 @@ impl<T: std::fmt::Debug> Default for DynArray<T> {
 
 /// SAFETY: This is a simple "dynamic array" with minimal safety. It is up to the user to ensure that the data inside is initialized and valid for reading.
 impl<T: std::fmt::Debug> DynArray<T> {
-    pub const fn new(init_value: Option<T>) -> Self {
+    pub const fn new() -> Self {
         Self {
             data: null_mut(),
             count: 0,
             capacity: 0,
-            init_value,
+            init_value: None,
         }
     }
 
-    pub fn new_with_cap(cap: usize, init_value: Option<T>) -> Self {
-        let mut me = Self::new(init_value);
+    pub fn new_with_cap(cap: usize) -> Self {
+        let mut me = Self::new();
         me.grow_array_to(cap);
         me
     }
@@ -44,7 +44,7 @@ impl<T: std::fmt::Debug> DynArray<T> {
     }
 
     /// BE CAREFUL
-    pub(super) const fn set_count(&mut self, new_count: usize) {
+    pub(super) const unsafe fn set_count(&mut self, new_count: usize) {
         self.count = new_count;
     }
 
@@ -101,7 +101,7 @@ impl<T: std::fmt::Debug> DynArray<T> {
 
     pub fn push_ptr(&mut self, val: *const T, count: usize) {
         if self.capacity < self.count + count {
-            self.grow_array();
+            self.grow_array_to(self.count + count);
         }
 
         unsafe {
@@ -119,7 +119,7 @@ impl<T: std::fmt::Debug> DynArray<T> {
         unsafe { self.data.add(index).read() }
     }
 
-    pub fn replace(&self, index: usize, new_val: T) {
+    pub fn replace(&mut self, index: usize, new_val: T) {
         debug_assert!(index < self.count, "Index out of bounds: {}", index);
         unsafe {
             let value = self.data.add(index);
@@ -130,7 +130,7 @@ impl<T: std::fmt::Debug> DynArray<T> {
     }
 
     /// Gets a reference to the value at the given offset within the capacity of the array.
-    pub fn get_memory(&self, offset: usize) -> &T {
+    pub unsafe fn get_memory_unchecked(&self, offset: usize) -> &T {
         debug_assert!(
             offset < self.capacity,
             "Index out of bounds: {} (count: {})",
@@ -141,7 +141,7 @@ impl<T: std::fmt::Debug> DynArray<T> {
     }
 
     /// Gets a mutable reference to the value at the given offset within the capacity of the array.
-    pub fn get_memory_mut(&self, offset: usize) -> &mut T {
+    pub unsafe fn get_memory_mut_unchecked(&self, offset: usize) -> &mut T {
         debug_assert!(
             offset < self.capacity,
             "Index out of bounds: {} (count: {})",
@@ -159,7 +159,7 @@ impl<T: std::fmt::Debug> DynArray<T> {
             index,
             self.count
         );
-        unsafe { &*self.data.add(index) }
+        unsafe { self.data.add(index).as_ref_unchecked() }
     }
 
     /// Gets a mutable reference to the value at the given index within the element count of the array.
@@ -226,9 +226,30 @@ impl<T: std::fmt::Debug> DynArray<T> {
     }
 }
 
-impl<T: std::fmt::Debug> Clone for DynArray<T> {
+impl<T: std::fmt::Debug + Clone> DynArray<T> {
+    pub fn new_with_init(init_value: T) -> Self {
+        Self {
+            data: null_mut(),
+            count: 0,
+            capacity: 0,
+            init_value: Some(init_value),
+        }
+    }
+
+    pub fn new_with_cap_and_init(cap: usize, init_value: T) -> Self {
+        let mut me = Self::new_with_init(init_value);
+        me.grow_array_to(cap);
+        me
+    }
+}
+
+impl<T: std::fmt::Debug + Clone> Clone for DynArray<T> {
     fn clone(&self) -> Self {
-        let mut new_array = Self::new_with_cap(self.count, None);
+        let mut new_array = if let Some(init) = &self.init_value {
+            Self::new_with_cap_and_init(self.count, init.clone())
+        } else {
+            Self::new_with_cap(self.count)
+        };
         if self.data.is_null() {
             return new_array;
         }
@@ -243,7 +264,7 @@ impl<T: std::fmt::Debug> Clone for DynArray<T> {
 
 // Specialization to make string conversion and raw byte handling easier
 impl DynArray<u8> {
-    pub fn read_cast<A>(&self, byte_offset: usize) -> A {
+    pub unsafe fn read_cast<A>(&self, byte_offset: usize) -> A {
         debug_assert!(
             byte_offset < self.count,
             "Index out of bounds: {} (count: {})",
@@ -256,7 +277,7 @@ impl DynArray<u8> {
     }
 
     pub fn from_str(str: &str) -> Self {
-        let mut me = Self::new_with_cap(str.len(), None);
+        let mut me = Self::new_with_cap(str.len());
         me.push_ptr(str.as_ptr(), str.len());
         me
     }
@@ -290,7 +311,7 @@ impl<T: std::fmt::Debug> Drop for DynArray<T> {
     }
 }
 
-impl<T: std::fmt::Debug> IntoIterator for DynArray<T> {
+impl<T: std::fmt::Debug + Clone> IntoIterator for DynArray<T> {
     type Item = T;
     type IntoIter = OwnedIter<T>;
 

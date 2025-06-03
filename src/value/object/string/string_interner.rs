@@ -30,7 +30,7 @@ impl StringInterner {
     }
 
     pub fn concat_strings(&self, a: InternedString, b: InternedString) -> InternedString {
-        let mut new_char_buf = DynArray::new_with_cap(a.get_len() + b.get_len(), None);
+        let mut new_char_buf = DynArray::new_with_cap(a.get_len() + b.get_len());
         new_char_buf.push_array(a.get_char_buf());
         new_char_buf.push_array(b.get_char_buf());
         InternedString::new_raw(new_char_buf)
@@ -39,7 +39,7 @@ impl StringInterner {
 
 impl Drop for StringInterner {
     fn drop(&mut self) {
-        let mut hashes_to_delete = DynArray::new_with_cap(self.strings.count(), None);
+        let mut hashes_to_delete = DynArray::new_with_cap(self.strings.count());
         for entry in self.strings.entries_mut() {
             // Deallocate the key of each entry in the interned strings table
             hashes_to_delete.push(entry.key.get_hash());

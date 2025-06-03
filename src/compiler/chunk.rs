@@ -12,9 +12,9 @@ pub struct Chunk {
 impl Chunk {
     pub fn new() -> Self {
         Self {
-            code: DynArray::new(None),
-            constants: DynArray::new(None),
-            line_numbers_map: DynArray::new(None), // Change this to some kind of encoding.
+            code: DynArray::new(),
+            constants: DynArray::new(),
+            line_numbers_map: DynArray::new(), // Change this to some kind of encoding.
         }
     }
 
@@ -74,14 +74,16 @@ impl Chunk {
     }
 
     pub fn read_double(&self, index: usize) -> u16 {
-        self.code.read_cast(index)
+        // SAFETY: This is safe assuming there where no compiliation errors resulting in malformed code.
+        unsafe { self.code.read_cast(index) }
     }
 
     pub fn read_quad(&self, index: usize) -> u32 {
-        self.code.read_cast(index)
+        // SAFETY: This is safe assuming there where no compiliation errors resulting in malformed code.
+        unsafe { self.code.read_cast(index) }
     }
 
-    pub fn replace_last_op(&self, new_op: OpCode) {
+    pub fn replace_last_op(&mut self, new_op: OpCode) {
         dbg_println!("REPLACING LAST OP WITH: {:?}", new_op);
 
         self.code.replace(self.code.get_count() - 1, new_op.into())

@@ -23,7 +23,7 @@ type CompilerResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 type ParseFn<'src> = fn(&mut Compiler<'src>, bool);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ParseRule<'src> {
     prefix: Option<ParseFn<'src>>,
     infix: Option<ParseFn<'src>>,

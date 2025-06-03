@@ -13,7 +13,7 @@ impl Encoding for RLE {
         let mut current_num: u32 = unsafe { *values_u32 };
         let mut current_num_count: u8 = 1;
 
-        let mut workspace = DynArray::<u8>::new(None);
+        let mut workspace = DynArray::<u8>::new();
 
         for i in 1..count_u32 {
             let num = unsafe { *values_u32.add(i) };
@@ -54,7 +54,7 @@ impl Encoding for RLE {
     fn decode(values: *const u8, count: usize) -> DynArray<u8> {
         const SEQ_NUM_VALUE_ALIGNMENT: u8 = 5;
 
-        let mut workspace = DynArray::<u8>::new(None);
+        let mut workspace = DynArray::<u8>::new();
 
         let loop_to = count / SEQ_NUM_VALUE_ALIGNMENT as usize;
         for i in 0..loop_to {
