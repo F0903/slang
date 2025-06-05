@@ -1,9 +1,12 @@
 use std::{fmt::Debug, mem::MaybeUninit};
 
 use super::{stack_iter::StackIter, stack_offset::StackOffset, stack_rev_iter::StackRevIter};
+use crate::collections::UnsafePtrIter;
 
 pub const DEFAULT_STACK_SIZE: usize = 1024;
 
+/// A stack allocated Stack. (stack-ception?)
+/// Can alternatively also be used as a dynamic-ish stack allocated array up to size STACK_SIZE
 pub struct Stack<T, const STACK_SIZE: usize = DEFAULT_STACK_SIZE> {
     stack: [MaybeUninit<T>; STACK_SIZE],
     count: usize,
@@ -41,7 +44,9 @@ impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
             }
         }
 
+        // The index was above count, so we are inserting a new element.
         self.stack[index] = MaybeUninit::new(value);
+        self.count += 1;
     }
 
     pub fn pop(&mut self) -> T {
@@ -104,6 +109,10 @@ impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
     /// Returns an iterator that iterates from the top of the stack to the bottom
     pub const fn top_iter<'a>(&'a self) -> StackIter<'a, T, STACK_SIZE> {
         StackIter::new(self)
+    }
+
+    pub unsafe fn unsafe_bottom_iter(&self) -> UnsafePtrIter<T> {
+        unsafe { UnsafePtrIter::new(self.stack.assume_init_ref().as_ptr(), self.count) }
     }
 
     pub fn offset<'a>(&'a mut self, base_offset: usize) -> StackOffset<'a, T, STACK_SIZE> {
