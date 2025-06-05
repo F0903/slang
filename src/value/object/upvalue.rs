@@ -1,24 +1,58 @@
 use std::fmt::{Debug, Display};
 
-use crate::value::Value;
+use crate::{memory::HeapPtr, value::Value};
 
 /// A pointer to a variable in an enclosing scope.
 //SAFTEY: Since this points to another Value that lives in the same VM stack, the pointer will always be valid.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Upvalue {
     location: *mut Value,
+    closed: Value,
+    next: HeapPtr<Upvalue>,
 }
 
 impl Upvalue {
     pub fn new(location: *mut Value) -> Self {
-        Self { location }
+        Self {
+            location,
+            closed: Value::None,
+            next: HeapPtr::null(),
+        }
     }
 
-    pub fn set(&mut self, value: Value) {
+    pub fn new_with_next(location: *mut Value, next: HeapPtr<Upvalue>) -> Self {
+        Self {
+            location,
+            closed: Value::None,
+            next,
+        }
+    }
+
+    pub(crate) const fn get_location_raw(&self) -> *const Value {
+        self.location
+    }
+
+    pub(crate) const fn get_next(&self) -> HeapPtr<Upvalue> {
+        self.next
+    }
+
+    pub const fn set(&mut self, value: Value) {
         unsafe { *self.location = value }
     }
 
-    pub fn get_ref(&self) -> &Value {
+    pub const fn set_next(&mut self, next: HeapPtr<Upvalue>) {
+        self.next = next;
+    }
+
+    pub fn close(&mut self) {
+        // We "close" the upvalue by moving the value from the stack to the Upvalue here, which is heap allocated.
+        unsafe {
+            self.closed = *self.location;
+            self.location = &raw mut self.closed;
+        }
+    }
+
+    pub const fn get_ref(&self) -> &Value {
         unsafe { self.location.as_ref_unchecked() }
     }
 }

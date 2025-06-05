@@ -1,6 +1,6 @@
 use std::{fmt::Debug, mem::MaybeUninit};
 
-use super::{stack_iter::StackIter, stack_offset::StackOffset, stack_rev_iter::StackRevIter};
+use super::{stack_iter::StackIter, stack_rev_iter::StackRevIter};
 use crate::collections::UnsafePtrIter;
 
 pub const DEFAULT_STACK_SIZE: usize = 1024;
@@ -81,11 +81,11 @@ impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
         unsafe { self.stack[index].assume_init_mut() }
     }
 
-    pub fn top_ref(&self) -> &T {
+    pub const fn top_ref(&self) -> &T {
         self.get_ref_at(self.count() - 1)
     }
 
-    pub fn top_mut(&mut self) -> &mut T {
+    pub const fn top_mut(&mut self) -> &mut T {
         self.get_mut_at(self.count() - 1)
     }
 
@@ -113,10 +113,6 @@ impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
 
     pub unsafe fn unsafe_bottom_iter(&self) -> UnsafePtrIter<T> {
         unsafe { UnsafePtrIter::new(self.stack.assume_init_ref().as_ptr(), self.count) }
-    }
-
-    pub fn offset<'a>(&'a mut self, base_offset: usize) -> StackOffset<'a, T, STACK_SIZE> {
-        StackOffset::new(self, base_offset)
     }
 }
 

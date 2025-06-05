@@ -585,14 +585,25 @@ impl<'src> Compiler<'src> {
 
         self.scope_depth -= 1;
 
+        let line = self.get_current_line();
         // Pop all locals in scope
         let mut locals_to_pop = 0;
-        while self.locals.count() > 0 && self.locals.peek(0).get_depth() > self.scope_depth {
-            locals_to_pop += 1;
+        let mut pop_n = 0;
+        //SAFETY: We do not modify the array, and locals are valid for the lifetime of Compiler.
+        for local in unsafe { self.locals.unsafe_bottom_iter() } {
+            if local.is_captured() {
+                self.emit_op(OpCode::CloseUpvalue, line);
+            } else {
+                locals_to_pop += 1;
+            }
+            pop_n += 1;
+        }
+        for _ in 0..locals_to_pop {
             self.locals.pop();
         }
-        if locals_to_pop > 0 {
-            self.emit_op_with_double(OpCode::PopN, locals_to_pop, self.get_current_line());
+
+        if pop_n > 0 {
+            self.emit_op_with_double(OpCode::PopN, pop_n, line);
         }
     }
 
@@ -853,6 +864,10 @@ impl<'src> Compiler<'src> {
                 let enclosing = unsafe { enclosing.as_mut_unchecked() };
 
                 if let Some(enclosing_local) = enclosing.resolve_local(name_token) {
+                    enclosing
+                        .locals
+                        .get_mut_at(enclosing_local as usize)
+                        .capture();
                     let upvalue = self.add_upvalue(enclosing_local, true);
                     return Some(upvalue);
                 } else if let Some(upvalue) = enclosing.resolve_upvalue(name_token) {

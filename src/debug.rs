@@ -100,7 +100,8 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         | OpCode::GetLocal
         | OpCode::SetLocal
         | OpCode::GetUpvalue
-        | OpCode::SetUpvalue => double_instruction(&opcode, chunk, offset),
+        | OpCode::SetUpvalue
+        | OpCode::CloseUpvalue => double_instruction(&opcode, chunk, offset),
         OpCode::DefineGlobal | OpCode::SetGlobal | OpCode::GetGlobal | OpCode::Constant => {
             quad_constant_instruction(&opcode, chunk, offset)
         }

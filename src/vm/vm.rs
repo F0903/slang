@@ -1,3 +1,5 @@
+use std::ptr::null_mut;
+
 use super::{VmHeap, callframe::CallFrame, opcode::OpCode};
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
@@ -46,6 +48,7 @@ pub struct Vm {
     stack: Stack<Value, STACK_MAX>,
     heap: HeapPtr<VmHeap>,
     callframes: Stack<CallFrame, MAX_CALLFRAMES>,
+    open_upvalues: HeapPtr<object::Upvalue>,
 }
 
 impl Vm {
@@ -58,72 +61,44 @@ impl Vm {
                 globals: HashTable::new(),
             }),
             callframes: Stack::new(),
+            open_upvalues: HeapPtr::null(),
         }
     }
 
-    fn read_byte(&mut self) -> u8 {
-        unsafe {
-            let frame = self.callframes.top_mut();
-            let val = frame.ip.read();
-            frame.ip = frame.ip.add(1);
-            val
+    pub fn register_native_function(&mut self, function: NativeFunction) {
+        let func_name = self.heap.strings.make_string(&function.name);
+        let func_value = Value::Object(ObjectNode::alloc(
+            Object::NativeFunction(function),
+            &mut self.heap,
+        ));
+
+        self.heap.globals.set(func_name, func_value);
+    }
+
+    pub fn register_native_functions(&mut self, functions: &[NativeFunction]) {
+        for function in functions {
+            self.register_native_function(*function);
         }
-    }
-
-    fn read_double(&mut self) -> u16 {
-        unsafe {
-            let frame = self.callframes.top_mut();
-            let val = frame.ip.cast::<u16>().read();
-            frame.ip = frame.ip.add(2);
-            val
-        }
-    }
-
-    fn read_quad(&mut self) -> u32 {
-        unsafe {
-            let frame = self.callframes.top_mut();
-            let val = frame.ip.cast::<u32>().read();
-            frame.ip = frame.ip.add(4);
-            val
-        }
-    }
-
-    /// Reads a constant from the chunk with a u8 index.
-    fn read_constant(&mut self) -> &Value {
-        let index = self.read_byte();
-        let frame = self.callframes.top_mut();
-        frame.closure.function.chunk.get_constant(index as u32)
-    }
-
-    /// Reads a constant from the chunk with a u16 index.
-    fn read_constant_double(&mut self) -> &Value {
-        let index = self.read_double();
-        let frame = self.callframes.top_mut();
-        frame.closure.function.chunk.get_constant(index as u32)
-    }
-
-    /// Reads a constant from the chunk with a u32 index.
-    fn read_constant_quad(&mut self) -> &Value {
-        let index = self.read_quad();
-        let frame = self.callframes.top_mut();
-        frame.closure.function.chunk.get_constant(index)
     }
 
     pub fn get_stack_trace(&self) -> String {
         let mut str_buf = String::new();
         for frame in self.callframes.top_iter() {
+            // Since this is a debug function, it doesn't matter that we are cloning here
+            let mut frame = frame.clone();
             let instruction = unsafe {
                 let ip_offset = frame
-                    .ip
-                    .offset_from(frame.closure.function.chunk.get_code_ptr());
-                frame.ip.sub((ip_offset as usize) - 1).read()
+                    .get_ip()
+                    .offset_from(frame.get_closure_ref().function.chunk.get_code_ptr());
+                frame.sub_ip((ip_offset as usize) - 1);
+                frame.get_ip().read()
             }; // -1 to get the previous instruction that failed
 
-            let function_name = &frame.closure.function.name;
+            let function_name = &frame.get_closure_ref().function.name;
             str_buf.push_str(&format!(
                 "[line {}] in {}",
                 frame
-                    .closure
+                    .get_closure_ref()
                     .function
                     .chunk
                     .get_line_number(instruction as usize),
@@ -134,6 +109,62 @@ impl Vm {
             ));
         }
         str_buf
+    }
+
+    fn read_byte(&mut self) -> u8 {
+        unsafe {
+            let frame = self.callframes.top_mut();
+            let val = frame.get_ip().read();
+            frame.add_ip(1);
+            val
+        }
+    }
+
+    fn read_double(&mut self) -> u16 {
+        unsafe {
+            let frame = self.callframes.top_mut();
+            let val = frame.get_ip().cast::<u16>().read();
+            frame.add_ip(2);
+            val
+        }
+    }
+
+    fn read_quad(&mut self) -> u32 {
+        unsafe {
+            let frame = self.callframes.top_mut();
+            let val = frame.get_ip().cast::<u32>().read();
+            frame.add_ip(4);
+            val
+        }
+    }
+
+    /// Reads a constant from the chunk with a u8 index.
+    fn read_constant(&mut self) -> &Value {
+        let index = self.read_byte();
+        let frame = self.callframes.top_mut();
+        frame
+            .get_closure_ref()
+            .function
+            .chunk
+            .get_constant(index as u32)
+    }
+
+    /// Reads a constant from the chunk with a u16 index.
+    fn read_constant_double(&mut self) -> &Value {
+        let index = self.read_double();
+        let frame = self.callframes.top_mut();
+        frame
+            .get_closure_ref()
+            .function
+            .chunk
+            .get_constant(index as u32)
+    }
+
+    /// Reads a constant from the chunk with a u32 index.
+    fn read_constant_quad(&mut self) -> &Value {
+        let index = self.read_quad();
+        let frame = self.callframes.top_mut();
+        frame.get_closure_ref().function.chunk.get_constant(index)
     }
 
     fn call(&mut self, closure: &Closure, arg_count: u8) -> Result<()> {
@@ -173,11 +204,16 @@ impl Vm {
                 .unwrap_or("<script>"),
         );
 
-        self.callframes.push(CallFrame {
-            ip: function.chunk.get_code_ptr(),
-            closure: closure.clone(),
-            stack_base_offset: self.stack.count() - arg_count as usize,
-        });
+        let stack_base = self.stack.get_mut_at(0) as *mut Value;
+        let callframe_slots = unsafe { stack_base.add(self.stack.count() - arg_count as usize) };
+        dbg_println!("STACK BASE -> {:?}", stack_base);
+        dbg_println!("CALLFRAME SLOTS -> {:?}", callframe_slots);
+
+        self.callframes.push(CallFrame::new(
+            closure.clone(),
+            function.chunk.get_code_ptr(),
+            callframe_slots,
+        ));
         Ok(())
     }
 
@@ -208,28 +244,42 @@ impl Vm {
         }
     }
 
-    pub fn register_native_function(&mut self, function: NativeFunction) {
-        let func_name = self.heap.strings.make_string(&function.name);
-        let func_value = Value::Object(ObjectNode::alloc(
-            Object::NativeFunction(function),
-            &mut self.heap,
-        ));
-
-        self.heap.globals.set(func_name, func_value);
-    }
-
-    pub fn register_native_functions(&mut self, functions: &[NativeFunction]) {
-        for function in functions {
-            self.register_native_function(*function);
-        }
-    }
-
-    fn capture_upvalue(&mut self, index: u16) -> object::Upvalue {
+    fn capture_upvalue(&mut self, index: u16) -> HeapPtr<object::Upvalue> {
         let frame = self.callframes.top_mut();
-        let mut stack = self.stack.offset(frame.stack_base_offset);
-        let value = stack.get_mut_at(index as usize);
-        dbg_println!("CAPTURING UPVALUE FOR '{}'", value);
-        object::Upvalue::new(value)
+        let local = frame.get_slot_mut(index as usize);
+
+        dbg_println!("CAPTURING UPVALUE FOR '{}'", local);
+
+        let mut previous_upvalue = HeapPtr::null();
+        let mut upvalue = self.open_upvalues;
+        while upvalue.is_not_null() && upvalue.addr_gt_addr(local) {
+            previous_upvalue = upvalue;
+            upvalue = upvalue.get_next();
+        }
+
+        if upvalue.is_not_null() && upvalue.get_location_raw() == local {
+            return upvalue;
+        }
+
+        let new_upvalue = HeapPtr::alloc(object::Upvalue::new_with_next(local, upvalue));
+
+        if previous_upvalue.is_null() {
+            self.open_upvalues = new_upvalue;
+        } else {
+            previous_upvalue.set_next(new_upvalue);
+        }
+
+        new_upvalue
+    }
+
+    fn close_upvalues(&mut self, stack_slot: *const Value) {
+        while self.open_upvalues.is_not_null()
+            && self.open_upvalues.get_location_raw() >= stack_slot
+        {
+            let mut upvalue = self.open_upvalues;
+            upvalue.close();
+            self.open_upvalues = upvalue.get_next();
+        }
     }
 
     pub fn interpret<'src>(&mut self, source: &'src [u8]) -> Result<()> {
@@ -249,11 +299,11 @@ impl Vm {
             Object::Closure(closure.clone()),
             &mut self.heap,
         )));
-        self.callframes.push(CallFrame {
-            ip: closure.function.chunk.get_code_ptr(),
-            closure: closure.clone(),
-            stack_base_offset: 0,
-        });
+        self.callframes.push(CallFrame::new(
+            closure.clone(),
+            closure.function.chunk.get_code_ptr(),
+            self.stack.get_mut_at(0),
+        ));
         self.call(&closure, 0)?;
 
         loop {
@@ -261,29 +311,36 @@ impl Vm {
             unsafe {
                 let frame = self.callframes.top_mut();
                 let offset = frame
-                    .ip
-                    .offset_from(frame.closure.function.chunk.get_code_ptr());
-                disassemble_instruction(&mut frame.closure.function.chunk, offset as usize);
+                    .get_ip()
+                    .offset_from(frame.get_closure_ref().function.chunk.get_code_ptr());
+                disassemble_instruction(&frame.get_closure_ref().function.chunk, offset as usize);
             }
             let instruction = self.read_byte();
             match OpCode::from_code(instruction) {
+                OpCode::CloseUpvalue => {
+                    // We need a reference to the stack slot, so we can not use pop here and just pass the owned value.
+                    let top = self.stack.top_ref();
+                    self.close_upvalues(top);
+                    self.stack.pop();
+                }
                 OpCode::SetUpvalue => {
                     let slot = self.read_double();
                     let frame = self.callframes.top_mut();
-                    dbg_println!("SET UPVALUE FRAME: {}", frame);
+                    dbg_println!("SET UPVALUE FRAME: {:?}", frame);
                     let new_value = self.stack.peek(0);
-                    dbg_println!("SETTING UPVALUE {} TO: {}", slot, new_value);
+                    dbg_println!("SETTING UPVALUE {} TO: {:?}", slot, new_value);
                     frame
-                        .closure
-                        .get_upvalue_mut(slot as usize)
+                        .get_closure_ref()
+                        .get_upvalue(slot as usize)
                         .set(new_value.clone());
                 }
                 OpCode::GetUpvalue => {
                     let slot = self.read_double();
                     let frame = self.callframes.top_ref();
-                    dbg_println!("GET UPVALUE FRAME: {}", frame);
-                    let value = frame.closure.get_upvalue_ref(slot as usize).get_ref();
-                    dbg_println!("GET UPVALUE = {}", value);
+                    dbg_println!("GET UPVALUE FRAME: {:?}", frame);
+                    let upvalue = frame.get_closure_ref().get_upvalue(slot as usize);
+                    let value = upvalue.get_ref();
+                    dbg_println!("GET UPVALUE = {:?}", value);
                     self.stack.push(value.clone());
                 }
                 OpCode::Closure => {
@@ -301,7 +358,7 @@ impl Vm {
                         )
                         .clone()
                     };
-                    dbg_println!("CLOSURE FUNCTION: {}", function);
+                    dbg_println!("CLOSURE FUNCTION: {:?}", function);
 
                     // Create and fill upvalue array for Closure object based on
                     // the amount of upvalue references the Function has
@@ -315,8 +372,8 @@ impl Vm {
                             closure_upvalues.push(upvalue);
                         } else {
                             let frame = self.callframes.top_ref();
-                            closure_upvalues
-                                .push(frame.closure.get_upvalue_ref(index as usize).clone());
+                            let upvalue = frame.get_closure_ref().get_upvalue(index as usize);
+                            closure_upvalues.push(upvalue);
                         }
                     }
 
@@ -327,11 +384,13 @@ impl Vm {
                 OpCode::Return => {
                     let result = self.stack.pop();
                     let frame: CallFrame = self.callframes.pop();
+                    self.close_upvalues(frame.get_slots_raw());
                     if self.callframes.count() == 1 {
                         self.stack.pop(); // Pop the "main" function itself (exiting the program)
                         return Ok(());
                     }
-                    self.stack.pop_n(frame.closure.function.arity as usize + 1); // Pop arguments and the function itself
+                    self.stack
+                        .pop_n(frame.get_closure_ref().function.arity as usize + 1); // Pop arguments and the function itself
                     self.stack.push(result);
                 }
                 OpCode::Call => {
@@ -344,45 +403,50 @@ impl Vm {
                 OpCode::Backjump => {
                     let offset = self.read_double();
                     let frame = self.callframes.top_mut();
-                    frame.ip = unsafe { frame.ip.sub(offset as usize) };
+                    frame.sub_ip(offset as usize);
                 }
                 OpCode::Jump => {
                     let offset = self.read_double();
                     let frame = self.callframes.top_mut();
-                    frame.ip = unsafe { frame.ip.add(offset as usize) };
+                    frame.add_ip(offset as usize);
                 }
                 OpCode::JumpIfTrue => {
                     let offset = self.read_double();
                     let frame = self.callframes.top_mut();
                     if !self.stack.peek(0).is_falsey() {
-                        frame.ip = unsafe { frame.ip.add(offset as usize) };
+                        frame.add_ip(offset as usize);
                     }
                 }
                 OpCode::JumpIfFalse => {
                     let offset = self.read_double();
                     let frame = self.callframes.top_mut();
                     if self.stack.peek(0).is_falsey() {
-                        frame.ip = unsafe { frame.ip.add(offset as usize) };
+                        frame.add_ip(offset as usize);
                     }
                 }
                 OpCode::SetLocal => {
                     let slot = self.read_double();
-                    let frame = self.callframes.top_ref();
+                    let frame = self.callframes.top_mut();
                     let value = self.stack.peek(0).clone();
-                    dbg_println!("SETTING LOCAL {} = {}", slot, value);
-                    self.stack
-                        .offset(frame.stack_base_offset)
-                        .set_at(slot as usize, value);
+                    dbg_println!(
+                        "SETTING LOCAL {:?} + {:?} = {:?}",
+                        frame.get_slots_raw(),
+                        slot,
+                        value
+                    );
+                    frame.set_slot(slot as usize, value);
                 }
                 OpCode::GetLocal => {
                     let slot = self.read_double();
                     let frame = self.callframes.top_ref();
-                    let local = self
-                        .stack
-                        .offset(frame.stack_base_offset)
-                        .get_at(slot as usize);
-                    dbg_println!("GETTING LOCAL {} = {}", slot, local);
-                    self.stack.push(local);
+                    let local = frame.get_slot_ref(slot as usize);
+                    dbg_println!(
+                        "GETTING LOCAL {:?} + {:?} -> {:?}",
+                        frame.get_slots_raw(),
+                        slot,
+                        local
+                    );
+                    self.stack.push(local.clone());
                 }
                 OpCode::PopN => {
                     let n = self.read_double();

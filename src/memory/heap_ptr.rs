@@ -55,12 +55,28 @@ where
         self.mem.is_null()
     }
 
+    pub const fn is_not_null(&self) -> bool {
+        !self.is_null()
+    }
+
     pub const fn null() -> Self {
         Self { mem: null_mut() }
     }
 
     pub fn compare_address(&self, other: &Self) -> bool {
         self.mem == other.mem
+    }
+
+    pub fn addr_gt_addr<A>(&self, other: *const A) -> bool {
+        (self.mem as usize) > (other as usize)
+    }
+
+    pub fn addr_eq_addr<A>(&self, other: *const A) -> bool {
+        (self.mem as usize) == (other as usize)
+    }
+
+    pub fn addr_lt_addr<A>(&self, other: *const A) -> bool {
+        (self.mem as usize) < (other as usize)
     }
 }
 
