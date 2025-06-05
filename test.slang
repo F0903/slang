@@ -1,15 +1,11 @@
 ? comment
 
-fn add(a, b) {
-    return a + b
+fn outer() {
+    let x = "outside"
+    fn inner() {
+        print_line(x)
+    }
+    inner()
 }
 
-let added = add(3, 2)
-print_line(added)
-
-fn hello() {
-    return "hello"
-}
-
-let a = hello()
-print_line(a)
+outer()

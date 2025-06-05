@@ -21,4 +21,8 @@ impl<'stack, T, const STACK_SIZE: usize> StackOffset<'stack, T, STACK_SIZE> {
     pub fn get_ref_at(&self, index: usize) -> &T {
         self.stack.get_ref_at(self.base_offset + index)
     }
+
+    pub fn get_mut_at(&mut self, index: usize) -> &mut T {
+        self.stack.get_mut_at(self.base_offset + index)
+    }
 }

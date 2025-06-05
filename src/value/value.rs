@@ -3,10 +3,10 @@ use std::{
     ops::{Add, Div, Mul, Neg, Sub},
 };
 
-use super::object::{Object, ObjectNode};
+use super::object::ObjectNode;
 use crate::{error::Error, memory::HeapPtr};
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum Value {
     Bool(bool),
     Number(f64),
@@ -208,20 +208,9 @@ impl PartialOrd for Value {
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Bool(b) => f.write_fmt(format_args!("{}", b)),
-            Value::Number(num) => f.write_fmt(format_args!("{}", num)),
-            Value::Object(obj) => match obj.get_object() {
-                Object::String(s) => f.write_str(s.as_str()),
-                Object::Function(func) => f.write_fmt(format_args!(
-                    "fn {:?}[{}] = {:?}",
-                    func.name,
-                    func.arity,
-                    func.chunk.get_code_ptr()
-                )),
-                Object::NativeFunction(func) => {
-                    f.write_fmt(format_args!("native fn {:?}[{}]", func.name, func.arity))
-                }
-            },
+            Value::Bool(b) => Display::fmt(b, f),
+            Value::Number(num) => Display::fmt(num, f),
+            Value::Object(obj) => Display::fmt(obj, f),
             Value::None => f.write_str("None"),
         }
     }
@@ -232,15 +221,7 @@ impl Debug for Value {
         match self {
             Value::Bool(b) => f.write_fmt(format_args!("[Bool] = {}", b)),
             Value::Number(num) => f.write_fmt(format_args!("[Number] = {}", num)),
-            Value::Object(obj) => match obj.get_object() {
-                Object::String(s) => f.write_fmt(format_args!("String object: {:?}", s.as_str())),
-                Object::Function(func) => {
-                    f.write_fmt(format_args!("Function object: {:?}", func.name))
-                }
-                Object::NativeFunction(func) => {
-                    f.write_fmt(format_args!("NativeFunction object: {:?}", func))
-                }
-            },
+            Value::Object(obj) => Debug::fmt(obj, f),
             Value::None => f.write_str("None"),
         }
     }

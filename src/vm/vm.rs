@@ -2,7 +2,7 @@ use super::{VmHeap, callframe::CallFrame, opcode::OpCode};
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
 use crate::{
-    collections::{HashTable, Stack},
+    collections::{DynArray, HashTable, Stack},
     compiler::{Compiler, FunctionType},
     dbg_println,
     debug::disassemble_chunk,
@@ -12,7 +12,7 @@ use crate::{
     unwrap_enum,
     value::{
         Value,
-        object::{Function, InternedString, NativeFunction, Object, ObjectNode, StringInterner},
+        object::{self, Closure, NativeFunction, Object, ObjectNode, StringInterner},
     },
 };
 
@@ -88,32 +88,45 @@ impl Vm {
         }
     }
 
-    /// Reads a constant from the chunk with a u32 index.
-    fn read_constant_quad(&mut self) -> &Value {
-        let index = self.read_quad();
-        let frame = self.callframes.top_mut();
-        frame.function.chunk.get_constant(index)
-    }
-
     /// Reads a constant from the chunk with a u8 index.
     fn read_constant(&mut self) -> &Value {
         let index = self.read_byte();
         let frame = self.callframes.top_mut();
-        frame.function.chunk.get_constant(index as u32)
+        frame.closure.function.chunk.get_constant(index as u32)
+    }
+
+    /// Reads a constant from the chunk with a u16 index.
+    fn read_constant_double(&mut self) -> &Value {
+        let index = self.read_double();
+        let frame = self.callframes.top_mut();
+        frame.closure.function.chunk.get_constant(index as u32)
+    }
+
+    /// Reads a constant from the chunk with a u32 index.
+    fn read_constant_quad(&mut self) -> &Value {
+        let index = self.read_quad();
+        let frame = self.callframes.top_mut();
+        frame.closure.function.chunk.get_constant(index)
     }
 
     pub fn get_stack_trace(&self) -> String {
         let mut str_buf = String::new();
         for frame in self.callframes.top_iter() {
             let instruction = unsafe {
-                let ip_offset = frame.ip.offset_from(frame.function.chunk.get_code_ptr());
+                let ip_offset = frame
+                    .ip
+                    .offset_from(frame.closure.function.chunk.get_code_ptr());
                 frame.ip.sub((ip_offset as usize) - 1).read()
             }; // -1 to get the previous instruction that failed
 
-            let function_name = &frame.function.name;
+            let function_name = &frame.closure.function.name;
             str_buf.push_str(&format!(
                 "[line {}] in {}",
-                frame.function.chunk.get_line_number(instruction as usize),
+                frame
+                    .closure
+                    .function
+                    .chunk
+                    .get_line_number(instruction as usize),
                 function_name
                     .as_ref()
                     .map(|name| name.as_str())
@@ -123,7 +136,8 @@ impl Vm {
         str_buf
     }
 
-    fn call(&mut self, function: Function, arg_count: u8) -> Result<()> {
+    fn call(&mut self, closure: &Closure, arg_count: u8) -> Result<()> {
+        let function = &closure.function;
         if arg_count != function.arity {
             return Err(Error::Runtime(format!(
                 "Expected {} arguments, got {} for function '{}'",
@@ -161,7 +175,7 @@ impl Vm {
 
         self.callframes.push(CallFrame {
             ip: function.chunk.get_code_ptr(),
-            function: function.clone(),
+            closure: closure.clone(),
             stack_base_offset: self.stack.count() - arg_count as usize,
         });
         Ok(())
@@ -184,18 +198,13 @@ impl Vm {
     fn call_value(&mut self, callee: Value, arg_count: u8) -> Result<()> {
         match callee {
             Value::Object(obj) => match obj.get_object() {
-                Object::Function(func) => self.call(func.clone(), arg_count),
+                Object::Closure(clo) => self.call(clo, arg_count),
                 Object::NativeFunction(native_func) => {
                     self.native_call(native_func.clone(), arg_count)
                 }
-                _ => Err(Error::Runtime(
-                    "Cannot call non-function object!".to_owned(),
-                )),
+                _ => Err(Error::Runtime(format!("'{}' not callable!", callee))),
             },
-            _ => Err(Error::Runtime(format!(
-                "Cannot call non-object value!: {}",
-                callee
-            ))),
+            _ => Err(Error::Runtime(format!("'{}' not callable!", callee))),
         }
     }
 
@@ -215,23 +224,12 @@ impl Vm {
         }
     }
 
-    fn read_constant_string(&mut self) -> Result<InternedString> {
-        let value = self.read_constant_quad();
-        let obj = unwrap_enum!(
-            value,
-            Value::Object,
-            "Expected Object value for constant string"
-        );
-        let string = match obj.get_object() {
-            Object::String(s) => s.clone(),
-            _ => {
-                return Err(Error::Runtime(format!(
-                    "Expected string object, found: {:?}",
-                    obj.get_object()
-                )));
-            }
-        };
-        Ok(string)
+    fn capture_upvalue(&mut self, index: u16) -> object::Upvalue {
+        let frame = self.callframes.top_mut();
+        let mut stack = self.stack.offset(frame.stack_base_offset);
+        let value = stack.get_mut_at(index as usize);
+        dbg_println!("CAPTURING UPVALUE FOR '{}'", value);
+        object::Upvalue::new(value)
     }
 
     pub fn interpret<'src>(&mut self, source: &'src [u8]) -> Result<()> {
@@ -241,39 +239,99 @@ impl Vm {
             FunctionType::Script,
         )
         .dealloc_on_drop();
+
         let function = compiler
             .compile(source)
             .map_err(|e| Error::CompileTime(e.to_string()))?;
+        let closure = Closure::new(function, DynArray::new());
 
         self.stack.push(Value::Object(ObjectNode::alloc(
-            Object::Function(function.clone()),
+            Object::Closure(closure.clone()),
             &mut self.heap,
         )));
         self.callframes.push(CallFrame {
-            ip: function.chunk.get_code_ptr(),
-            function: function.clone(),
+            ip: closure.function.chunk.get_code_ptr(),
+            closure: closure.clone(),
             stack_base_offset: 0,
         });
-        self.call(function, 0)?;
+        self.call(&closure, 0)?;
 
         loop {
             #[cfg(debug_assertions)]
             unsafe {
-                println!("\n{:?} ", &self.stack);
                 let frame = self.callframes.top_mut();
-                let offset = frame.ip.offset_from(frame.function.chunk.get_code_ptr());
-                disassemble_instruction(&mut frame.function.chunk, offset as usize);
+                let offset = frame
+                    .ip
+                    .offset_from(frame.closure.function.chunk.get_code_ptr());
+                disassemble_instruction(&mut frame.closure.function.chunk, offset as usize);
             }
             let instruction = self.read_byte();
             match OpCode::from_code(instruction) {
+                OpCode::SetUpvalue => {
+                    let slot = self.read_double();
+                    let frame = self.callframes.top_mut();
+                    dbg_println!("SET UPVALUE FRAME: {}", frame);
+                    let new_value = self.stack.peek(0);
+                    dbg_println!("SETTING UPVALUE {} TO: {}", slot, new_value);
+                    frame
+                        .closure
+                        .get_upvalue_mut(slot as usize)
+                        .set(new_value.clone());
+                }
+                OpCode::GetUpvalue => {
+                    let slot = self.read_double();
+                    let frame = self.callframes.top_ref();
+                    dbg_println!("GET UPVALUE FRAME: {}", frame);
+                    let value = frame.closure.get_upvalue_ref(slot as usize).get_ref();
+                    dbg_println!("GET UPVALUE = {}", value);
+                    self.stack.push(value.clone());
+                }
+                OpCode::Closure => {
+                    let function = {
+                        let constant = self.read_constant_double();
+                        let obj_node = unwrap_enum!(
+                            constant,
+                            Value::Object,
+                            "Malformed bytecode. Expected constant in closure to contain Object!"
+                        );
+                        unwrap_enum!(
+                            obj_node.get_object(),
+                            Object::Function,
+                            "Malformed bytecode. Expected object in closure to contain Function!"
+                        )
+                        .clone()
+                    };
+                    dbg_println!("CLOSURE FUNCTION: {}", function);
+
+                    // Create and fill upvalue array for Closure object based on
+                    // the amount of upvalue references the Function has
+                    let mut closure_upvalues =
+                        DynArray::new_with_cap(function.upvalue_count as usize);
+                    for _ in 0..function.upvalue_count {
+                        let is_local = self.read_byte() != 0;
+                        let index = self.read_double();
+                        if is_local {
+                            let upvalue = self.capture_upvalue(index);
+                            closure_upvalues.push(upvalue);
+                        } else {
+                            let frame = self.callframes.top_ref();
+                            closure_upvalues
+                                .push(frame.closure.get_upvalue_ref(index as usize).clone());
+                        }
+                    }
+
+                    let closure = Closure::new(function.clone(), closure_upvalues);
+                    let closure_obj = ObjectNode::alloc(Object::Closure(closure), &mut self.heap);
+                    self.stack.push(Value::Object(closure_obj));
+                }
                 OpCode::Return => {
                     let result = self.stack.pop();
-                    let frame = self.callframes.pop();
+                    let frame: CallFrame = self.callframes.pop();
                     if self.callframes.count() == 1 {
                         self.stack.pop(); // Pop the "main" function itself (exiting the program)
                         return Ok(());
                     }
-                    self.stack.pop_n(frame.function.arity as usize + 1); // Pop arguments and the function itself
+                    self.stack.pop_n(frame.closure.function.arity as usize + 1); // Pop arguments and the function itself
                     self.stack.push(result);
                 }
                 OpCode::Call => {
@@ -334,10 +392,23 @@ impl Vm {
                     self.stack.pop();
                 }
                 OpCode::SetGlobal => {
-                    let name_string = self.read_constant_string()?;
+                    let name_string = {
+                        let constant = self.read_constant_quad();
+                        let obj_node = unwrap_enum!(
+                            constant,
+                            Value::Object,
+                            "Malformed bytecode. Expected constant in SetGlobal to contain Object!"
+                        );
+                        unwrap_enum!(
+                            obj_node.get_object(),
+                            Object::String,
+                            "Malformed bytecode. Expected Object in SetGlobal to contain String!"
+                        )
+                        .clone()
+                    };
                     let value = self.stack.peek(0).clone();
                     dbg_println!("SETTING GLOBAL {} = {}", name_string, value);
-                    if self.heap.globals.set(name_string.clone(), value) {
+                    if self.heap.globals.set(name_string, value) {
                         // If the variable did not already exist at this point, return error
                         self.heap.globals.delete(&name_string);
                         return Err(Error::Runtime(format!(
@@ -347,7 +418,20 @@ impl Vm {
                     }
                 }
                 OpCode::GetGlobal => {
-                    let name_string = self.read_constant_string()?;
+                    let name_string = {
+                        let constant = self.read_constant_quad();
+                        let obj_node = unwrap_enum!(
+                            constant,
+                            Value::Object,
+                            "Malformed bytecode. Expected constant in SetGlobal to contain Object!"
+                        );
+                        unwrap_enum!(
+                            obj_node.get_object(),
+                            Object::String,
+                            "Malformed bytecode. Expected Object in SetGlobal to contain String!"
+                        )
+                        .clone()
+                    };
                     let global = self.heap.globals.get(&name_string);
                     match global {
                         Some(global) => {
@@ -364,7 +448,20 @@ impl Vm {
                     }
                 }
                 OpCode::DefineGlobal => {
-                    let name_string = self.read_constant_string()?;
+                    let name_string = {
+                        let constant = self.read_constant_quad();
+                        let obj_node = unwrap_enum!(
+                            constant,
+                            Value::Object,
+                            "Malformed bytecode. Expected constant in SetGlobal to contain Object!"
+                        );
+                        unwrap_enum!(
+                            obj_node.get_object(),
+                            Object::String,
+                            "Malformed bytecode. Expected Object in SetGlobal to contain String!"
+                        )
+                        .clone()
+                    };
                     let global_value = self.stack.peek(0).clone();
                     dbg_println!("DEFINING GLOBAL: {} = ({})", name_string, global_value);
                     self.heap.globals.set(name_string, global_value);
@@ -407,12 +504,10 @@ impl Vm {
                                     )));
                                 }
                             },
-                            Object::Function(_) => {
-                                return Err(Error::Runtime(format!("Cannot add two functions",)));
-                            }
-                            Object::NativeFunction(_) => {
+                            _ => {
                                 return Err(Error::Runtime(format!(
-                                    "Cannot add two native functions"
+                                    "Cannot add  non-string objects: {:?} + {:?}",
+                                    first, second
                                 )));
                             }
                         }

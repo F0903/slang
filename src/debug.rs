@@ -1,6 +1,10 @@
 // Each "disassembly function" returns how many byte long its instruction is
 
-use crate::{compiler::chunk::Chunk, vm::opcode::OpCode};
+use crate::{
+    compiler::chunk::Chunk,
+    value::{Object, Value},
+    vm::opcode::OpCode,
+};
 
 fn simple_instruction(instruction: &OpCode) -> usize {
     print!("{:?}", instruction);
@@ -40,6 +44,39 @@ fn jump_instruction(instruction: &OpCode, chunk: &Chunk, offset: usize, sign: is
     3
 }
 
+fn closure_instruction(chunk: &Chunk, offset: usize) -> usize {
+    let constant_index = chunk.read_double(offset + 1);
+    let constant = chunk.get_constant(constant_index as u32);
+    print!(
+        "{:?}[{:?}] -> {:?}",
+        OpCode::Closure,
+        constant_index,
+        constant
+    );
+
+    let function = match constant {
+        Value::Object(obj_node) => match obj_node.get_object() {
+            Object::Function(func) => func,
+            _ => unreachable!("Malformed bytecode"),
+        },
+        _ => unreachable!("Malformed bytecode"),
+    };
+    let mut upvalue_bytes = 0;
+    for _ in 0..function.upvalue_count {
+        let is_local = chunk.read_byte(offset + 2) != 0;
+        let index = chunk.read_double(offset + 3);
+        upvalue_bytes += 3;
+        print!(
+            "{:0>4}\t| {} {}",
+            offset + 2 + upvalue_bytes - 3,
+            if is_local { "local" } else { "upvalue" },
+            index
+        );
+    }
+
+    3 + upvalue_bytes
+}
+
 pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
     print!("{:0>4} ", offset);
 
@@ -53,14 +90,17 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
     let instruction = chunk.read_byte(offset);
     let opcode = instruction.into();
     let inst_offset = match opcode {
+        OpCode::Closure => closure_instruction(chunk, offset),
         OpCode::Backjump => jump_instruction(&opcode, chunk, offset, -1),
         OpCode::Jump | OpCode::JumpIfFalse | OpCode::JumpIfTrue => {
             jump_instruction(&opcode, chunk, offset, 1)
         }
         OpCode::Call => byte_instruction(&opcode, chunk, offset),
-        OpCode::PopN | OpCode::GetLocal | OpCode::SetLocal => {
-            double_instruction(&opcode, chunk, offset)
-        }
+        OpCode::PopN
+        | OpCode::GetLocal
+        | OpCode::SetLocal
+        | OpCode::GetUpvalue
+        | OpCode::SetUpvalue => double_instruction(&opcode, chunk, offset),
         OpCode::DefineGlobal | OpCode::SetGlobal | OpCode::GetGlobal | OpCode::Constant => {
             quad_constant_instruction(&opcode, chunk, offset)
         }

@@ -1,13 +1,18 @@
 use std::fmt::{Debug, Display};
 
 use super::{InternedString, function::Function, native_function::NativeFunction};
-use crate::memory::Dealloc;
+use crate::{
+    memory::Dealloc,
+    value::object::{self, Closure},
+};
 
 #[derive(Clone)]
 pub enum Object {
     String(InternedString),
     Function(Function),
     NativeFunction(NativeFunction),
+    Closure(Closure),
+    Upvalue(object::Upvalue),
 }
 
 impl Dealloc for Object {
@@ -18,25 +23,8 @@ impl Dealloc for Object {
                 function.dealloc();
             }
             Self::NativeFunction(_) => (),
-        }
-    }
-}
-
-impl PartialEq for Object {
-    fn eq(&self, other: &Self) -> bool {
-        match self {
-            Object::String(x) => match other {
-                Object::String(y) => x == y,
-                _ => false,
-            },
-            Object::Function(x) => match other {
-                Object::Function(y) => x == y,
-                _ => false,
-            },
-            Object::NativeFunction(x) => match other {
-                Object::NativeFunction(y) => x == y,
-                _ => false,
-            },
+            Self::Closure(_) => (),
+            Self::Upvalue(_) => (),
         }
     }
 }
@@ -44,25 +32,17 @@ impl PartialEq for Object {
 impl Display for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Object::String(x) => f.write_fmt(format_args!("String = {}", x.as_str())),
-            Object::Function(x) => f.write_fmt(format_args!(
-                "Function = {}",
-                x.name
-                    .as_ref()
-                    .map(|x| x.as_str().to_owned())
-                    .unwrap_or("unnamed function".to_owned())
-            )),
-            Object::NativeFunction(x) => f.write_fmt(format_args!("NativeFunction = {:?}", x)),
+            Object::String(s) => f.write_str(s.as_str()),
+            Object::Function(func) => Display::fmt(func, f),
+            Object::NativeFunction(func) => Display::fmt(func, f),
+            Object::Closure(clo) => Display::fmt(clo, f),
+            Object::Upvalue(up) => Display::fmt(up, f),
         }
     }
 }
 
 impl Debug for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Object::String(x) => f.write_fmt(format_args!("String = {:?}", x.as_str())),
-            Object::Function(x) => f.write_fmt(format_args!("Function = {:?}", x.name)),
-            Object::NativeFunction(x) => f.write_fmt(format_args!("NativeFunction = {:?}", x)),
-        }
+        Display::fmt(&self, f)
     }
 }

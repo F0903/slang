@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 use super::Object;
 use crate::{
@@ -46,7 +46,13 @@ impl Dealloc for ObjectNode {
 
 impl PartialEq for ObjectNode {
     fn eq(&self, other: &Self) -> bool {
-        self.obj == other.obj
+        match self.obj {
+            Object::String(a) => match other.obj {
+                Object::String(b) => a == b,
+                _ => false,
+            },
+            _ => (self as *const Self) == (other as *const Self),
+        }
     }
 }
 
@@ -61,5 +67,12 @@ impl PartialOrd for ObjectNode {
                 }
             }
         }
+    }
+}
+
+impl Display for ObjectNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let obj = self.get_object();
+        Display::fmt(obj, f)
     }
 }

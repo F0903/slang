@@ -1,11 +1,16 @@
+/// Each OpCode is 1 byte, but some OpCodes have arguments of varying length following them.
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum OpCode {
+    // 1 byte for is_local, 2 bytes for index
+    Closure,
     Call,
     Backjump,
     Jump,
     JumpIfTrue,
     JumpIfFalse,
+    SetUpvalue,
+    GetUpvalue,
     SetLocal,
     GetLocal,
     Pop,

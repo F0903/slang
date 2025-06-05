@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use super::InternedString;
 use crate::{
     compiler::chunk::Chunk,
@@ -10,16 +12,7 @@ pub struct Function {
     pub arity: u8,
     pub chunk: HeapPtr<Chunk>,
     pub name: Option<InternedString>,
-}
-
-impl Function {
-    pub fn new(arity: u8, chunk: HeapPtr<Chunk>, name: Option<InternedString>) -> Self {
-        Self { arity, chunk, name }
-    }
-
-    pub fn set_name(&mut self, name: Option<InternedString>) {
-        self.name = name;
-    }
+    pub upvalue_count: u16,
 }
 
 impl Dealloc for Function {
@@ -37,5 +30,19 @@ impl Dealloc for Function {
 impl PartialEq for Function {
     fn eq(&self, other: &Self) -> bool {
         self.arity == other.arity && self.chunk.compare_address(&other.chunk)
+    }
+}
+
+impl Display for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "fn {:?}[{}] ({} upvalues) = {:?}",
+            self.name
+                .map(|x| x.as_str().to_owned())
+                .unwrap_or("<script>".to_owned()),
+            self.arity,
+            self.upvalue_count,
+            self.chunk.get_code_ptr()
+        ))
     }
 }

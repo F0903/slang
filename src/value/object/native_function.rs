@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{error::Result, value::Value};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -23,3 +25,9 @@ impl NativeFunction {
 
 unsafe impl Send for NativeFunction {}
 unsafe impl Sync for NativeFunction {}
+
+impl Display for NativeFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("native fn {:?}[{}]", self.name, self.arity))
+    }
+}

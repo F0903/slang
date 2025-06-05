@@ -1,6 +1,9 @@
+use std::mem::MaybeUninit;
+
 use super::{FunctionType, chunk::Chunk, local::Local};
 use crate::{
     collections::{DynArray, Stack},
+    compiler::upvalue::Upvalue,
     dbg_println,
     debug::disassemble_chunk,
     lexing::{
@@ -18,6 +21,7 @@ use crate::{
 const MAX_FUNCTION_ARITY: u8 = 255; // Maximum number of arguments a function can have.
 
 const LOCAL_SLOTS: usize = 1024;
+const UPVALUES_MAX: usize = 255;
 
 type CompilerResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -69,8 +73,11 @@ pub struct Compiler<'src> {
     current_function: Function,
     current_function_type: FunctionType,
     locals: Stack<Local, LOCAL_SLOTS>,
+    upvalues: Stack<Upvalue, UPVALUES_MAX>,
     scope_depth: i32,
     enclosing_loop: Option<EnclosingLoop>,
+    // SAFETY: It is guaranteed that the enclosing compiler outlives the holder of the reference.
+    enclosing_compiler: Option<*mut Compiler<'src>>,
     had_error: bool,
     panic_mode: bool,
     parse_rule_table: DynArray<ParseRule<'src>>,
@@ -89,11 +96,18 @@ impl<'src> Compiler<'src> {
             current_source: &[],
             scanner,
             heap,
-            current_function: Function::new(0, HeapPtr::alloc(Chunk::new()), None),
+            current_function: Function {
+                arity: 0,
+                chunk: HeapPtr::alloc(Chunk::new()),
+                name: None,
+                upvalue_count: 0,
+            },
             current_function_type: function_type,
             locals,
+            upvalues: Stack::new(),
             scope_depth: 0,
             enclosing_loop: None,
+            enclosing_compiler: None,
             had_error: false,
             panic_mode: false,
             parse_rule_table: define_parse_rule_table! {
@@ -143,16 +157,23 @@ impl<'src> Compiler<'src> {
         }
     }
 
-    fn fork(&self, function_type: FunctionType) -> Self {
+    fn fork(&mut self, function_type: FunctionType) -> Self {
         Self {
             current_source: self.current_source,
             scanner: self.scanner.clone(),
             heap: self.heap.clone(),
-            current_function: Function::new(0, HeapPtr::alloc(Chunk::new()), None),
+            current_function: Function {
+                arity: 0,
+                chunk: HeapPtr::alloc(Chunk::new()),
+                name: None,
+                upvalue_count: 0,
+            },
             current_function_type: function_type,
             locals: Stack::new(),
+            upvalues: Stack::new(),
             scope_depth: 0,
             enclosing_loop: None,
+            enclosing_compiler: Some(self),
             had_error: false,
             panic_mode: false,
             parse_rule_table: self.parse_rule_table.clone(),
@@ -803,10 +824,53 @@ impl<'src> Compiler<'src> {
         None
     }
 
+    fn add_upvalue(&mut self, index: u16, is_local: bool) -> u16 {
+        let last_upvalue_count = self.current_function.upvalue_count;
+
+        // Check if we already have an upvalue for the variable
+        for (i, upvalue) in self.upvalues.bottom_iter().enumerate() {
+            // i will never go above u16::MAX (as currently defined)
+            let i = i as u16;
+            if upvalue.index == i as u16 && upvalue.is_local == is_local {
+                return i;
+            }
+        }
+
+        if last_upvalue_count as usize >= UPVALUES_MAX {
+            self.error("Too many closure variable in function!");
+            return 0;
+        }
+
+        self.upvalues
+            .set_at(last_upvalue_count as usize, Upvalue { is_local, index });
+        self.current_function.upvalue_count += 1;
+        last_upvalue_count
+    }
+
+    fn resolve_upvalue(&mut self, name_token: &Token) -> Option<u16> {
+        match self.enclosing_compiler {
+            Some(enclosing) => {
+                let enclosing = unsafe { enclosing.as_mut_unchecked() };
+
+                if let Some(enclosing_local) = enclosing.resolve_local(name_token) {
+                    let upvalue = self.add_upvalue(enclosing_local, true);
+                    return Some(upvalue);
+                } else if let Some(upvalue) = enclosing.resolve_upvalue(name_token) {
+                    let upvalue = self.add_upvalue(upvalue as u16, false);
+                    return Some(upvalue);
+                } else {
+                    return None;
+                };
+            }
+            _ => None,
+        }
+    }
+
     fn named_variable(&mut self, name_token: &Token, can_assign: bool) -> u32 {
         enum VariableType {
             Local,
             Global,
+            Upvalue,
         }
 
         let (slot, get_op, set_op, var_type) = if let Some(slot) = self.resolve_local(&name_token) {
@@ -815,6 +879,13 @@ impl<'src> Compiler<'src> {
                 OpCode::GetLocal,
                 OpCode::SetLocal,
                 VariableType::Local,
+            )
+        } else if let Some(upvalue) = self.resolve_upvalue(&name_token) {
+            (
+                upvalue as u32,
+                OpCode::GetUpvalue,
+                OpCode::SetUpvalue,
+                VariableType::Upvalue,
             )
         } else {
             let slot = self.identifier_constant(name_token);
@@ -844,6 +915,9 @@ impl<'src> Compiler<'src> {
         };
 
         match var_type {
+            VariableType::Upvalue => {
+                self.emit_op_with_double(op, slot as u16, name_token.line);
+            }
             VariableType::Local => {
                 self.emit_op_with_double(op, slot as u16, name_token.line);
             }
@@ -973,7 +1047,7 @@ impl<'src> Compiler<'src> {
                 .heap
                 .strings
                 .make_string(previous_token.lexeme.get_str(self.current_source));
-            compiler.current_function.set_name(Some(func_name));
+            compiler.current_function.name = Some(func_name);
         }
 
         compiler.begin_scope();
@@ -1025,11 +1099,28 @@ impl<'src> Compiler<'src> {
             ));
         }
 
-        let value = Value::Object(ObjectNode::alloc(
+        let function_value = Value::Object(ObjectNode::alloc(
             Object::Function(function),
             &mut self.heap,
         ));
-        self.emit_constant_with_op(value, self.get_current_line());
+        let line = self.get_current_line();
+        let constant_index = self.emit_constant(function_value);
+        if constant_index > u16::MAX as u32 {
+            self.error(&format!(
+                "Too many constants! Cannot define more than {} constants",
+                u16::MAX
+            ));
+        }
+        self.emit_op_with_double(OpCode::Closure, constant_index as u16, line);
+
+        let line = self.get_current_line();
+        // SAFETY: We can use the unsafe_bottom_iter since it is guaranteed that the upvalues array will outlive this function.
+        let upvalues_iter = unsafe { compiler.upvalues.unsafe_bottom_iter() };
+        let chunk = self.get_current_chunk_mut();
+        for upvalue in upvalues_iter {
+            chunk.write_byte(upvalue.is_local as u8, line);
+            chunk.write_double(upvalue.index, line);
+        }
     }
 
     fn fn_declaration(&mut self) {
@@ -1056,6 +1147,7 @@ impl<'src> Compiler<'src> {
     }
 
     fn pack_function(&mut self) -> Function {
+        // We always emit an empty return implicitly.
         self.emit_empty_return();
         self.current_function.clone()
     }
