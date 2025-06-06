@@ -3,7 +3,7 @@ use core::panic;
 use crate::{collections::DynArray, dbg_println, value::Value, vm::opcode::OpCode};
 
 /// The struct that holds executable code along with their linemap and constant values.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Chunk {
     code: DynArray<u8>,
     constants: DynArray<Value>,

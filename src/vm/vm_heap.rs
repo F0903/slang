@@ -6,22 +6,22 @@ use crate::{
     memory::{Dealloc, HeapPtr},
     value::{
         Value,
-        object::{InternedString, ObjectNode, StringInterner},
+        object::{InternedString, Object, StringInterner},
     },
 };
 
 pub struct VmHeap {
-    pub objects_head: HeapPtr<ObjectNode>,
+    pub objects_head: HeapPtr<Object>,
     pub globals: HashTable<InternedString, Value>,
     pub strings: StringInterner,
 }
 
 impl VmHeap {
-    pub fn get_objects_head(&self) -> HeapPtr<ObjectNode> {
+    pub fn get_objects_head(&self) -> HeapPtr<Object> {
         self.objects_head
     }
 
-    pub fn set_objects_head(&mut self, head: HeapPtr<ObjectNode>) {
+    pub fn set_objects_head(&mut self, head: HeapPtr<Object>) {
         // We do not deallocate the old head here, as we are building a linked list, which is set internally in each node.
         self.objects_head = head;
     }

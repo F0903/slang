@@ -1,5 +1,3 @@
-use std::mem::MaybeUninit;
-
 use super::{FunctionType, chunk::Chunk, local::Local};
 use crate::{
     collections::{DynArray, Stack},
@@ -13,7 +11,7 @@ use crate::{
     memory::{Dealloc, HeapPtr},
     value::{
         Value,
-        object::{Function, Object, ObjectNode},
+        object::{Function, Object},
     },
     vm::{VmHeap, opcode::OpCode},
 };
@@ -70,7 +68,7 @@ pub struct Compiler<'src> {
     current_source: &'src [u8],
     scanner: HeapPtr<Scanner<'src>>,
     heap: HeapPtr<VmHeap>,
-    current_function: Function,
+    current_function: HeapPtr<Object>,
     current_function_type: FunctionType,
     locals: Stack<Local, LOCAL_SLOTS>,
     upvalues: Stack<Upvalue, UPVALUES_MAX>,
@@ -86,22 +84,27 @@ pub struct Compiler<'src> {
 impl<'src> Compiler<'src> {
     pub fn new(
         scanner: HeapPtr<Scanner<'src>>,
-        heap: HeapPtr<VmHeap>,
+        mut heap: HeapPtr<VmHeap>,
         function_type: FunctionType,
     ) -> Self {
         let mut locals = Stack::new();
         locals.push(Local::dummy()); // Reserve first slot as index 0 is used for the "main" function.
 
+        let current_function = Object::new_function(
+            Function {
+                arity: 0,
+                chunk: Chunk::new(),
+                name: None,
+                upvalue_count: 0,
+            },
+            &mut heap,
+        );
+
         Self {
             current_source: &[],
             scanner,
             heap,
-            current_function: Function {
-                arity: 0,
-                chunk: HeapPtr::alloc(Chunk::new()),
-                name: None,
-                upvalue_count: 0,
-            },
+            current_function,
             current_function_type: function_type,
             locals,
             upvalues: Stack::new(),
@@ -158,16 +161,21 @@ impl<'src> Compiler<'src> {
     }
 
     fn fork(&mut self, function_type: FunctionType) -> Self {
+        let current_function = Object::new_function(
+            Function {
+                arity: 0,
+                chunk: Chunk::new(),
+                name: None,
+                upvalue_count: 0,
+            },
+            &mut self.heap,
+        );
+
         Self {
             current_source: self.current_source,
             scanner: self.scanner.clone(),
             heap: self.heap.clone(),
-            current_function: Function {
-                arity: 0,
-                chunk: HeapPtr::alloc(Chunk::new()),
-                name: None,
-                upvalue_count: 0,
-            },
+            current_function,
             current_function_type: function_type,
             locals: Stack::new(),
             upvalues: Stack::new(),
@@ -181,11 +189,13 @@ impl<'src> Compiler<'src> {
     }
 
     fn get_current_chunk(&self) -> &Chunk {
-        &self.current_function.chunk
+        // This is extremely ugly, but Rust thinks that I'm borrowing a value owned by this function, which is not true
+        unsafe { &*(&self.current_function.as_function().chunk as *const Chunk) }
     }
 
     fn get_current_chunk_mut(&mut self) -> &mut Chunk {
-        &mut self.current_function.chunk
+        // This is extremely ugly, but Rust thinks that I'm borrowing a value owned by this function, which is not true
+        unsafe { &mut *(&mut self.current_function.as_function().chunk as *mut Chunk) }
     }
 
     fn get_rule(&self, token: TokenType) -> &ParseRule<'src> {
@@ -400,10 +410,8 @@ impl<'src> Compiler<'src> {
             (name, token.line)
         };
 
-        let value = Value::Object(ObjectNode::alloc(
-            Object::String(self.heap.strings.make_string(name)),
-            &mut self.heap,
-        ));
+        let string = self.heap.strings.make_string(name);
+        let value = Value::String(string);
         self.emit_constant_with_op(value, line);
     }
 
@@ -805,10 +813,8 @@ impl<'src> Compiler<'src> {
     /// Returns the index of the constant.
     fn identifier_constant(&mut self, name_token: &Token) -> u32 {
         let lexeme = name_token.lexeme.get_str(self.get_current_source());
-        let value = Value::Object(ObjectNode::alloc(
-            Object::String(self.heap.strings.make_string(lexeme)),
-            &mut self.heap,
-        ));
+        let string = self.heap.strings.make_string(lexeme);
+        let value = Value::String(string);
         self.emit_constant(value)
     }
 
@@ -836,7 +842,8 @@ impl<'src> Compiler<'src> {
     }
 
     fn add_upvalue(&mut self, index: u16, is_local: bool) -> u16 {
-        let last_upvalue_count = self.current_function.upvalue_count;
+        let mut current_function = self.current_function.as_function();
+        let last_upvalue_count = current_function.upvalue_count;
 
         // Check if we already have an upvalue for the variable
         for (i, upvalue) in self.upvalues.bottom_iter().enumerate() {
@@ -854,7 +861,7 @@ impl<'src> Compiler<'src> {
 
         self.upvalues
             .set_at(last_upvalue_count as usize, Upvalue { is_local, index });
-        self.current_function.upvalue_count += 1;
+        current_function.upvalue_count += 1;
         last_upvalue_count
     }
 
@@ -1050,6 +1057,7 @@ impl<'src> Compiler<'src> {
 
     fn function(&mut self, function_type: FunctionType) {
         let mut compiler = self.fork(function_type);
+        let mut compiler_function = compiler.current_function.as_function();
 
         if function_type != FunctionType::Script {
             // Since we (the current compiler 'self') hit the fn token, the previous token is the function name.
@@ -1062,7 +1070,7 @@ impl<'src> Compiler<'src> {
                 .heap
                 .strings
                 .make_string(previous_token.lexeme.get_str(self.current_source));
-            compiler.current_function.name = Some(func_name);
+            compiler_function.name = Some(func_name);
         }
 
         compiler.begin_scope();
@@ -1070,7 +1078,7 @@ impl<'src> Compiler<'src> {
         if !compiler.is_current_token(TokenType::RightParen) {
             // Loop through parameters seperated by commas
             loop {
-                if compiler.current_function.arity >= MAX_FUNCTION_ARITY {
+                if compiler_function.arity >= MAX_FUNCTION_ARITY {
                     compiler.error(&format!(
                         "Function cannot have more than {} parameters.",
                         MAX_FUNCTION_ARITY
@@ -1078,7 +1086,7 @@ impl<'src> Compiler<'src> {
                 }
                 let constant = compiler.parse_variable("Expected parameter name.");
                 compiler.define_variable(constant);
-                compiler.current_function.arity += 1;
+                compiler_function.arity += 1;
                 if !compiler.match_and_advance(TokenType::Comma) {
                     break;
                 }
@@ -1091,22 +1099,23 @@ impl<'src> Compiler<'src> {
         compiler.consume(TokenType::LeftBrace, "Expected '{' before function body.");
         compiler.block();
 
-        let function = compiler.pack_function();
+        let compiler_function_object = compiler.pack_function();
+        let compiler_function = compiler.pack_function().as_function();
 
         #[cfg(debug_assertions)]
         {
-            println!("COMPILED FUNCTION: {:?}", function);
-            let chunk_name = match &function.name {
+            println!("COMPILED FUNCTION: {:?}", compiler_function);
+            let chunk_name = match &compiler_function.name {
                 Some(name) => name.as_str(),
                 None => "<script>",
             }
             .to_owned();
-            disassemble_chunk(&function.chunk, &chunk_name);
+            disassemble_chunk(&compiler_function.chunk, &chunk_name);
         }
         if compiler.had_error() {
             self.error(&format!(
                 "Function {} had errors during compilation!",
-                function
+                compiler_function
                     .name
                     .as_ref()
                     .map(|x| x.as_str().to_owned())
@@ -1114,10 +1123,7 @@ impl<'src> Compiler<'src> {
             ));
         }
 
-        let function_value = Value::Object(ObjectNode::alloc(
-            Object::Function(function),
-            &mut self.heap,
-        ));
+        let function_value = Value::Object(compiler_function_object);
         let line = self.get_current_line();
         let constant_index = self.emit_constant(function_value);
         if constant_index > u16::MAX as u32 {
@@ -1161,13 +1167,13 @@ impl<'src> Compiler<'src> {
         }
     }
 
-    fn pack_function(&mut self) -> Function {
+    fn pack_function(&mut self) -> HeapPtr<Object> {
         // We always emit an empty return implicitly.
         self.emit_empty_return();
-        self.current_function.clone()
+        self.current_function
     }
 
-    pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<Function> {
+    pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<HeapPtr<Object>> {
         self.current_source = source;
         self.scanner.set_source(source);
 

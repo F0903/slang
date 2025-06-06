@@ -1,20 +1,20 @@
-use std::fmt::{Debug, Display};
+use std::fmt::Display;
 
 use crate::{
     collections::DynArray,
-    memory::HeapPtr,
-    value::object::{self, Function},
+    value::object::{self, Function, ObjectRef},
 };
 
-#[derive(Clone)]
 pub struct Closure {
-    // The closure doesn't own the function so we don't dealloc it
-    pub function: Function,
-    upvalues: DynArray<HeapPtr<object::Upvalue>>,
+    pub function: ObjectRef<Function>,
+    upvalues: DynArray<ObjectRef<object::Upvalue>>,
 }
 
 impl Closure {
-    pub fn new(function: Function, upvalues: DynArray<HeapPtr<object::Upvalue>>) -> Self {
+    pub fn new(
+        function: ObjectRef<Function>,
+        upvalues: DynArray<ObjectRef<object::Upvalue>>,
+    ) -> Self {
         Self { function, upvalues }
     }
 
@@ -23,29 +23,21 @@ impl Closure {
         self.upvalues.get_count() as u16
     }
 
-    pub fn get_upvalue(&self, index: usize) -> HeapPtr<object::Upvalue> {
+    pub fn get_upvalue(&self, index: usize) -> ObjectRef<object::Upvalue> {
         self.upvalues.copy_read(index as usize)
     }
 }
 
 impl PartialEq for Closure {
     fn eq(&self, other: &Self) -> bool {
-        self.function == other.function
+        *self.function == *other.function
     }
 }
 
 impl Display for Closure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("closure (")?;
-        Display::fmt(&self.function, f)?;
-        f.write_str(")")
-    }
-}
-
-impl Debug for Closure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("closure (")?;
-        Display::fmt(&self.function, f)?;
+        Display::fmt(self.function.as_ref(), f)?;
         f.write_str(")")
     }
 }

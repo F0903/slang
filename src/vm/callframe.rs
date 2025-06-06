@@ -1,10 +1,13 @@
 use std::fmt::Debug;
 
-use crate::value::{Value, object::Closure};
+use crate::value::{
+    Value,
+    object::{Closure, ObjectRef},
+};
 
 #[derive(Clone)]
 pub struct CallFrame {
-    closure: Closure,
+    closure: ObjectRef<Closure>,
     ip: *mut u8,
     /// Pointer to the point in the stack where this CallFrame begins.
     /// Since CallFrames only live within the VM, this is always valid.
@@ -12,7 +15,7 @@ pub struct CallFrame {
 }
 
 impl CallFrame {
-    pub const fn new(closure: Closure, ip: *mut u8, slots: *mut Value) -> Self {
+    pub const fn new(closure: ObjectRef<Closure>, ip: *mut u8, slots: *mut Value) -> Self {
         Self { closure, ip, slots }
     }
 
@@ -54,8 +57,8 @@ impl CallFrame {
         unsafe { self.slots.add(index).as_mut_unchecked() }
     }
 
-    pub const fn get_closure_ref(&self) -> &Closure {
-        &self.closure
+    pub fn get_closure(&self) -> ObjectRef<Closure> {
+        self.closure.clone()
     }
 }
 
@@ -63,7 +66,9 @@ impl Debug for CallFrame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "Call Frame | ip: {:?} | slots: {:?} | {}",
-            self.ip, self.slots, self.closure
+            self.ip,
+            self.slots,
+            self.closure.as_ref()
         ))
     }
 }

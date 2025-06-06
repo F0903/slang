@@ -13,8 +13,9 @@ use crate::{
     memory::{Dealloc, DeallocOnDrop, HeapPtr},
     unwrap_enum,
     value::{
+        ObjectType,
         Value,
-        object::{self, Closure, NativeFunction, Object, ObjectNode, StringInterner},
+        object::{self, Closure, NativeFunction, Object, ObjectRef, StringInterner},
     },
 };
 
@@ -48,7 +49,7 @@ pub struct Vm {
     stack: Stack<Value, STACK_MAX>,
     heap: HeapPtr<VmHeap>,
     callframes: Stack<CallFrame, MAX_CALLFRAMES>,
-    open_upvalues: HeapPtr<object::Upvalue>,
+    open_upvalues: Option<ObjectRef<object::Upvalue>>,
 }
 
 impl Vm {
@@ -61,17 +62,13 @@ impl Vm {
                 globals: HashTable::new(),
             }),
             callframes: Stack::new(),
-            open_upvalues: HeapPtr::null(),
+            open_upvalues: None,
         }
     }
 
     pub fn register_native_function(&mut self, function: NativeFunction) {
         let func_name = self.heap.strings.make_string(&function.name);
-        let func_value = Value::Object(ObjectNode::alloc(
-            Object::NativeFunction(function),
-            &mut self.heap,
-        ));
-
+        let func_value = Value::Object(Object::new_native_function(function, &mut self.heap));
         self.heap.globals.set(func_name, func_value);
     }
 
@@ -89,16 +86,16 @@ impl Vm {
             let instruction = unsafe {
                 let ip_offset = frame
                     .get_ip()
-                    .offset_from(frame.get_closure_ref().function.chunk.get_code_ptr());
+                    .offset_from(frame.get_closure().function.chunk.get_code_ptr());
                 frame.sub_ip((ip_offset as usize) - 1);
                 frame.get_ip().read()
             }; // -1 to get the previous instruction that failed
 
-            let function_name = &frame.get_closure_ref().function.name;
+            let function_name = &frame.get_closure().function.name;
             str_buf.push_str(&format!(
                 "[line {}] in {}",
                 frame
-                    .get_closure_ref()
+                    .get_closure()
                     .function
                     .chunk
                     .get_line_number(instruction as usize),
@@ -139,36 +136,43 @@ impl Vm {
     }
 
     /// Reads a constant from the chunk with a u8 index.
-    fn read_constant(&mut self) -> &Value {
+    fn read_constant(&mut self) -> Value {
         let index = self.read_byte();
         let frame = self.callframes.top_mut();
         frame
-            .get_closure_ref()
+            .get_closure()
             .function
             .chunk
             .get_constant(index as u32)
+            .clone()
     }
 
     /// Reads a constant from the chunk with a u16 index.
-    fn read_constant_double(&mut self) -> &Value {
+    fn read_constant_double(&mut self) -> Value {
         let index = self.read_double();
         let frame = self.callframes.top_mut();
         frame
-            .get_closure_ref()
+            .get_closure()
             .function
             .chunk
             .get_constant(index as u32)
+            .clone()
     }
 
     /// Reads a constant from the chunk with a u32 index.
-    fn read_constant_quad(&mut self) -> &Value {
+    fn read_constant_quad(&mut self) -> Value {
         let index = self.read_quad();
         let frame = self.callframes.top_mut();
-        frame.get_closure_ref().function.chunk.get_constant(index)
+        frame
+            .get_closure()
+            .function
+            .chunk
+            .get_constant(index)
+            .clone()
     }
 
-    fn call(&mut self, closure: &Closure, arg_count: u8) -> Result<()> {
-        let function = &closure.function;
+    fn call(&mut self, closure: ObjectRef<Closure>, arg_count: u8) -> Result<()> {
+        let function = closure.function.clone();
         if arg_count != function.arity {
             return Err(Error::Runtime(format!(
                 "Expected {} arguments, got {} for function '{}'",
@@ -210,14 +214,14 @@ impl Vm {
         dbg_println!("CALLFRAME SLOTS -> {:?}", callframe_slots);
 
         self.callframes.push(CallFrame::new(
-            closure.clone(),
+            closure,
             function.chunk.get_code_ptr(),
             callframe_slots,
         ));
         Ok(())
     }
 
-    fn native_call(&mut self, native_func: NativeFunction, arg_count: u8) -> Result<()> {
+    fn native_call(&mut self, native_func: ObjectRef<NativeFunction>, arg_count: u8) -> Result<()> {
         if arg_count != native_func.arity {
             return Err(Error::Runtime(format!(
                 "Expected {} arguments, got {} for function '{}'",
@@ -233,50 +237,60 @@ impl Vm {
 
     fn call_value(&mut self, callee: Value, arg_count: u8) -> Result<()> {
         match callee {
-            Value::Object(obj) => match obj.get_object() {
-                Object::Closure(clo) => self.call(clo, arg_count),
-                Object::NativeFunction(native_func) => {
-                    self.native_call(native_func.clone(), arg_count)
-                }
+            Value::Object(obj) => match obj.get_type() {
+                ObjectType::Closure => self.call(obj.as_closure(), arg_count),
+                ObjectType::NativeFunction => self.native_call(obj.as_native_function(), arg_count),
                 _ => Err(Error::Runtime(format!("'{}' not callable!", callee))),
             },
             _ => Err(Error::Runtime(format!("'{}' not callable!", callee))),
         }
     }
 
-    fn capture_upvalue(&mut self, index: u16) -> HeapPtr<object::Upvalue> {
+    fn capture_upvalue(&mut self, index: u16) -> ObjectRef<object::Upvalue> {
         let frame = self.callframes.top_mut();
         let local = frame.get_slot_mut(index as usize);
 
         dbg_println!("CAPTURING UPVALUE FOR '{}'", local);
 
-        let mut previous_upvalue = HeapPtr::null();
+        let mut previous_upvalue = None;
         let mut upvalue = self.open_upvalues;
-        while upvalue.is_not_null() && upvalue.addr_gt_addr(local) {
-            previous_upvalue = upvalue;
-            upvalue = upvalue.get_next();
+        while let Some(upvalue_ref) = upvalue
+            && upvalue_ref.addr_gt_addr(local)
+        {
+            previous_upvalue = Some(upvalue_ref);
+            upvalue = upvalue_ref.get_next();
         }
 
-        if upvalue.is_not_null() && upvalue.get_location_raw() == local {
-            return upvalue;
+        if let Some(upvalue_ref) = upvalue
+            && upvalue_ref.get_location_raw() == local as *const Value
+        {
+            return upvalue_ref;
         }
 
-        let new_upvalue = HeapPtr::alloc(object::Upvalue::new_with_next(local, upvalue));
-
-        if previous_upvalue.is_null() {
-            self.open_upvalues = new_upvalue;
+        let new_upvalue = if let Some(upvalue_ref) = upvalue {
+            Object::new_upvalue(
+                object::Upvalue::new_with_next(local, upvalue_ref),
+                &mut self.heap,
+            )
+            .as_upvalue()
         } else {
-            previous_upvalue.set_next(new_upvalue);
+            Object::new_upvalue(object::Upvalue::new(local), &mut self.heap).as_upvalue()
+        };
+
+        if previous_upvalue.is_none() {
+            self.open_upvalues = Some(new_upvalue);
+        } else {
+            previous_upvalue.unwrap().set_next(Some(new_upvalue));
         }
 
         new_upvalue
     }
 
     fn close_upvalues(&mut self, stack_slot: *const Value) {
-        while self.open_upvalues.is_not_null()
-            && self.open_upvalues.get_location_raw() >= stack_slot
+        while let Some(open_upvalues) = self.open_upvalues
+            && open_upvalues.get_location_raw() >= stack_slot
         {
-            let mut upvalue = self.open_upvalues;
+            let mut upvalue = open_upvalues;
             upvalue.close();
             self.open_upvalues = upvalue.get_next();
         }
@@ -290,21 +304,22 @@ impl Vm {
         )
         .dealloc_on_drop();
 
-        let function = compiler
+        let function_obj = compiler
             .compile(source)
             .map_err(|e| Error::CompileTime(e.to_string()))?;
-        let closure = Closure::new(function, DynArray::new());
-
-        self.stack.push(Value::Object(ObjectNode::alloc(
-            Object::Closure(closure.clone()),
+        let closure_obj = Object::new_closure(
+            Closure::new(function_obj.as_function(), DynArray::new()),
             &mut self.heap,
-        )));
+        );
+        self.stack.push(Value::Object(closure_obj));
+
+        let closure = closure_obj.as_closure();
         self.callframes.push(CallFrame::new(
-            closure.clone(),
+            closure,
             closure.function.chunk.get_code_ptr(),
             self.stack.get_mut_at(0),
         ));
-        self.call(&closure, 0)?;
+        self.call(closure, 0)?;
 
         loop {
             #[cfg(debug_assertions)]
@@ -312,8 +327,8 @@ impl Vm {
                 let frame = self.callframes.top_mut();
                 let offset = frame
                     .get_ip()
-                    .offset_from(frame.get_closure_ref().function.chunk.get_code_ptr());
-                disassemble_instruction(&frame.get_closure_ref().function.chunk, offset as usize);
+                    .offset_from(frame.get_closure().function.chunk.get_code_ptr());
+                disassemble_instruction(&frame.get_closure().function.chunk, offset as usize);
             }
             let instruction = self.read_byte();
             match OpCode::from_code(instruction) {
@@ -330,7 +345,7 @@ impl Vm {
                     let new_value = self.stack.peek(0);
                     dbg_println!("SETTING UPVALUE {} TO: {:?}", slot, new_value);
                     frame
-                        .get_closure_ref()
+                        .get_closure()
                         .get_upvalue(slot as usize)
                         .set(new_value.clone());
                 }
@@ -338,7 +353,7 @@ impl Vm {
                     let slot = self.read_double();
                     let frame = self.callframes.top_ref();
                     dbg_println!("GET UPVALUE FRAME: {:?}", frame);
-                    let upvalue = frame.get_closure_ref().get_upvalue(slot as usize);
+                    let upvalue = frame.get_closure().get_upvalue(slot as usize);
                     let value = upvalue.get_ref();
                     dbg_println!("GET UPVALUE = {:?}", value);
                     self.stack.push(value.clone());
@@ -351,12 +366,7 @@ impl Vm {
                             Value::Object,
                             "Malformed bytecode. Expected constant in closure to contain Object!"
                         );
-                        unwrap_enum!(
-                            obj_node.get_object(),
-                            Object::Function,
-                            "Malformed bytecode. Expected object in closure to contain Function!"
-                        )
-                        .clone()
+                        obj_node.as_function()
                     };
                     dbg_println!("CLOSURE FUNCTION: {:?}", function);
 
@@ -372,13 +382,13 @@ impl Vm {
                             closure_upvalues.push(upvalue);
                         } else {
                             let frame = self.callframes.top_ref();
-                            let upvalue = frame.get_closure_ref().get_upvalue(index as usize);
+                            let upvalue = frame.get_closure().get_upvalue(index as usize);
                             closure_upvalues.push(upvalue);
                         }
                     }
 
                     let closure = Closure::new(function.clone(), closure_upvalues);
-                    let closure_obj = ObjectNode::alloc(Object::Closure(closure), &mut self.heap);
+                    let closure_obj = Object::new_closure(closure, &mut self.heap);
                     self.stack.push(Value::Object(closure_obj));
                 }
                 OpCode::Return => {
@@ -390,7 +400,7 @@ impl Vm {
                         return Ok(());
                     }
                     self.stack
-                        .pop_n(frame.get_closure_ref().function.arity as usize + 1); // Pop arguments and the function itself
+                        .pop_n(frame.get_closure().function.arity as usize + 1); // Pop arguments and the function itself
                     self.stack.push(result);
                 }
                 OpCode::Call => {
@@ -458,17 +468,11 @@ impl Vm {
                 OpCode::SetGlobal => {
                     let name_string = {
                         let constant = self.read_constant_quad();
-                        let obj_node = unwrap_enum!(
-                            constant,
-                            Value::Object,
-                            "Malformed bytecode. Expected constant in SetGlobal to contain Object!"
-                        );
                         unwrap_enum!(
-                            obj_node.get_object(),
-                            Object::String,
-                            "Malformed bytecode. Expected Object in SetGlobal to contain String!"
+                            constant,
+                            Value::String,
+                            "Malformed bytecode. Expected constant in SetGlobal to contain String!"
                         )
-                        .clone()
                     };
                     let value = self.stack.peek(0).clone();
                     dbg_println!("SETTING GLOBAL {} = {}", name_string, value);
@@ -484,17 +488,11 @@ impl Vm {
                 OpCode::GetGlobal => {
                     let name_string = {
                         let constant = self.read_constant_quad();
-                        let obj_node = unwrap_enum!(
-                            constant,
-                            Value::Object,
-                            "Malformed bytecode. Expected constant in SetGlobal to contain Object!"
-                        );
                         unwrap_enum!(
-                            obj_node.get_object(),
-                            Object::String,
-                            "Malformed bytecode. Expected Object in SetGlobal to contain String!"
+                            constant,
+                            Value::String,
+                            "Malformed bytecode. Expected constant in SetGlobal to contain String!"
                         )
-                        .clone()
                     };
                     let global = self.heap.globals.get(&name_string);
                     match global {
@@ -514,17 +512,11 @@ impl Vm {
                 OpCode::DefineGlobal => {
                     let name_string = {
                         let constant = self.read_constant_quad();
-                        let obj_node = unwrap_enum!(
-                            constant,
-                            Value::Object,
-                            "Malformed bytecode. Expected constant in SetGlobal to contain Object!"
-                        );
                         unwrap_enum!(
-                            obj_node.get_object(),
-                            Object::String,
-                            "Malformed bytecode. Expected Object in SetGlobal to contain String!"
+                            constant,
+                            Value::String,
+                            "Malformed bytecode. Expected constant in SetGlobal to contain String!"
                         )
-                        .clone()
                     };
                     let global_value = self.stack.peek(0).clone();
                     dbg_println!("DEFINING GLOBAL: {} = ({})", name_string, global_value);
@@ -548,37 +540,24 @@ impl Vm {
                 OpCode::Add => {
                     let second = self.stack.pop();
                     let first = self.stack.pop();
-                    if let Value::Object(first) = first
-                        && let Value::Object(second) = second
-                    {
-                        match first.get_object() {
-                            Object::String(a_str) => match &*second.get_object() {
-                                Object::String(b_str) => {
-                                    let concat = self.heap.strings.concat_strings(*b_str, *a_str);
-                                    let new_string = Value::Object(ObjectNode::alloc(
-                                        Object::String(concat),
-                                        &mut self.heap,
-                                    ));
-                                    self.stack.push(new_string) // Can "take" pointer value because the pointer will be appended to VM list, so no leak.
-                                }
-                                _ => {
-                                    return Err(Error::Runtime(format!(
-                                        "Cannot add string and non-string object: {:?} + {:?}",
-                                        a_str, second
-                                    )));
-                                }
-                            },
-                            _ => {
-                                return Err(Error::Runtime(format!(
-                                    "Cannot add  non-string objects: {:?} + {:?}",
-                                    first, second
-                                )));
+                    match first {
+                        Value::String(a) => match second {
+                            Value::String(b) => {
+                                let concat = self.heap.strings.concat_strings(b, a);
+                                let new_string = Value::String(concat);
+                                self.stack.push(new_string);
+                                continue;
                             }
-                        }
-                    } else {
-                        let result = first + second;
-                        self.stack.push(result?);
+                            _ => {
+                                return Err(Error::Runtime(
+                                    "Cannot add String and non-String!".to_owned(),
+                                ));
+                            }
+                        },
+                        _ => (),
                     }
+                    let result = first + second;
+                    self.stack.push(result?);
                 }
                 OpCode::Subtract => binary_op_try!(self.stack, -),
                 OpCode::Multiply => binary_op_try!(self.stack, *),

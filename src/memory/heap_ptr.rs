@@ -28,10 +28,12 @@ where
     }
 
     pub const fn get(&self) -> &T {
+        debug_assert!(self.is_not_null(), "Cannot get value from null HeapPtr!");
         unsafe { &(*self.mem) }
     }
 
     pub const fn get_mut(&self) -> &mut T {
+        debug_assert!(self.is_not_null(), "Cannot get value from null HeapPtr!");
         unsafe { &mut (*self.mem) }
     }
 
@@ -42,12 +44,14 @@ where
     /// This will take ownership of the object and return it.
     /// This makes the underlying value be exposed to the normal drop rules.
     pub fn take(mut self) -> T {
+        debug_assert!(self.is_not_null(), "Cannot take value from null HeapPtr!");
         let val = unsafe { *Box::from_raw(self.mem) };
         self.mem = null_mut();
         val
     }
 
     pub fn read(&self) -> T {
+        debug_assert!(self.is_not_null(), "Cannot read value from null HeapPtr!");
         unsafe { self.mem.read() }
     }
 

@@ -1,35 +1,25 @@
 use std::fmt::Display;
 
 use super::InternedString;
-use crate::{
-    compiler::chunk::Chunk,
-    dbg_println,
-    memory::{Dealloc, HeapPtr},
-};
+use crate::{compiler::chunk::Chunk, dbg_println};
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub arity: u8,
-    pub chunk: HeapPtr<Chunk>,
+    pub chunk: Chunk,
     pub name: Option<InternedString>,
     pub upvalue_count: u16,
 }
 
-impl Dealloc for Function {
-    fn dealloc(&mut self) {
-        dbg_println!("DEBUG FUNCTION DEALLOC: {:?}", self);
-        if !self.chunk.is_null() {
-            self.chunk.dealloc();
-            self.chunk = HeapPtr::null();
-        }
-
-        // Name is an interned string, so we don't deallocate it here.
+impl Drop for Function {
+    fn drop(&mut self) {
+        dbg_println!("DEBUG FUNCTION DROP: {:?}", self);
     }
 }
 
 impl PartialEq for Function {
     fn eq(&self, other: &Self) -> bool {
-        self.arity == other.arity && self.chunk.compare_address(&other.chunk)
+        self.arity == other.arity && ((self as *const _) == (other as *const _))
     }
 }
 

@@ -55,10 +55,7 @@ fn closure_instruction(chunk: &Chunk, offset: usize) -> usize {
     );
 
     let function = match constant {
-        Value::Object(obj_node) => match obj_node.get_object() {
-            Object::Function(func) => func,
-            _ => unreachable!("Malformed bytecode"),
-        },
+        Value::Object(obj) => obj.as_function(),
         _ => unreachable!("Malformed bytecode"),
     };
     let mut upvalue_bytes = 0;

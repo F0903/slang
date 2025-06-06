@@ -3,14 +3,15 @@ use std::{
     ops::{Add, Div, Mul, Neg, Sub},
 };
 
-use super::object::ObjectNode;
-use crate::{error::Error, memory::HeapPtr};
+use super::object::Object;
+use crate::{error::Error, memory::HeapPtr, value::object::InternedString};
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum Value {
     Bool(bool),
     Number(f64),
-    Object(HeapPtr<ObjectNode>),
+    String(InternedString),
+    Object(HeapPtr<Object>),
     None,
 }
 
@@ -19,11 +20,14 @@ impl Value {
         match self {
             Value::Bool(b) => !*b,
             Value::Number(n) => *n == 0.0,
+            Value::String(s) => s.is_empty(),
             Value::Object(_) => false, // Objects are truthy
             Value::None => true,
         }
     }
 }
+
+impl Copy for Value {}
 
 impl Add for Value {
     type Output = Result<Value, Error>;
@@ -37,6 +41,7 @@ impl Add for Value {
                 )),
             },
             Value::Bool(_) => Err(Error::Runtime("Cannot add boolean values!".to_owned())),
+            Value::String(_) => unreachable!(),
             Value::Object(_) => Err(Error::Runtime("Cannot add Object types!".to_owned())),
             Value::None => Err(Error::Runtime("Cannot add None types!".to_owned())),
         }
@@ -55,6 +60,7 @@ impl Sub for Value {
                 )),
             },
             Value::Bool(_) => Err(Error::Runtime("Cannot subtract boolean values!".to_owned())),
+            Value::String(_) => Err(Error::Runtime("Cannot subtract String types!".to_owned())),
             Value::Object(_) => Err(Error::Runtime("Cannot subtract Object types!".to_owned())),
             Value::None => Err(Error::Runtime("Cannot subtract None types!".to_owned())),
         }
@@ -73,6 +79,7 @@ impl Mul for Value {
                 )),
             },
             Value::Bool(_) => Err(Error::Runtime("Cannot multiply boolean values!".to_owned())),
+            Value::String(_) => Err(Error::Runtime("Cannot multiply String types!".to_owned())),
             Value::Object(_) => Err(Error::Runtime("Cannot multiply Object types!".to_owned())),
             Value::None => Err(Error::Runtime("Cannot multiply None types!".to_owned())),
         }
@@ -91,6 +98,7 @@ impl Div for Value {
                 )),
             },
             Value::Bool(_) => Err(Error::Runtime("Cannot divide boolean values!".to_owned())),
+            Value::String(_) => Err(Error::Runtime("Cannot divide String types!".to_owned())),
             Value::Object(_) => Err(Error::Runtime("Cannot divide Object types!".to_owned())),
             Value::None => Err(Error::Runtime("Cannot divide None types!".to_owned())),
         }
@@ -104,6 +112,7 @@ impl Neg for Value {
         match self {
             Value::Number(num) => Ok(Value::Number(-num)),
             Value::Bool(_) => Err(Error::Runtime("Cannot negate boolean values!".to_owned())),
+            Value::String(_) => Err(Error::Runtime("Cannot negate String types!".to_owned())),
             Value::Object(_) => Err(Error::Runtime("Cannot negate Object types!".to_owned())),
             Value::None => Err(Error::Runtime("Cannot negate None types!".to_owned())),
         }
@@ -119,6 +128,10 @@ impl PartialEq for Value {
             },
             Value::Number(n) => match other {
                 Value::Number(other_n) => *n == *other_n,
+                _ => false,
+            },
+            Value::String(str) => match other {
+                Value::String(other_str) => str == other_str,
                 _ => false,
             },
             Value::Object(obj) => match other {
@@ -141,6 +154,7 @@ impl PartialOrd for Value {
                 Value::Number(other_n) => return n > other_n,
                 _ => return false,
             },
+            Value::String(_) => false,
             Value::Object(_) => false,
             Value::None => return false,
         }
@@ -156,6 +170,7 @@ impl PartialOrd for Value {
                 Value::Number(other_n) => return n >= other_n,
                 _ => return false,
             },
+            Value::String(_) => false,
             Value::Object(_) => false,
             Value::None => return false,
         }
@@ -171,6 +186,7 @@ impl PartialOrd for Value {
                 Value::Number(other_n) => return n < other_n,
                 _ => return false,
             },
+            Value::String(_) => false,
             Value::Object(_) => false,
             Value::None => return false,
         }
@@ -186,6 +202,7 @@ impl PartialOrd for Value {
                 Value::Number(other_n) => return n <= other_n,
                 _ => return false,
             },
+            Value::String(_) => false,
             Value::Object(_) => false,
             Value::None => return false,
         }
@@ -210,6 +227,7 @@ impl Display for Value {
         match self {
             Value::Bool(b) => Display::fmt(b, f),
             Value::Number(num) => Display::fmt(num, f),
+            Value::String(str) => Display::fmt(str, f),
             Value::Object(obj) => Display::fmt(obj, f),
             Value::None => f.write_str("None"),
         }
@@ -221,7 +239,8 @@ impl Debug for Value {
         match self {
             Value::Bool(b) => f.write_fmt(format_args!("[Bool] = {}", b)),
             Value::Number(num) => f.write_fmt(format_args!("[Number] = {}", num)),
-            Value::Object(obj) => Debug::fmt(obj, f),
+            Value::String(str) => f.write_fmt(format_args!("[String] = \"{}\"", str)),
+            Value::Object(obj) => Display::fmt(obj, f),
             Value::None => f.write_str("None"),
         }
     }

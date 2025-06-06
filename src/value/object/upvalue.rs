@@ -1,14 +1,17 @@
 use std::fmt::{Debug, Display};
 
-use crate::{memory::HeapPtr, value::Value};
+use crate::{
+    memory::HeapPtr,
+    value::{Value, object::ObjectRef},
+};
 
 /// A pointer to a variable in an enclosing scope.
 //SAFTEY: Since this points to another Value that lives in the same VM stack, the pointer will always be valid.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Upvalue {
     location: *mut Value,
     closed: Value,
-    next: HeapPtr<Upvalue>,
+    next: Option<ObjectRef<Upvalue>>,
 }
 
 impl Upvalue {
@@ -16,15 +19,15 @@ impl Upvalue {
         Self {
             location,
             closed: Value::None,
-            next: HeapPtr::null(),
+            next: None,
         }
     }
 
-    pub fn new_with_next(location: *mut Value, next: HeapPtr<Upvalue>) -> Self {
+    pub fn new_with_next(location: *mut Value, next: ObjectRef<Upvalue>) -> Self {
         Self {
             location,
             closed: Value::None,
-            next,
+            next: Some(next),
         }
     }
 
@@ -32,15 +35,15 @@ impl Upvalue {
         self.location
     }
 
-    pub(crate) const fn get_next(&self) -> HeapPtr<Upvalue> {
-        self.next
+    pub(crate) fn get_next(&self) -> Option<ObjectRef<Upvalue>> {
+        self.next.clone()
     }
 
     pub const fn set(&mut self, value: Value) {
         unsafe { *self.location = value }
     }
 
-    pub const fn set_next(&mut self, next: HeapPtr<Upvalue>) {
+    pub const fn set_next(&mut self, next: Option<ObjectRef<Upvalue>>) {
         self.next = next;
     }
 
