@@ -7,7 +7,6 @@ use crate::{
     dbg_println,
     memory::{Dealloc, HeapPtr},
     value::object::{self, Closure, Function, NativeFunction, ObjectRef},
-    vm::VmHeap,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -19,29 +18,17 @@ pub enum ObjectType {
     Upvalue,
 }
 
-pub union ObjectUnion {
-    function: ManuallyDrop<Function>,
-    native_function: ManuallyDrop<NativeFunction>,
-    closure: ManuallyDrop<Closure>,
-    upvalue: ManuallyDrop<object::Upvalue>,
+pub(crate) union ObjectUnion {
+    pub(crate) function: ManuallyDrop<Function>,
+    pub(crate) native_function: ManuallyDrop<NativeFunction>,
+    pub(crate) closure: ManuallyDrop<Closure>,
+    pub(crate) upvalue: ManuallyDrop<object::Upvalue>,
 }
 
 pub struct Object {
     obj_type: ObjectType,
     casts: ObjectUnion,
     next: HeapPtr<Object>,
-}
-
-macro_rules! object_ctor {
-    ($name:ident, $variant:ident, $ty:ty, $tag:expr) => {
-        #[inline]
-        pub fn $name(val: $ty, heap: &mut VmHeap) -> HeapPtr<Self> {
-            let inner = ObjectUnion {
-                $variant: ManuallyDrop::new(val),
-            };
-            Self::alloc($tag, inner, heap)
-        }
-    };
 }
 
 macro_rules! object_as_fn {
@@ -66,15 +53,14 @@ macro_rules! object_as_fn {
 
 impl Object {
     #[inline]
-    fn alloc(obj_type: ObjectType, inner: ObjectUnion, heap: &mut VmHeap) -> HeapPtr<Self> {
+    pub fn alloc(obj_type: ObjectType, inner: ObjectUnion, next: HeapPtr<Object>) -> HeapPtr<Self> {
         dbg_println!("DEBUG OBJECT ALLOC: {:?}", obj_type);
 
         let me = HeapPtr::alloc(Self {
             obj_type,
             casts: inner,
-            next: heap.get_objects_head(),
+            next,
         });
-        heap.set_objects_head(me);
         me
     }
 
@@ -87,16 +73,6 @@ impl Object {
     pub const fn get_type(&self) -> ObjectType {
         self.obj_type
     }
-
-    object_ctor!(new_function, function, Function, ObjectType::Function);
-    object_ctor!(
-        new_native_function,
-        native_function,
-        NativeFunction,
-        ObjectType::NativeFunction
-    );
-    object_ctor!(new_closure, closure, Closure, ObjectType::Closure);
-    object_ctor!(new_upvalue, upvalue, object::Upvalue, ObjectType::Upvalue);
 
     object_as_fn!(as_function, function, Function, ObjectType::Function);
     object_as_fn!(
@@ -123,21 +99,19 @@ impl Display for Object {
 impl Debug for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.obj_type {
-            ObjectType::Function => {
-                let func = self.as_function();
-                f.write_fmt(format_args!("<Function> = {:?}", func.as_ref()))
-            }
-            ObjectType::NativeFunction => {
-                let func = self.as_native_function();
-                f.write_fmt(format_args!("<NativeFunction> = {:?}", func.as_ref()))
-            }
+            ObjectType::Function => f.write_fmt(format_args!(
+                "<Function> = {:?}",
+                self.as_function().as_ref()
+            )),
+            ObjectType::NativeFunction => f.write_fmt(format_args!(
+                "<NativeFunction> = {:?}",
+                self.as_native_function().as_ref()
+            )),
             ObjectType::Closure => {
-                let clo = self.as_closure();
-                f.write_fmt(format_args!("<Closure> = {:?}", clo.as_ref()))
+                f.write_fmt(format_args!("<Closure> = {:?}", self.as_closure().as_ref()))
             }
             ObjectType::Upvalue => {
-                let up = self.as_upvalue();
-                f.write_fmt(format_args!("<Upvalue> = {:?}", up.as_ref()))
+                f.write_fmt(format_args!("<Upvalue> = {:?}", self.as_upvalue().as_ref()))
             }
         }
     }

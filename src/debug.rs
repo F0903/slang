@@ -52,7 +52,7 @@ fn closure_instruction(chunk: &Chunk, offset: usize) -> usize {
 
     let function = constant.as_object().as_function();
     let mut upvalue_bytes = 0;
-    for _ in 0..function.upvalue_count {
+    for _ in 0..function.get_upvalue_count() {
         let is_local = chunk.read_byte(offset + 2) != 0;
         let index = chunk.read_double(offset + 3);
         upvalue_bytes += 3;

@@ -5,7 +5,7 @@ use std::{
 };
 
 use super::Dealloc;
-use crate::dbg_println;
+use crate::{dbg_println, hashing::Hashable};
 
 // A manual version of Box<T> that REQUIRES YOU TO MANUALLY CALL DEALLOC TO FREE MEMORY
 // This is useful for heap allocated objects that require multiple references to the same object and lowest overhead (thus not using Rc<RefCell<T>> or similar).
@@ -65,22 +65,6 @@ where
 
     pub const fn null() -> Self {
         Self { mem: null_mut() }
-    }
-
-    pub fn compare_address(&self, other: &Self) -> bool {
-        self.mem == other.mem
-    }
-
-    pub fn addr_gt_addr<A>(&self, other: *const A) -> bool {
-        (self.mem as usize) > (other as usize)
-    }
-
-    pub fn addr_eq_addr<A>(&self, other: *const A) -> bool {
-        (self.mem as usize) == (other as usize)
-    }
-
-    pub fn addr_lt_addr<A>(&self, other: *const A) -> bool {
-        (self.mem as usize) < (other as usize)
     }
 }
 
@@ -177,5 +161,14 @@ where
             return false;
         }
         unsafe { &*self.mem == &*other.mem }
+    }
+}
+
+impl<T> Hashable for HeapPtr<T>
+where
+    T: Debug + Hashable,
+{
+    fn get_hash(&self) -> u32 {
+        T::get_hash(self.get())
     }
 }

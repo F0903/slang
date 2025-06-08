@@ -1,11 +1,12 @@
 mod alloc;
 mod dealloc;
 mod drop_dealloc;
-mod global_alloc;
+mod gc;
 mod heap_ptr;
 
 pub(crate) use alloc::reallocate;
 
 pub use dealloc::Dealloc;
 pub use drop_dealloc::{DeallocOnDrop, DropDealloc};
+pub use gc::GC;
 pub use heap_ptr::HeapPtr;

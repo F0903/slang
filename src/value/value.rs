@@ -113,7 +113,12 @@ impl Add for Value {
                 )),
             },
             ValueType::Bool => Err(Error::Runtime("Cannot add boolean values!".to_owned())),
-            ValueType::String => unreachable!(),
+            ValueType::String => match rhs.value_type {
+                ValueType::String => Ok(Value::string(self.as_string() + rhs.as_string())),
+                _ => Err(Error::Runtime(
+                    "Cannot add non-string types to strings!".to_owned(),
+                )),
+            },
             ValueType::Object => Err(Error::Runtime("Cannot add Object types!".to_owned())),
             ValueType::None => Err(Error::Runtime("Cannot add None types!".to_owned())),
         }
@@ -133,7 +138,7 @@ impl Sub for Value {
                 )),
             },
             ValueType::Bool => Err(Error::Runtime("Cannot subtract boolean values!".to_owned())),
-            ValueType::String => unreachable!(),
+            ValueType::String => Err(Error::Runtime("Cannot subtract String types!".to_owned())),
             ValueType::Object => Err(Error::Runtime("Cannot subtract Object types!".to_owned())),
             ValueType::None => Err(Error::Runtime("Cannot subtract None types!".to_owned())),
         }
@@ -153,7 +158,7 @@ impl Mul for Value {
                 )),
             },
             ValueType::Bool => Err(Error::Runtime("Cannot multiply boolean values!".to_owned())),
-            ValueType::String => unreachable!(),
+            ValueType::String => Err(Error::Runtime("Cannot multiply String types!".to_owned())),
             ValueType::Object => Err(Error::Runtime("Cannot multiply Object types!".to_owned())),
             ValueType::None => Err(Error::Runtime("Cannot multiply None types!".to_owned())),
         }
@@ -173,7 +178,7 @@ impl Div for Value {
                 )),
             },
             ValueType::Bool => Err(Error::Runtime("Cannot divide boolean values!".to_owned())),
-            ValueType::String => unreachable!(),
+            ValueType::String => Err(Error::Runtime("Cannot divide String types!".to_owned())),
             ValueType::Object => Err(Error::Runtime("Cannot divide Object types!".to_owned())),
             ValueType::None => Err(Error::Runtime("Cannot divide None types!".to_owned())),
         }
@@ -237,7 +242,6 @@ impl PartialOrd for Value {
 }
 
 impl Display for Value {
-    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.value_type {
             ValueType::Number => Display::fmt(&self.as_number(), f),
@@ -250,7 +254,6 @@ impl Display for Value {
 }
 
 impl Debug for Value {
-    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.value_type {
             ValueType::Number => f.write_fmt(format_args!("[Number] = {}", self.as_number())),

@@ -1,4 +1,4 @@
-use super::{VmHeap, callframe::CallFrame, opcode::OpCode};
+use super::{callframe::CallFrame, opcode::OpCode};
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
 use crate::{
@@ -8,12 +8,12 @@ use crate::{
     debug::disassemble_chunk,
     error::{Error, Result},
     lexing::scanner::Scanner,
-    memory::{Dealloc, DeallocOnDrop, HeapPtr},
+    memory::{DeallocOnDrop, GC, HeapPtr},
     value::{
         ObjectType,
         Value,
         ValueType,
-        object::{self, Closure, NativeFunction, Object, ObjectRef, StringInterner},
+        object::{self, Closure, InternedString, NativeFunction, ObjectRef},
     },
 };
 
@@ -45,7 +45,7 @@ macro_rules! binary_op_from_bool {
 
 pub struct Vm {
     stack: Stack<Value, STACK_MAX>,
-    heap: HeapPtr<VmHeap>,
+    globals: HashTable<InternedString, Value>,
     callframes: Stack<CallFrame, MAX_CALLFRAMES>,
     open_upvalues: Option<ObjectRef<object::Upvalue>>,
 }
@@ -54,20 +54,16 @@ impl Vm {
     pub fn new() -> Self {
         Self {
             stack: Stack::new(),
-            heap: HeapPtr::alloc(VmHeap {
-                objects_head: HeapPtr::null(),
-                strings: StringInterner::new(),
-                globals: HashTable::new(),
-            }),
+            globals: HashTable::new(),
             callframes: Stack::new(),
             open_upvalues: None,
         }
     }
 
     pub fn register_native_function(&mut self, function: NativeFunction) {
-        let func_name = self.heap.strings.make_string(&function.name);
-        let func_value = Value::object(Object::new_native_function(function, &mut self.heap));
-        self.heap.globals.set(func_name, func_value);
+        let func_name = GC.create_string(&function.name);
+        let func_value = Value::object(GC.create_native_function(function));
+        self.globals.set(func_name, func_value);
     }
 
     pub fn register_native_functions(&mut self, functions: &[NativeFunction]) {
@@ -81,22 +77,19 @@ impl Vm {
         for frame in self.callframes.top_iter() {
             // Since this is a debug function, it doesn't matter that we are cloning here
             let mut frame = frame.clone();
+            let function = frame.get_closure().get_function();
             let instruction = unsafe {
                 let ip_offset = frame
                     .get_ip()
-                    .offset_from(frame.get_closure().function.chunk.get_code_ptr());
+                    .offset_from(function.get_chunk().get_code_ptr());
                 frame.sub_ip((ip_offset as usize) - 1);
                 frame.get_ip().read()
             }; // -1 to get the previous instruction that failed
 
-            let function_name = &frame.get_closure().function.name;
+            let function_name = function.get_name();
             str_buf.push_str(&format!(
                 "[line {}] in {}",
-                frame
-                    .get_closure()
-                    .function
-                    .chunk
-                    .get_line_number(instruction as usize),
+                function.get_chunk().get_line_number(instruction as usize),
                 function_name
                     .as_ref()
                     .map(|name| name.as_str())
@@ -139,8 +132,8 @@ impl Vm {
         let frame = self.callframes.top_mut();
         frame
             .get_closure()
-            .function
-            .chunk
+            .get_function()
+            .get_chunk()
             .get_constant(index as u32)
             .clone()
     }
@@ -151,8 +144,8 @@ impl Vm {
         let frame = self.callframes.top_mut();
         frame
             .get_closure()
-            .function
-            .chunk
+            .get_function()
+            .get_chunk()
             .get_constant(index as u32)
             .clone()
     }
@@ -163,21 +156,21 @@ impl Vm {
         let frame = self.callframes.top_mut();
         frame
             .get_closure()
-            .function
-            .chunk
+            .get_function()
+            .get_chunk()
             .get_constant(index)
             .clone()
     }
 
     fn call(&mut self, closure: ObjectRef<Closure>, arg_count: u8) -> Result<()> {
         let function = closure.function.clone();
-        if arg_count != function.arity {
+        if arg_count != function.get_arity() {
             return Err(Error::Runtime(format!(
                 "Expected {} arguments, got {} for function '{}'",
-                function.arity,
+                function.get_arity(),
                 arg_count,
                 function
-                    .name
+                    .get_name()
                     .as_ref()
                     .map(|x| x.as_str())
                     .unwrap_or("<script>")
@@ -191,16 +184,16 @@ impl Vm {
         dbg_println!(
             "CALLING FUNCTION: {} with {} args",
             function
-                .name
+                .get_name()
                 .as_ref()
                 .map(|x| x.as_str())
                 .unwrap_or("<script>"),
             arg_count
         );
         disassemble_chunk(
-            &function.chunk,
+            function.get_chunk(),
             function
-                .name
+                .get_name()
                 .as_ref()
                 .map(|x| x.as_str())
                 .unwrap_or("<script>"),
@@ -213,7 +206,7 @@ impl Vm {
 
         self.callframes.push(CallFrame::new(
             closure,
-            function.chunk.get_code_ptr(),
+            function.get_chunk().get_code_ptr(),
             callframe_slots,
         ));
         Ok(())
@@ -271,13 +264,10 @@ impl Vm {
         }
 
         let new_upvalue = if let Some(upvalue_ref) = upvalue {
-            Object::new_upvalue(
-                object::Upvalue::new_with_next(local, upvalue_ref),
-                &mut self.heap,
-            )
-            .as_upvalue()
+            GC.create_upvalue(object::Upvalue::new_with_next(local, upvalue_ref))
+                .as_upvalue()
         } else {
-            Object::new_upvalue(object::Upvalue::new(local), &mut self.heap).as_upvalue()
+            GC.create_upvalue(object::Upvalue::new(local)).as_upvalue()
         };
 
         if previous_upvalue.is_none() {
@@ -300,26 +290,20 @@ impl Vm {
     }
 
     pub fn interpret<'src>(&mut self, source: &'src [u8]) -> Result<()> {
-        let mut compiler = Compiler::new(
-            HeapPtr::alloc(Scanner::new()),
-            self.heap.clone(),
-            FunctionType::Script,
-        )
-        .dealloc_on_drop();
+        let mut compiler =
+            Compiler::new(HeapPtr::alloc(Scanner::new()), FunctionType::Script).dealloc_on_drop();
 
         let function_obj = compiler
             .compile(source)
             .map_err(|e| Error::CompileTime(e.to_string()))?;
-        let closure_obj = Object::new_closure(
-            Closure::new(function_obj.as_function(), DynArray::new()),
-            &mut self.heap,
-        );
+        let closure_obj =
+            GC.create_closure(Closure::new(function_obj.as_function(), DynArray::new()));
         self.stack.push(Value::object(closure_obj));
 
         let closure = closure_obj.as_closure();
         self.callframes.push(CallFrame::new(
             closure,
-            closure.function.chunk.get_code_ptr(),
+            closure.get_function().get_chunk().get_code_ptr(),
             self.stack.get_mut_at(0),
         ));
         self.call(closure, 0)?;
@@ -328,10 +312,17 @@ impl Vm {
             #[cfg(debug_assertions)]
             unsafe {
                 let frame = self.callframes.top_mut();
-                let offset = frame
-                    .get_ip()
-                    .offset_from(frame.get_closure().function.chunk.get_code_ptr());
-                disassemble_instruction(&frame.get_closure().function.chunk, offset as usize);
+                let offset = frame.get_ip().offset_from(
+                    frame
+                        .get_closure()
+                        .get_function()
+                        .get_chunk()
+                        .get_code_ptr(),
+                );
+                disassemble_instruction(
+                    &frame.get_closure().get_function().get_chunk(),
+                    offset as usize,
+                );
             }
             let instruction = self.read_byte();
             match OpCode::from_code(instruction) {
@@ -368,8 +359,8 @@ impl Vm {
                     // Create and fill upvalue array for Closure object based on
                     // the amount of upvalue references the Function has
                     let mut closure_upvalues =
-                        DynArray::new_with_cap(function.upvalue_count as usize);
-                    for _ in 0..function.upvalue_count {
+                        DynArray::new_with_cap(function.get_upvalue_count() as usize);
+                    for _ in 0..function.get_upvalue_count() {
                         let is_local = self.read_byte() != 0;
                         let index = self.read_double();
                         if is_local {
@@ -383,7 +374,7 @@ impl Vm {
                     }
 
                     let closure = Closure::new(function.clone(), closure_upvalues);
-                    let closure_obj = Object::new_closure(closure, &mut self.heap);
+                    let closure_obj = GC.create_closure(closure);
                     self.stack.push(Value::object(closure_obj));
                 }
                 OpCode::Return => {
@@ -395,7 +386,7 @@ impl Vm {
                         return Ok(());
                     }
                     self.stack
-                        .pop_n(frame.get_closure().function.arity as usize + 1); // Pop arguments and the function itself
+                        .pop_n(frame.get_closure().get_function().get_arity() as usize + 1); // Pop arguments and the function itself
                     self.stack.push(result);
                 }
                 OpCode::Call => {
@@ -464,9 +455,9 @@ impl Vm {
                     let name_string = self.read_constant_quad().as_string();
                     let value = self.stack.peek(0).clone();
                     dbg_println!("SETTING GLOBAL {} = {}", name_string, value);
-                    if self.heap.globals.set(name_string, value) {
+                    if self.globals.set(name_string, value) {
                         // If the variable did not already exist at this point, return error
-                        self.heap.globals.delete(&name_string);
+                        self.globals.delete(&name_string);
                         return Err(Error::Runtime(format!(
                             "Undefined variable '{}'",
                             name_string
@@ -475,7 +466,7 @@ impl Vm {
                 }
                 OpCode::GetGlobal => {
                     let name_string = self.read_constant_quad().as_string();
-                    let global = self.heap.globals.get(&name_string);
+                    let global = self.globals.get(&name_string);
                     match global {
                         Some(global) => {
                             let global_value = global.value.clone();
@@ -494,7 +485,7 @@ impl Vm {
                     let name_string = self.read_constant_quad().as_string();
                     let global_value = self.stack.peek(0).clone();
                     dbg_println!("DEFINING GLOBAL: {} = ({})", name_string, global_value);
-                    self.heap.globals.set(name_string, global_value);
+                    self.globals.set(name_string, global_value);
                     self.stack.pop();
                 }
                 OpCode::Constant => {
@@ -514,25 +505,13 @@ impl Vm {
                 OpCode::Add => {
                     let second = self.stack.pop();
                     let first = self.stack.pop();
-                    match first.get_type() {
-                        ValueType::String => match second.get_type() {
-                            ValueType::String => {
-                                let concat = self
-                                    .heap
-                                    .strings
-                                    .concat_strings(second.as_string(), first.as_string());
-                                let new_string = Value::string(concat);
-                                self.stack.push(new_string);
-                                continue;
-                            }
-                            _ => {
-                                return Err(Error::Runtime(
-                                    "Cannot add String and non-String!".to_owned(),
-                                ));
-                            }
-                        },
-                        _ => (),
+
+                    if first.get_type() == ValueType::Object
+                        && second.get_type() == ValueType::Object
+                    {
+                        return Err(Error::Runtime("Cannot add object types!!".to_owned()));
                     }
+
                     let result = first + second;
                     self.stack.push(result?);
                 }
@@ -550,22 +529,10 @@ impl Vm {
             }
         }
     }
-
-    fn free_objects(&self) {
-        let mut obj_container_ptr = self.heap.get_objects_head();
-        while !obj_container_ptr.is_null() {
-            let next_obj_container_ptr = obj_container_ptr.get_next_object_ptr();
-
-            obj_container_ptr.dealloc();
-
-            obj_container_ptr = next_obj_container_ptr;
-        }
-    }
 }
 
 impl Drop for Vm {
     fn drop(&mut self) {
-        self.free_objects();
-        self.heap.dealloc();
+        dbg_println!("DEBUG DROP VM");
     }
 }

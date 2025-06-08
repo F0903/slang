@@ -18,6 +18,10 @@ impl Closure {
         Self { function, upvalues }
     }
 
+    pub const fn get_function(&self) -> ObjectRef<Function> {
+        self.function
+    }
+
     pub const fn get_upvalues_count(&self) -> u16 {
         // This is guaranteed to never be over 255 (as currently defined)
         self.upvalues.get_count() as u16

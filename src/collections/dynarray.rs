@@ -1,7 +1,11 @@
 use std::{mem::MaybeUninit, ptr::null_mut};
 
 use super::owned_iter::OwnedIter;
-use crate::{dbg_println, memory::reallocate};
+use crate::{
+    dbg_println,
+    hashing::{GlobalHashMethod, HashMethod, Hashable},
+    memory::reallocate,
+};
 
 #[derive(Debug)]
 pub struct DynArray<T: std::fmt::Debug> {
@@ -227,7 +231,7 @@ impl<T: std::fmt::Debug> DynArray<T> {
 }
 
 impl<T: std::fmt::Debug + Clone> DynArray<T> {
-    pub fn new_with_init(init_value: T) -> Self {
+    pub const fn new_with_init(init_value: T) -> Self {
         Self {
             data: null_mut(),
             count: 0,
@@ -284,6 +288,18 @@ impl DynArray<u8> {
 
     pub const fn as_str(&self) -> &str {
         unsafe { std::str::from_raw_parts(self.data, self.count) }
+    }
+}
+
+impl Hashable for DynArray<u8> {
+    fn get_hash(&self) -> u32 {
+        unsafe { GlobalHashMethod::hash(std::slice::from_raw_parts_mut(self.data, self.count)) }
+    }
+}
+
+impl PartialEq for DynArray<u8> {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_hash() == other.get_hash()
     }
 }
 

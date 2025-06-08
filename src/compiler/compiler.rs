@@ -8,12 +8,12 @@ use crate::{
         scanner::Scanner,
         token::{Precedence, Token, TokenType},
     },
-    memory::{Dealloc, HeapPtr},
+    memory::{Dealloc, GC, HeapPtr},
     value::{
         Value,
         object::{Function, Object},
     },
-    vm::{VmHeap, opcode::OpCode},
+    vm::opcode::OpCode,
 };
 
 const MAX_FUNCTION_ARITY: u8 = 255; // Maximum number of arguments a function can have.
@@ -67,7 +67,6 @@ impl JumpIndecies {
 pub struct Compiler<'src> {
     current_source: &'src [u8],
     scanner: HeapPtr<Scanner<'src>>,
-    heap: HeapPtr<VmHeap>,
     current_function: HeapPtr<Object>,
     current_function_type: FunctionType,
     locals: Stack<Local, LOCAL_SLOTS>,
@@ -82,28 +81,15 @@ pub struct Compiler<'src> {
 }
 
 impl<'src> Compiler<'src> {
-    pub fn new(
-        scanner: HeapPtr<Scanner<'src>>,
-        mut heap: HeapPtr<VmHeap>,
-        function_type: FunctionType,
-    ) -> Self {
+    pub fn new(scanner: HeapPtr<Scanner<'src>>, function_type: FunctionType) -> Self {
         let mut locals = Stack::new();
         locals.push(Local::dummy()); // Reserve first slot as index 0 is used for the "main" function.
 
-        let current_function = Object::new_function(
-            Function {
-                arity: 0,
-                chunk: Chunk::new(),
-                name: None,
-                upvalue_count: 0,
-            },
-            &mut heap,
-        );
+        let current_function = GC.create_function(Function::new(0, Chunk::new(), None, 0));
 
         Self {
             current_source: &[],
             scanner,
-            heap,
             current_function,
             current_function_type: function_type,
             locals,
@@ -161,20 +147,10 @@ impl<'src> Compiler<'src> {
     }
 
     fn fork(&mut self, function_type: FunctionType) -> Self {
-        let current_function = Object::new_function(
-            Function {
-                arity: 0,
-                chunk: Chunk::new(),
-                name: None,
-                upvalue_count: 0,
-            },
-            &mut self.heap,
-        );
-
+        let current_function = GC.create_function(Function::new(0, Chunk::new(), None, 0));
         Self {
             current_source: self.current_source,
             scanner: self.scanner.clone(),
-            heap: self.heap.clone(),
             current_function,
             current_function_type: function_type,
             locals: Stack::new(),
@@ -190,12 +166,12 @@ impl<'src> Compiler<'src> {
 
     fn get_current_chunk(&self) -> &Chunk {
         // This is extremely ugly, but Rust thinks that I'm borrowing a value owned by this function, which is not true
-        unsafe { &*(&self.current_function.as_function().chunk as *const Chunk) }
+        unsafe { &*(self.current_function.as_function().get_chunk() as *const Chunk) }
     }
 
     fn get_current_chunk_mut(&mut self) -> &mut Chunk {
         // This is extremely ugly, but Rust thinks that I'm borrowing a value owned by this function, which is not true
-        unsafe { &mut *(&mut self.current_function.as_function().chunk as *mut Chunk) }
+        unsafe { &mut *(self.current_function.as_function().get_chunk_mut() as *mut Chunk) }
     }
 
     fn get_rule(&self, token: TokenType) -> &ParseRule<'src> {
@@ -410,7 +386,7 @@ impl<'src> Compiler<'src> {
             (name, token.line)
         };
 
-        let string = self.heap.strings.make_string(name);
+        let string = GC.create_string(name);
         let value = Value::string(string);
         self.emit_constant_with_op(value, line);
     }
@@ -813,9 +789,8 @@ impl<'src> Compiler<'src> {
     /// Returns the index of the constant.
     fn identifier_constant(&mut self, name_token: &Token) -> u32 {
         let lexeme = name_token.lexeme.get_str(self.get_current_source());
-        let string = self.heap.strings.make_string(lexeme);
-        let value = Value::string(string);
-        self.emit_constant(value)
+        let string = Value::string(GC.create_string(lexeme));
+        self.emit_constant(string)
     }
 
     /// Returns None if no local variable with the name is found.
@@ -843,7 +818,7 @@ impl<'src> Compiler<'src> {
 
     fn add_upvalue(&mut self, index: u16, is_local: bool) -> u16 {
         let mut current_function = self.current_function.as_function();
-        let last_upvalue_count = current_function.upvalue_count;
+        let last_upvalue_count = current_function.get_upvalue_count();
 
         // Check if we already have an upvalue for the variable
         for (i, upvalue) in self.upvalues.bottom_iter().enumerate() {
@@ -861,7 +836,7 @@ impl<'src> Compiler<'src> {
 
         self.upvalues
             .set_at(last_upvalue_count as usize, Upvalue { is_local, index });
-        current_function.upvalue_count += 1;
+        current_function.increment_upvalue_count(1);
         last_upvalue_count
     }
 
@@ -1066,11 +1041,9 @@ impl<'src> Compiler<'src> {
                 .get_previous_token()
                 .cloned()
                 .expect("Expected function name token.");
-            let func_name = self
-                .heap
-                .strings
-                .make_string(previous_token.lexeme.get_str(self.current_source));
-            compiler_function.name = Some(func_name);
+            let func_name_lexeme = previous_token.lexeme.get_str(self.current_source);
+            let func_name = GC.create_string(func_name_lexeme);
+            compiler_function.set_name(func_name);
         }
 
         compiler.begin_scope();
@@ -1078,7 +1051,7 @@ impl<'src> Compiler<'src> {
         if !compiler.is_current_token(TokenType::RightParen) {
             // Loop through parameters seperated by commas
             loop {
-                if compiler_function.arity >= MAX_FUNCTION_ARITY {
+                if compiler_function.get_arity() >= MAX_FUNCTION_ARITY {
                     compiler.error(&format!(
                         "Function cannot have more than {} parameters.",
                         MAX_FUNCTION_ARITY
@@ -1086,7 +1059,7 @@ impl<'src> Compiler<'src> {
                 }
                 let constant = compiler.parse_variable("Expected parameter name.");
                 compiler.define_variable(constant);
-                compiler_function.arity += 1;
+                compiler_function.increment_arity(1);
                 if !compiler.match_and_advance(TokenType::Comma) {
                     break;
                 }
@@ -1105,19 +1078,18 @@ impl<'src> Compiler<'src> {
         #[cfg(debug_assertions)]
         {
             println!("COMPILED FUNCTION: {:?}", compiler_function);
-            let chunk_name = match &compiler_function.name {
-                Some(name) => name.as_str(),
-                None => "<script>",
+            let chunk_name = match compiler_function.get_name() {
+                Some(name) => name.as_str().to_owned(),
+                None => "<script>".to_owned(),
             }
             .to_owned();
-            disassemble_chunk(&compiler_function.chunk, &chunk_name);
+            disassemble_chunk(compiler_function.get_chunk(), &chunk_name);
         }
         if compiler.had_error() {
             self.error(&format!(
                 "Function {} had errors during compilation!",
                 compiler_function
-                    .name
-                    .as_ref()
+                    .get_name()
                     .map(|x| x.as_str().to_owned())
                     .unwrap_or("<unknown function>".to_owned())
             ));

@@ -1,4 +1,7 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    fmt::Display,
+    ops::{Deref, DerefMut},
+};
 
 #[derive(Debug)]
 pub struct ObjectRef<T> {
@@ -52,5 +55,23 @@ impl<T> Deref for ObjectRef<T> {
 impl<T> DerefMut for ObjectRef<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut()
+    }
+}
+
+impl<T: PartialEq> PartialEq for ObjectRef<T> {
+    fn eq(&self, other: &Self) -> bool {
+        T::eq(self.as_ref(), other.as_ref())
+    }
+}
+
+impl<T: PartialOrd> PartialOrd for ObjectRef<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        T::partial_cmp(self.as_ref(), other.as_ref())
+    }
+}
+
+impl<T: Display> Display for ObjectRef<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        T::fmt(self.as_ref(), f)
     }
 }

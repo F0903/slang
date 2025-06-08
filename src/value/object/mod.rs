@@ -9,6 +9,7 @@ mod upvalue;
 pub use closure::Closure;
 pub use function::Function;
 pub use native_function::NativeFunction;
+pub(crate) use object::ObjectUnion;
 pub use object::{Object, ObjectType};
 pub use object_ref::ObjectRef;
 pub use string::{InternedString, StringInterner};

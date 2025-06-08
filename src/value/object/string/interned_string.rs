@@ -1,10 +1,11 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Add};
 
 use crate::{
     collections::DynArray,
     dbg_println,
     hashing::{GlobalHashMethod, HashMethod, Hashable},
-    memory::{Dealloc, HeapPtr},
+    memory::{Dealloc, GC, HeapPtr},
+    value::object::ObjectRef,
 };
 
 // Since this is essentially just a wrapper around a pointer with a hash, we can copy it very cheaply
@@ -34,7 +35,7 @@ impl InternedString {
     }
 
     pub const fn is_empty(&self) -> bool {
-        (!self.char_buf.is_null()) && self.as_str().is_empty()
+        self.as_str().is_empty()
     }
 
     pub const fn as_slice(&self) -> &[u8] {
@@ -54,7 +55,7 @@ impl InternedString {
     }
 
     // We put this in the main impl intead of implementing Dealloc, as we only want the StringInterner to be able to dealloc this.
-    // We rely on manual dealloc instead of Drop, as these are interned in the VM heap, thereby all potentially sharing memory.
+    // We rely on manual dealloc instead of Drop, as these are interned, thereby all potentially sharing memory.
     pub(super) fn dealloc(&mut self) {
         dbg_println!("DEBUG RAWSTRING DEALLOC: {}", self.as_str());
         if !self.char_buf.is_null() {
@@ -64,10 +65,18 @@ impl InternedString {
     }
 }
 
+impl Add for InternedString {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        GC.concat_strings(self, rhs)
+    }
+}
+
 impl PartialEq for InternedString {
     fn eq(&self, other: &Self) -> bool {
         // Since all strings are interned, we can just compare the pointers
-        self.char_buf.compare_address(&other.char_buf)
+        (self as *const _) == (other as *const _)
     }
 }
 
@@ -78,6 +87,12 @@ impl Display for InternedString {
 }
 
 impl Hashable for InternedString {
+    fn get_hash(&self) -> u32 {
+        self.hash
+    }
+}
+
+impl Hashable for ObjectRef<InternedString> {
     fn get_hash(&self) -> u32 {
         self.hash
     }

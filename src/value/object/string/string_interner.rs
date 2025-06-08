@@ -10,7 +10,7 @@ pub struct StringInterner {
 }
 
 impl StringInterner {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             strings: HashTable::new(),
         }
@@ -18,7 +18,13 @@ impl StringInterner {
 
     fn create_string(&mut self, str: &str) -> InternedString {
         let string = InternedString::new(str);
-        self.strings.set(string.clone(), ());
+        self.strings.set(string, ());
+        string
+    }
+
+    fn create_string_raw(&mut self, chars: DynArray<u8>) -> InternedString {
+        let string = InternedString::new_raw(chars);
+        self.strings.set(string, ());
         string
     }
 
@@ -29,11 +35,11 @@ impl StringInterner {
             .unwrap_or_else(|| self.create_string(str))
     }
 
-    pub fn concat_strings(&self, a: InternedString, b: InternedString) -> InternedString {
-        let mut new_char_buf = DynArray::new_with_cap(a.get_len() + b.get_len());
-        new_char_buf.push_array(a.get_char_buf());
-        new_char_buf.push_array(b.get_char_buf());
-        InternedString::new_raw(new_char_buf)
+    pub fn concat_strings(&mut self, lhs: InternedString, rhs: InternedString) -> InternedString {
+        let mut new_char_buf = DynArray::new_with_cap(lhs.get_len() + rhs.get_len());
+        new_char_buf.push_array(lhs.get_char_buf());
+        new_char_buf.push_array(rhs.get_char_buf());
+        self.create_string_raw(new_char_buf)
     }
 }
 

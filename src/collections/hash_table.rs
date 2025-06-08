@@ -26,7 +26,7 @@ pub struct HashTable<K: Hashable + PartialEq + Clone + std::fmt::Debug, V: std::
 impl<K: Hashable + PartialEq + Clone + std::fmt::Debug, V: Clone + std::fmt::Debug>
     HashTable<K, V>
 {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             data: DynArray::new_with_init(Bucket {
                 tombstone: false,

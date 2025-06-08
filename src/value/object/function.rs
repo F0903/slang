@@ -1,14 +1,61 @@
 use std::fmt::Display;
 
-use super::InternedString;
-use crate::{compiler::chunk::Chunk, dbg_println};
+use crate::{compiler::chunk::Chunk, dbg_println, value::object::InternedString};
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    pub arity: u8,
-    pub chunk: Chunk,
-    pub name: Option<InternedString>,
-    pub upvalue_count: u16,
+    arity: u8,
+    chunk: Chunk,
+    name: Option<InternedString>,
+    upvalue_count: u16,
+}
+
+impl Function {
+    pub const fn new(
+        arity: u8,
+        chunk: Chunk,
+        name: Option<InternedString>,
+        upvalue_count: u16,
+    ) -> Self {
+        Self {
+            arity,
+            chunk,
+            name,
+            upvalue_count,
+        }
+    }
+
+    pub const fn get_arity(&self) -> u8 {
+        self.arity
+    }
+
+    pub fn increment_arity(&mut self, increment: u8) {
+        self.arity += increment;
+    }
+
+    pub const fn get_chunk(&self) -> &Chunk {
+        &self.chunk
+    }
+
+    pub const fn get_chunk_mut(&mut self) -> &mut Chunk {
+        &mut self.chunk
+    }
+
+    pub fn set_name(&mut self, name: InternedString) {
+        self.name = Some(name);
+    }
+
+    pub fn get_name(&self) -> Option<InternedString> {
+        self.name
+    }
+
+    pub fn get_upvalue_count(&self) -> u16 {
+        self.upvalue_count
+    }
+
+    pub fn increment_upvalue_count(&mut self, increment: u16) {
+        self.upvalue_count += increment;
+    }
 }
 
 impl Drop for Function {
@@ -27,7 +74,7 @@ impl Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "fn {:?}[{}] ({} upvalues) = {:?}",
-            self.name
+            self.get_name()
                 .map(|x| x.as_str().to_owned())
                 .unwrap_or("<script>".to_owned()),
             self.arity,
