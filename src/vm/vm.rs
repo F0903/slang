@@ -1,5 +1,3 @@
-use std::ptr::null_mut;
-
 use super::{VmHeap, callframe::CallFrame, opcode::OpCode};
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
@@ -11,10 +9,10 @@ use crate::{
     error::{Error, Result},
     lexing::scanner::Scanner,
     memory::{Dealloc, DeallocOnDrop, HeapPtr},
-    unwrap_enum,
     value::{
         ObjectType,
         Value,
+        ValueType,
         object::{self, Closure, NativeFunction, Object, ObjectRef, StringInterner},
     },
 };
@@ -41,7 +39,7 @@ macro_rules! binary_op_try {
 macro_rules! binary_op_from_bool {
     ($stack: expr, $op: tt) => {{
         let val = binary_op_result!($stack, $op);
-        $stack.push(Value::Bool(val));
+        $stack.push(Value::bool(val));
     }};
 }
 
@@ -68,7 +66,7 @@ impl Vm {
 
     pub fn register_native_function(&mut self, function: NativeFunction) {
         let func_name = self.heap.strings.make_string(&function.name);
-        let func_value = Value::Object(Object::new_native_function(function, &mut self.heap));
+        let func_value = Value::object(Object::new_native_function(function, &mut self.heap));
         self.heap.globals.set(func_name, func_value);
     }
 
@@ -236,12 +234,17 @@ impl Vm {
     }
 
     fn call_value(&mut self, callee: Value, arg_count: u8) -> Result<()> {
-        match callee {
-            Value::Object(obj) => match obj.get_type() {
-                ObjectType::Closure => self.call(obj.as_closure(), arg_count),
-                ObjectType::NativeFunction => self.native_call(obj.as_native_function(), arg_count),
-                _ => Err(Error::Runtime(format!("'{}' not callable!", callee))),
-            },
+        match callee.get_type() {
+            ValueType::Object => {
+                let object = callee.as_object();
+                match object.get_type() {
+                    ObjectType::Closure => self.call(object.as_closure(), arg_count),
+                    ObjectType::NativeFunction => {
+                        self.native_call(object.as_native_function(), arg_count)
+                    }
+                    _ => Err(Error::Runtime(format!("'{}' not callable!", callee))),
+                }
+            }
             _ => Err(Error::Runtime(format!("'{}' not callable!", callee))),
         }
     }
@@ -311,7 +314,7 @@ impl Vm {
             Closure::new(function_obj.as_function(), DynArray::new()),
             &mut self.heap,
         );
-        self.stack.push(Value::Object(closure_obj));
+        self.stack.push(Value::object(closure_obj));
 
         let closure = closure_obj.as_closure();
         self.callframes.push(CallFrame::new(
@@ -359,15 +362,7 @@ impl Vm {
                     self.stack.push(value.clone());
                 }
                 OpCode::Closure => {
-                    let function = {
-                        let constant = self.read_constant_double();
-                        let obj_node = unwrap_enum!(
-                            constant,
-                            Value::Object,
-                            "Malformed bytecode. Expected constant in closure to contain Object!"
-                        );
-                        obj_node.as_function()
-                    };
+                    let function = self.read_constant_double().as_object().as_function();
                     dbg_println!("CLOSURE FUNCTION: {:?}", function);
 
                     // Create and fill upvalue array for Closure object based on
@@ -389,7 +384,7 @@ impl Vm {
 
                     let closure = Closure::new(function.clone(), closure_upvalues);
                     let closure_obj = Object::new_closure(closure, &mut self.heap);
-                    self.stack.push(Value::Object(closure_obj));
+                    self.stack.push(Value::object(closure_obj));
                 }
                 OpCode::Return => {
                     let result = self.stack.pop();
@@ -466,14 +461,7 @@ impl Vm {
                     self.stack.pop();
                 }
                 OpCode::SetGlobal => {
-                    let name_string = {
-                        let constant = self.read_constant_quad();
-                        unwrap_enum!(
-                            constant,
-                            Value::String,
-                            "Malformed bytecode. Expected constant in SetGlobal to contain String!"
-                        )
-                    };
+                    let name_string = self.read_constant_quad().as_string();
                     let value = self.stack.peek(0).clone();
                     dbg_println!("SETTING GLOBAL {} = {}", name_string, value);
                     if self.heap.globals.set(name_string, value) {
@@ -486,14 +474,7 @@ impl Vm {
                     }
                 }
                 OpCode::GetGlobal => {
-                    let name_string = {
-                        let constant = self.read_constant_quad();
-                        unwrap_enum!(
-                            constant,
-                            Value::String,
-                            "Malformed bytecode. Expected constant in SetGlobal to contain String!"
-                        )
-                    };
+                    let name_string = self.read_constant_quad().as_string();
                     let global = self.heap.globals.get(&name_string);
                     match global {
                         Some(global) => {
@@ -510,14 +491,7 @@ impl Vm {
                     }
                 }
                 OpCode::DefineGlobal => {
-                    let name_string = {
-                        let constant = self.read_constant_quad();
-                        unwrap_enum!(
-                            constant,
-                            Value::String,
-                            "Malformed bytecode. Expected constant in SetGlobal to contain String!"
-                        )
-                    };
+                    let name_string = self.read_constant_quad().as_string();
                     let global_value = self.stack.peek(0).clone();
                     dbg_println!("DEFINING GLOBAL: {} = ({})", name_string, global_value);
                     self.heap.globals.set(name_string, global_value);
@@ -528,9 +502,9 @@ impl Vm {
                     dbg_println!("PUSHING CONSTANT: {}", constant);
                     self.stack.push(constant);
                 }
-                OpCode::None => self.stack.push(Value::None),
-                OpCode::True => self.stack.push(Value::Bool(true)),
-                OpCode::False => self.stack.push(Value::Bool(false)),
+                OpCode::None => self.stack.push(Value::none()),
+                OpCode::True => self.stack.push(Value::bool(true)),
+                OpCode::False => self.stack.push(Value::bool(false)),
                 OpCode::Is => binary_op_from_bool!(self.stack, ==),
                 OpCode::IsNot => binary_op_from_bool!(self.stack, !=),
                 OpCode::Greater => binary_op_from_bool!(self.stack, >),
@@ -540,11 +514,14 @@ impl Vm {
                 OpCode::Add => {
                     let second = self.stack.pop();
                     let first = self.stack.pop();
-                    match first {
-                        Value::String(a) => match second {
-                            Value::String(b) => {
-                                let concat = self.heap.strings.concat_strings(b, a);
-                                let new_string = Value::String(concat);
+                    match first.get_type() {
+                        ValueType::String => match second.get_type() {
+                            ValueType::String => {
+                                let concat = self
+                                    .heap
+                                    .strings
+                                    .concat_strings(second.as_string(), first.as_string());
+                                let new_string = Value::string(concat);
                                 self.stack.push(new_string);
                                 continue;
                             }
@@ -564,7 +541,7 @@ impl Vm {
                 OpCode::Divide => binary_op_try!(self.stack, /),
                 OpCode::Not => {
                     let val = self.stack.pop();
-                    self.stack.push(Value::Bool(val.is_falsey()));
+                    self.stack.push(Value::bool(val.is_falsey()));
                 }
                 OpCode::Negate => {
                     let val = self.stack.top_mut_offset(0);

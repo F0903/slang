@@ -1,10 +1,6 @@
 // Each "disassembly function" returns how many byte long its instruction is
 
-use crate::{
-    compiler::chunk::Chunk,
-    value::{Object, Value},
-    vm::opcode::OpCode,
-};
+use crate::{compiler::chunk::Chunk, vm::opcode::OpCode};
 
 fn simple_instruction(instruction: &OpCode) -> usize {
     print!("{:?}", instruction);
@@ -54,10 +50,7 @@ fn closure_instruction(chunk: &Chunk, offset: usize) -> usize {
         constant
     );
 
-    let function = match constant {
-        Value::Object(obj) => obj.as_function(),
-        _ => unreachable!("Malformed bytecode"),
-    };
+    let function = constant.as_object().as_function();
     let mut upvalue_bytes = 0;
     for _ in 0..function.upvalue_count {
         let is_local = chunk.read_byte(offset + 2) != 0;

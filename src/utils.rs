@@ -15,21 +15,3 @@ macro_rules! dbg_println {
         }
     }};
 }
-
-#[macro_export]
-macro_rules! unwrap_enum {
-    // With custom error message
-    ($var:expr, $variant:path, $msg:expr) => {
-        match $var {
-            $variant(val) => val,
-            _ => unreachable!("{}", $msg),
-        }
-    };
-    // Without custom error message
-    ($var:expr, $variant:path) => {
-        match $var {
-            $variant(val) => val,
-            _ => unreachable!("Expected {} variant in unwrap_enum", stringify!($variant)),
-        }
-    };
-}

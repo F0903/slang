@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use crate::{
-    memory::HeapPtr,
+    dbg_println,
     value::{Value, object::ObjectRef},
 };
 
@@ -18,7 +18,7 @@ impl Upvalue {
     pub fn new(location: *mut Value) -> Self {
         Self {
             location,
-            closed: Value::None,
+            closed: Value::none(),
             next: None,
         }
     }
@@ -26,7 +26,7 @@ impl Upvalue {
     pub fn new_with_next(location: *mut Value, next: ObjectRef<Upvalue>) -> Self {
         Self {
             location,
-            closed: Value::None,
+            closed: Value::none(),
             next: Some(next),
         }
     }
@@ -81,5 +81,11 @@ impl Display for Upvalue {
 impl Debug for Upvalue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("upvalue -> {:?}", self.location))
+    }
+}
+
+impl Drop for Upvalue {
+    fn drop(&mut self) {
+        dbg_println!("DEBUG UPVALUE DROP")
     }
 }

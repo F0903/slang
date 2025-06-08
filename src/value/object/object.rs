@@ -65,6 +65,7 @@ macro_rules! object_as_fn {
 }
 
 impl Object {
+    #[inline]
     fn alloc(obj_type: ObjectType, inner: ObjectUnion, heap: &mut VmHeap) -> HeapPtr<Self> {
         dbg_println!("DEBUG OBJECT ALLOC: {:?}", obj_type);
 
@@ -77,10 +78,12 @@ impl Object {
         me
     }
 
+    #[inline]
     pub const fn get_next_object_ptr(&self) -> HeapPtr<Object> {
         self.next
     }
 
+    #[inline]
     pub const fn get_type(&self) -> ObjectType {
         self.obj_type
     }
@@ -122,25 +125,26 @@ impl Debug for Object {
         match self.obj_type {
             ObjectType::Function => {
                 let func = self.as_function();
-                f.write_fmt(format_args!("<Function> = {}", func.as_ref()))
+                f.write_fmt(format_args!("<Function> = {:?}", func.as_ref()))
             }
             ObjectType::NativeFunction => {
                 let func = self.as_native_function();
-                f.write_fmt(format_args!("<NativeFunction> = {}", func.as_ref()))
+                f.write_fmt(format_args!("<NativeFunction> = {:?}", func.as_ref()))
             }
             ObjectType::Closure => {
                 let clo = self.as_closure();
-                f.write_fmt(format_args!("<Closure> = {}", clo.as_ref()))
+                f.write_fmt(format_args!("<Closure> = {:?}", clo.as_ref()))
             }
             ObjectType::Upvalue => {
                 let up = self.as_upvalue();
-                f.write_fmt(format_args!("<Upvalue> = {}", up.as_ref()))
+                f.write_fmt(format_args!("<Upvalue> = {:?}", up.as_ref()))
             }
         }
     }
 }
 
 impl Dealloc for Object {
+    #[inline]
     fn dealloc(&mut self) {
         dbg_println!("DEBUG OBJECT DEALLOC: {:?}", self);
         match self.obj_type {
@@ -155,12 +159,14 @@ impl Dealloc for Object {
 }
 
 impl PartialEq for Object {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         (self as *const Self) == (other as *const Self)
     }
 }
 
 impl PartialOrd for Object {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         (self as *const Self).partial_cmp(&(other as *const Self))
     }

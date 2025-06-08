@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use crate::{
     collections::DynArray,
@@ -36,8 +36,16 @@ impl PartialEq for Closure {
 
 impl Display for Closure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("closure (")?;
-        Display::fmt(self.function.as_ref(), f)?;
-        f.write_str(")")
+        f.write_fmt(format_args!("closure (\n{}\n)", self.function.as_ref()))
+    }
+}
+
+impl Debug for Closure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "closure \n\tfn = (\n{:?}\n)\n\tupvalues = [{:?}]",
+            self.function.as_ref(),
+            self.upvalues
+        ))
     }
 }

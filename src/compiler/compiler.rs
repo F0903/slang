@@ -411,7 +411,7 @@ impl<'src> Compiler<'src> {
         };
 
         let string = self.heap.strings.make_string(name);
-        let value = Value::String(string);
+        let value = Value::string(string);
         self.emit_constant_with_op(value, line);
     }
 
@@ -496,7 +496,7 @@ impl<'src> Compiler<'src> {
                 .unwrap_unchecked();
             (number, token.line)
         };
-        self.emit_constant_with_op(Value::Number(num), token_line);
+        self.emit_constant_with_op(Value::number(num), token_line);
     }
 
     fn advance(&mut self) {
@@ -764,7 +764,7 @@ impl<'src> Compiler<'src> {
             }
             Some(enclosing_loop) => {
                 // Push false to the stack so the loop condition evaluates to false and exits.
-                self.emit_constant_with_op(Value::Bool(false), self.get_current_line());
+                self.emit_constant_with_op(Value::bool(false), self.get_current_line());
                 self.emit_backjump(enclosing_loop.exit_jump_index);
             }
         }
@@ -814,7 +814,7 @@ impl<'src> Compiler<'src> {
     fn identifier_constant(&mut self, name_token: &Token) -> u32 {
         let lexeme = name_token.lexeme.get_str(self.get_current_source());
         let string = self.heap.strings.make_string(lexeme);
-        let value = Value::String(string);
+        let value = Value::string(string);
         self.emit_constant(value)
     }
 
@@ -1123,7 +1123,7 @@ impl<'src> Compiler<'src> {
             ));
         }
 
-        let function_value = Value::Object(compiler_function_object);
+        let function_value = Value::object(compiler_function_object);
         let line = self.get_current_line();
         let constant_index = self.emit_constant(function_value);
         if constant_index > u16::MAX as u32 {
