@@ -1,12 +1,16 @@
 use std::fmt::Display;
 
-use crate::{compiler::chunk::Chunk, dbg_println, value::object::InternedString};
+use crate::{
+    compiler::chunk::Chunk,
+    dbg_println,
+    value::object::{ObjectRef, String},
+};
 
 #[derive(Debug, Clone)]
 pub struct Function {
     arity: u8,
     chunk: Chunk,
-    name: Option<InternedString>,
+    name: Option<ObjectRef<String>>,
     upvalue_count: u16,
 }
 
@@ -14,7 +18,7 @@ impl Function {
     pub const fn new(
         arity: u8,
         chunk: Chunk,
-        name: Option<InternedString>,
+        name: Option<ObjectRef<String>>,
         upvalue_count: u16,
     ) -> Self {
         Self {
@@ -41,11 +45,11 @@ impl Function {
         &mut self.chunk
     }
 
-    pub fn set_name(&mut self, name: InternedString) {
+    pub fn set_name(&mut self, name: ObjectRef<String>) {
         self.name = Some(name);
     }
 
-    pub fn get_name(&self) -> Option<InternedString> {
+    pub fn get_name(&self) -> Option<ObjectRef<String>> {
         self.name
     }
 

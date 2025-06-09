@@ -1,7 +1,7 @@
 use super::DynArray;
 use crate::{
     hashing::{HashMethod, Hashable},
-    value::object::InternedString,
+    value::object::{ObjectRef, String},
 };
 
 const TABLE_MAX_LOAD: f32 = 0.75;
@@ -180,16 +180,16 @@ impl<K: Hashable + PartialEq + Clone + std::fmt::Debug, V: Clone + std::fmt::Deb
         entry
     }
 
-    pub fn delete(&mut self, key: &InternedString) -> Option<Entry<K, V>> {
+    pub fn delete(&mut self, key: impl Hashable) -> Option<Entry<K, V>> {
         self.delete_by_hash(key.get_hash())
     }
 }
 
-impl<V: std::fmt::Debug + Clone> HashTable<InternedString, V> {
+impl<V: std::fmt::Debug + Clone> HashTable<ObjectRef<String>, V> {
     pub fn get_by_str<H: HashMethod>(
         &mut self,
         key_name: &str,
-    ) -> Option<&Entry<InternedString, V>> {
+    ) -> Option<&Entry<ObjectRef<String>, V>> {
         if self.data.get_count() == 0 {
             return None;
         }

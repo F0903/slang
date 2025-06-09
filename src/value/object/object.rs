@@ -6,13 +6,14 @@ use std::{
 
 use crate::{
     dbg_println,
-    memory::{Dealloc, HeapPtr},
-    value::object::{self, Closure, Function, NativeFunction, ObjectRef},
+    memory::HeapPtr,
+    value::object::{self, Closure, Function, String, NativeFunction, ObjectRef},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u8)]
 pub enum ObjectType {
+    String,
     Function,
     NativeFunction,
     Closure,
@@ -20,6 +21,7 @@ pub enum ObjectType {
 }
 
 pub(crate) union ObjectUnion {
+    pub(crate) string: ManuallyDrop<String>,
     pub(crate) function: ManuallyDrop<Function>,
     pub(crate) native_function: ManuallyDrop<NativeFunction>,
     pub(crate) closure: ManuallyDrop<Closure>,
@@ -103,6 +105,7 @@ impl Object {
         self.obj_type
     }
 
+    object_as_fn!(as_string, string, String, ObjectType::String);
     object_as_fn!(as_function, function, Function, ObjectType::Function);
     object_as_fn!(
         as_native_function,
@@ -117,6 +120,7 @@ impl Object {
 impl Display for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.obj_type {
+            ObjectType::String => Display::fmt(self.as_string().as_ref(), f),
             ObjectType::Function => Display::fmt(self.as_function().as_ref(), f),
             ObjectType::NativeFunction => Display::fmt(self.as_native_function().as_ref(), f),
             ObjectType::Closure => Display::fmt(self.as_closure().as_ref(), f),
@@ -128,6 +132,9 @@ impl Display for Object {
 impl Debug for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.obj_type {
+            ObjectType::String => {
+                f.write_fmt(format_args!("<String> = {:?}", self.as_string().as_ref()))
+            }
             ObjectType::Function => f.write_fmt(format_args!(
                 "<Function> = {:?}",
                 self.as_function().as_ref()
@@ -143,21 +150,6 @@ impl Debug for Object {
                 f.write_fmt(format_args!("<Upvalue> = {:?}", self.as_upvalue().as_ref()))
             }
         }
-    }
-}
-
-impl Dealloc for Object {
-    #[inline]
-    fn dealloc(&mut self) {
-        dbg_println!("DEBUG OBJECT DEALLOC: {:?}", self);
-        match self.obj_type {
-            ObjectType::Function => (),
-            ObjectType::NativeFunction => (),
-            ObjectType::Closure => (),
-            ObjectType::Upvalue => (),
-        }
-
-        // We don't deallocate the next node here, as we want the rest of the objects to remain.
     }
 }
 

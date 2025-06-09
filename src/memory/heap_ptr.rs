@@ -5,11 +5,11 @@ use std::{
 };
 
 use super::Dealloc;
-use crate::hashing::Hashable;
+use crate::{hashing::Hashable, memory::WeakRef};
 
 // A manual version of Box<T> that REQUIRES YOU TO MANUALLY CALL DEALLOC TO FREE MEMORY
 // This is useful for heap allocated objects that require multiple references to the same object and lowest overhead (thus not using Rc<RefCell<T>> or similar).
-pub struct HeapPtr<T> {
+pub struct HeapPtr<T: ?Sized> {
     mem: NonNull<T>,
     #[cfg(debug_assertions)]
     dealloced: bool,
@@ -58,6 +58,10 @@ where
 
     pub fn read(&self) -> T {
         unsafe { self.mem.read() }
+    }
+
+    pub fn weak_ref(&self) -> WeakRef<T> {
+        WeakRef::new(*self)
     }
 }
 

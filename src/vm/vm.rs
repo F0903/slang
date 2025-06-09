@@ -13,7 +13,7 @@ use crate::{
         ObjectType,
         Value,
         ValueType,
-        object::{self, Closure, InternedString, NativeFunction, ObjectRef},
+        object::{self, Closure, String, NativeFunction, ObjectRef},
     },
 };
 
@@ -46,7 +46,7 @@ macro_rules! binary_op_from_bool {
 #[derive(Debug)]
 pub struct Vm {
     stack: Stack<Value, STACK_MAX>,
-    globals: HashTable<InternedString, Value>,
+    globals: HashTable<String, Value>,
     callframes: Stack<CallFrame, MAX_CALLFRAMES>,
     open_upvalues: Option<ObjectRef<object::Upvalue>>,
 }

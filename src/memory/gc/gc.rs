@@ -5,9 +5,9 @@ use std::{
 };
 
 use crate::{
-    collections::{DynArray, Stack},
+    collections::DynArray,
     dbg_println,
-    memory::{Dealloc, HeapPtr},
+    memory::{Dealloc, GcRoots, HeapPtr, Markable},
     value::{
         Object,
         ObjectType,
@@ -17,9 +17,10 @@ use crate::{
             self,
             Closure,
             Function,
-            InternedString,
             NativeFunction,
+            ObjectRef,
             ObjectUnion,
+            String,
             StringInterner,
         },
     },
@@ -30,19 +31,15 @@ pub static GC: Gc = Gc::new();
 const GC_HEAP_GROW_FACTOR: usize = 2;
 
 macro_rules! object_ctor {
-    ($name:ident, $variant:ident, $ty:ty, $tag:expr) => {
+    ($name:ident, $variant:ident, $ty:ty, $tag:expr, $cast_method:ident) => {
         #[inline]
-        pub fn $name(&self, val: $ty) -> HeapPtr<Object> {
+        pub fn $name(&self, val: $ty) -> ObjectRef<$ty> {
             let inner = ObjectUnion {
                 $variant: ManuallyDrop::new(val),
             };
-            self.create_object($tag, inner)
+            self.create_object($tag, inner).$cast_method()
         }
     };
-}
-
-pub trait GcRoots {
-    fn mark_roots(&mut self, gc: &Gc);
 }
 
 struct GcState {
@@ -52,6 +49,7 @@ struct GcState {
     objects_head: Option<HeapPtr<Object>>,
     strings: StringInterner,
     roots: DynArray<*const dyn GcRoots>,
+    temp_roots: DynArray<*const dyn Markable>,
     gray_stack: DynArray<HeapPtr<Object>>,
 }
 
@@ -59,8 +57,6 @@ pub struct Gc {
     /// SAFETY: As of now, everything is still single-threaded, so we should be good going with an UnsafeCell for minimum overhead
     state: UnsafeCell<GcState>,
 }
-
-//TODO: implement a 'GcRoot' struct that wraps GC-managed types which automatically register with the GC and unregister on drop.
 
 impl Gc {
     pub const fn new() -> Self {
@@ -72,6 +68,7 @@ impl Gc {
                 objects_head: None,
                 strings: StringInterner::new(),
                 roots: DynArray::new(),
+                temp_roots: DynArray::new(),
                 gray_stack: DynArray::new(),
             }),
         }
@@ -81,6 +78,17 @@ impl Gc {
     pub fn should_collect(&self) -> bool {
         let state = unsafe { self.state.get().as_ref_unchecked() };
         state.bytes_allocated >= state.next_collect
+    }
+
+    /// SAFETY: Remember to unregister pointer manually!
+    pub fn register_temp_root(&self, root: *const dyn Markable) {
+        let state = unsafe { self.state.get().as_mut_unchecked() };
+        state.temp_roots.push(root);
+    }
+
+    pub fn unregister_temp_root(&self, root: *const dyn Markable) {
+        let state = unsafe { self.state.get().as_mut_unchecked() };
+        state.temp_roots.remove_value(root).ok();
     }
 
     /// SAFETY: Remember to unregister pointer manually!
@@ -97,9 +105,15 @@ impl Gc {
     pub fn mark_object(&self, mut object: HeapPtr<Object>) {
         let state = unsafe { self.state.get().as_mut_unchecked() };
 
-        // We don't add NativeFunctions, these obviously don't need GC.
-        // We also don't want to mark object that are already marked.
-        if object.get_type() == ObjectType::NativeFunction || object.is_marked() {
+        let object_type = object.get_type();
+        if object_type == ObjectType::NativeFunction || object.is_marked() {
+            // We don't add NativeFunctions, these obviously don't need GC.
+            // We also don't want to mark object that are already marked.
+            return;
+        } else if object_type == ObjectType::String {
+            // Strings are a special case that does not need tracing. So we just mark and return.
+            object.mark();
+            dbg_println!("\t MARKED STRING '{:?}'", object);
             return;
         }
 
@@ -111,12 +125,7 @@ impl Gc {
 
     pub fn mark_value(&self, value: Value) {
         let value_type = value.get_type();
-        if value_type == ValueType::String {
-            // If the value is a string, we just quickly mark it here.
-            let mut string = value.as_string();
-            string.mark();
-            dbg_println!("\t MARKED STRING '{}'", string);
-        } else if value_type != ValueType::Object {
+        if value_type != ValueType::Object {
             return;
         }
 
@@ -133,7 +142,7 @@ impl Gc {
             }
             ObjectType::Function => {
                 let func = object.as_function();
-                if let Some(func_name) = func.get_name().map(|x| Value::string(x)) {
+                if let Some(func_name) = func.get_name().map(|x| Value::object(x.upcast())) {
                     self.mark_value(func_name);
                 }
                 for constant in func.get_chunk().get_constants() {
@@ -147,8 +156,8 @@ impl Gc {
                     self.mark_object(upvalue.upcast());
                 }
             }
-            // Since we ignore NativeFunctions in self.mark_object() this path should not be reachable
-            ObjectType::NativeFunction => unreachable!(),
+            // Since we ignore NativeFunctions and Strings in self.mark_object() this path should not be reachable
+            ObjectType::NativeFunction | ObjectType::String => unreachable!(),
         }
     }
 
@@ -191,10 +200,11 @@ impl Gc {
 
         let mut strings_to_remove =
             DynArray::new_with_cap(state.strings.get_interned_strings_count() / 2);
-        for mut string in state.strings.get_interned_strings() {
-            if string.is_marked() {
+        for string in state.strings.get_interned_strings() {
+            let mut string_object = string.upcast();
+            if string_object.is_marked() {
                 // If the string is marked (reachable), we unmark an loop on.
-                string.unmark();
+                string_object.unmark();
                 continue;
             }
 
@@ -241,37 +251,55 @@ impl Gc {
         state.running = false;
     }
 
-    fn create_object(&self, obj_type: ObjectType, obj_data: ObjectUnion) -> HeapPtr<Object> {
+    pub(crate) fn create_object(
+        &self,
+        obj_type: ObjectType,
+        obj_data: ObjectUnion,
+    ) -> HeapPtr<Object> {
         let state = unsafe { &mut *self.state.get() };
         let new_head = Object::alloc(obj_type, obj_data, state.objects_head);
         state.objects_head = Some(new_head);
         new_head
     }
 
-    pub fn create_string(&self, str: &str) -> InternedString {
+    pub fn create_string(&self, str: &str) -> ObjectRef<String> {
         let state = unsafe { &mut *self.state.get() };
         let string = state.strings.make_string(str);
         string
     }
 
-    pub fn concat_strings(&self, lhs: InternedString, rhs: InternedString) -> InternedString {
+    pub fn concat_strings(&self, lhs: String, rhs: String) -> ObjectRef<String> {
         let state = unsafe { &mut *self.state.get() };
         state.strings.concat_strings(lhs, rhs)
     }
 
-    object_ctor!(create_function, function, Function, ObjectType::Function);
+    object_ctor!(
+        create_function,
+        function,
+        Function,
+        ObjectType::Function,
+        as_function
+    );
     object_ctor!(
         create_native_function,
         native_function,
         NativeFunction,
-        ObjectType::NativeFunction
+        ObjectType::NativeFunction,
+        as_native_function
     );
-    object_ctor!(create_closure, closure, Closure, ObjectType::Closure);
+    object_ctor!(
+        create_closure,
+        closure,
+        Closure,
+        ObjectType::Closure,
+        as_closure
+    );
     object_ctor!(
         create_upvalue,
         upvalue,
         object::Upvalue,
-        ObjectType::Upvalue
+        ObjectType::Upvalue,
+        as_upvalue
     );
 }
 

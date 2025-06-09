@@ -4,7 +4,11 @@ use std::{
 };
 
 use super::object::Object;
-use crate::{error::Error, memory::HeapPtr, value::object::InternedString};
+use crate::{
+    error::Error,
+    memory::{GC, HeapPtr},
+    value::ObjectType,
+};
 
 macro_rules! value_ctor {
     ($name:ident, $variant:ident, $ty:ty, $tag:expr) => {
@@ -39,7 +43,6 @@ macro_rules! value_as_fn {
 union ValueUnion {
     bool: bool,
     number: f64,
-    string: InternedString,
     object: HeapPtr<Object>,
 }
 
@@ -48,7 +51,6 @@ union ValueUnion {
 pub enum ValueType {
     Bool,
     Number,
-    String,
     Object,
     None,
 }
@@ -73,7 +75,6 @@ impl Value {
 
     value_ctor!(bool, bool, bool, ValueType::Bool);
     value_ctor!(number, number, f64, ValueType::Number);
-    value_ctor!(string, string, InternedString, ValueType::String);
     value_ctor!(object, object, HeapPtr<Object>, ValueType::Object);
 
     #[inline]
@@ -83,7 +84,6 @@ impl Value {
 
     value_as_fn!(as_bool, bool, bool, ValueType::Bool);
     value_as_fn!(as_number, number, f64, ValueType::Number);
-    value_as_fn!(as_string, string, InternedString, ValueType::String);
     value_as_fn!(as_object, object, HeapPtr<Object>, ValueType::Object);
 }
 
@@ -93,7 +93,6 @@ impl Value {
         match self.value_type {
             ValueType::Bool => !self.as_bool(),
             ValueType::Number => self.as_number() == 0.0,
-            ValueType::String => self.as_string().is_empty(),
             ValueType::Object => false, // Objects are always truthy
             ValueType::None => true,
         }
@@ -113,13 +112,36 @@ impl Add for Value {
                 )),
             },
             ValueType::Bool => Err(Error::Runtime("Cannot add boolean values!".to_owned())),
-            ValueType::String => match rhs.value_type {
-                ValueType::String => Ok(Value::string(self.as_string() + rhs.as_string())),
-                _ => Err(Error::Runtime(
-                    "Cannot add non-string types to strings!".to_owned(),
-                )),
-            },
-            ValueType::Object => Err(Error::Runtime("Cannot add Object types!".to_owned())),
+            ValueType::Object => {
+                let self_obj = self.as_object();
+                match self_obj.get_type() {
+                    ObjectType::String => {
+                        let self_string = self_obj.as_string();
+                        match rhs.value_type {
+                            ValueType::Object => {
+                                let rhs_object = rhs.as_object();
+                                match rhs_object.get_type() {
+                                    ObjectType::String => {
+                                        let rhs_string = rhs_object.as_string();
+                                        let new_string =
+                                            GC.concat_strings(*self_string, *rhs_string);
+                                        Ok(Value::object(new_string))
+                                    }
+                                    _ => Err(Error::Runtime(
+                                        "Cannot add non-string types to strings!".to_owned(),
+                                    )),
+                                }
+                            }
+                            _ => Err(Error::Runtime(
+                                "Cannot add non-object types to objects!".to_owned(),
+                            )),
+                        }
+                    }
+                    _ => Err(Error::Runtime(
+                        "Can only add string objects together!".to_owned(),
+                    )),
+                }
+            }
             ValueType::None => Err(Error::Runtime("Cannot add None types!".to_owned())),
         }
     }
@@ -138,7 +160,6 @@ impl Sub for Value {
                 )),
             },
             ValueType::Bool => Err(Error::Runtime("Cannot subtract boolean values!".to_owned())),
-            ValueType::String => Err(Error::Runtime("Cannot subtract String types!".to_owned())),
             ValueType::Object => Err(Error::Runtime("Cannot subtract Object types!".to_owned())),
             ValueType::None => Err(Error::Runtime("Cannot subtract None types!".to_owned())),
         }
@@ -158,7 +179,6 @@ impl Mul for Value {
                 )),
             },
             ValueType::Bool => Err(Error::Runtime("Cannot multiply boolean values!".to_owned())),
-            ValueType::String => Err(Error::Runtime("Cannot multiply String types!".to_owned())),
             ValueType::Object => Err(Error::Runtime("Cannot multiply Object types!".to_owned())),
             ValueType::None => Err(Error::Runtime("Cannot multiply None types!".to_owned())),
         }
@@ -178,7 +198,6 @@ impl Div for Value {
                 )),
             },
             ValueType::Bool => Err(Error::Runtime("Cannot divide boolean values!".to_owned())),
-            ValueType::String => Err(Error::Runtime("Cannot divide String types!".to_owned())),
             ValueType::Object => Err(Error::Runtime("Cannot divide Object types!".to_owned())),
             ValueType::None => Err(Error::Runtime("Cannot divide None types!".to_owned())),
         }
@@ -193,7 +212,6 @@ impl Neg for Value {
         match self.value_type {
             ValueType::Number => Ok(Self::number(-self.as_number())),
             ValueType::Bool => Err(Error::Runtime("Cannot negate boolean values!".to_owned())),
-            ValueType::String => Err(Error::Runtime("Cannot negate String types!".to_owned())),
             ValueType::Object => Err(Error::Runtime("Cannot negate Object types!".to_owned())),
             ValueType::None => Err(Error::Runtime("Cannot negate None types!".to_owned())),
         }
@@ -210,10 +228,6 @@ impl PartialEq for Value {
             },
             ValueType::Bool => match other.value_type {
                 ValueType::Bool => self.as_bool() == other.as_bool(),
-                _ => false,
-            },
-            ValueType::String => match other.value_type {
-                ValueType::String => self.as_string() == self.as_string(),
                 _ => false,
             },
             ValueType::Object => match other.value_type {
@@ -246,7 +260,6 @@ impl Display for Value {
         match self.value_type {
             ValueType::Number => Display::fmt(&self.as_number(), f),
             ValueType::Bool => Display::fmt(&self.as_bool(), f),
-            ValueType::String => Display::fmt(&self.as_string(), f),
             ValueType::Object => Display::fmt(&self.as_object(), f),
             ValueType::None => f.write_str("None"),
         }
@@ -258,7 +271,6 @@ impl Debug for Value {
         match self.value_type {
             ValueType::Number => f.write_fmt(format_args!("[Number] = {}", self.as_number())),
             ValueType::Bool => f.write_fmt(format_args!("[Bool] = {}", self.as_bool())),
-            ValueType::String => f.write_fmt(format_args!("[String] = \"{}\"", self.as_string())),
             ValueType::Object => Debug::fmt(&self.as_object(), f),
             ValueType::None => f.write_str("None"),
         }
