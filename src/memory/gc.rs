@@ -25,10 +25,9 @@ use crate::{
     },
 };
 
-const DEBUG_STRESS: bool = true;
-
 #[global_allocator]
 pub static GC: Gc = Gc::new();
+const GC_HEAP_GROW_FACTOR: usize = 2;
 
 macro_rules! object_ctor {
     ($name:ident, $variant:ident, $ty:ty, $tag:expr) => {
@@ -61,13 +60,15 @@ pub struct Gc {
     state: UnsafeCell<GcState>,
 }
 
+//TODO: implement a 'GcRoot' struct that wraps GC-managed types which automatically register with the GC and unregister on drop.
+
 impl Gc {
     pub const fn new() -> Self {
         Self {
             state: UnsafeCell::new(GcState {
                 running: false,
                 bytes_allocated: 0,
-                next_collect: 0,
+                next_collect: 1024 * 1024,
                 objects_head: None,
                 strings: StringInterner::new(),
                 roots: DynArray::new(),
@@ -76,19 +77,25 @@ impl Gc {
         }
     }
 
+    #[inline]
+    pub fn should_collect(&self) -> bool {
+        let state = unsafe { self.state.get().as_ref_unchecked() };
+        state.bytes_allocated >= state.next_collect
+    }
+
     /// SAFETY: Remember to unregister pointer manually!
     pub fn register_roots(&self, roots: *const dyn GcRoots) {
-        let state = unsafe { &mut *self.state.get() };
+        let state = unsafe { self.state.get().as_mut_unchecked() };
         state.roots.push(roots);
     }
 
     pub fn unregister_roots(&self, roots: *const dyn GcRoots) {
-        let state = unsafe { &mut *self.state.get() };
+        let state = unsafe { self.state.get().as_mut_unchecked() };
         state.roots.remove_value(roots).ok();
     }
 
     pub fn mark_object(&self, mut object: HeapPtr<Object>) {
-        let state = unsafe { &mut *self.state.get() };
+        let state = unsafe { self.state.get().as_mut_unchecked() };
 
         // We don't add NativeFunctions, these obviously don't need GC.
         // We also don't want to mark object that are already marked.
@@ -103,7 +110,13 @@ impl Gc {
     }
 
     pub fn mark_value(&self, value: Value) {
-        if value.get_type() != ValueType::Object {
+        let value_type = value.get_type();
+        if value_type == ValueType::String {
+            // If the value is a string, we just quickly mark it here.
+            let mut string = value.as_string();
+            string.mark();
+            dbg_println!("\t MARKED STRING '{}'", string);
+        } else if value_type != ValueType::Object {
             return;
         }
 
@@ -140,7 +153,7 @@ impl Gc {
     }
 
     fn trace_objects(&self) {
-        let state = unsafe { &mut *self.state.get() };
+        let state = unsafe { self.state.get().as_mut_unchecked() };
         while state.gray_stack.get_count() > 0 {
             let object = state.gray_stack.pop();
             self.blacken_object(object);
@@ -148,7 +161,7 @@ impl Gc {
     }
 
     fn sweep(&self) {
-        let state = unsafe { &mut *self.state.get() };
+        let state = unsafe { self.state.get().as_mut_unchecked() };
 
         let mut previous = None;
         let mut object = state.objects_head;
@@ -173,8 +186,30 @@ impl Gc {
         }
     }
 
+    fn sweep_unreachable_strings(&self) {
+        let state = unsafe { self.state.get().as_mut_unchecked() };
+
+        let mut strings_to_remove =
+            DynArray::new_with_cap(state.strings.get_interned_strings_count() / 2);
+        for mut string in state.strings.get_interned_strings() {
+            if string.is_marked() {
+                // If the string is marked (reachable), we unmark an loop on.
+                string.unmark();
+                continue;
+            }
+
+            strings_to_remove.push(string);
+        }
+
+        for string in strings_to_remove {
+            if let Err(err) = state.strings.remove(string) {
+                println!("\t GC ERROR: {}", err);
+            }
+        }
+    }
+
     pub fn collect(&self) {
-        let state = unsafe { &mut *self.state.get() };
+        let state = unsafe { self.state.get().as_mut_unchecked() };
         if state.running {
             // If we are already running we just return.
             // We can land in this path if the GC itself allocates enough memory,
@@ -183,7 +218,9 @@ impl Gc {
         }
 
         state.running = true;
+        let start_alloc = state.bytes_allocated;
         dbg_println!("\n===== GC BEGIN =====");
+        dbg_println!("\t GC CURRENT ALLOCATION: {}", start_alloc);
 
         for roots in (&state.roots).iter() {
             unsafe {
@@ -192,7 +229,14 @@ impl Gc {
             }
         }
         self.trace_objects();
+        self.sweep_unreachable_strings();
+        self.sweep();
+        let end_alloc = state.bytes_allocated;
+        state.next_collect = state.bytes_allocated * GC_HEAP_GROW_FACTOR;
 
+        dbg_println!("\t GC CURRENT ALLOCATION: {}", end_alloc);
+        dbg_println!("\t GC RECLAIMED {} BYTES", start_alloc - end_alloc);
+        dbg_println!("\t GC NEXT RUN: {}", state.next_collect);
         dbg_println!("\n===== GC END   =====");
         state.running = false;
     }
@@ -233,8 +277,13 @@ impl Gc {
 
 unsafe impl GlobalAlloc for Gc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        #[cfg(feature = "debug_stress_gc")]
         if DEBUG_STRESS {
-            GC.collect();
+            self.collect();
+        }
+        #[cfg(not(feature = "debug_stress_gc"))]
+        if self.should_collect() {
+            self.collect();
         }
 
         let state = unsafe { &mut *self.state.get() };
@@ -254,8 +303,13 @@ unsafe impl GlobalAlloc for Gc {
         if new_size > old_size {
             state.bytes_allocated += new_size - old_size;
 
+            #[cfg(feature = "debug_stress_gc")]
             if DEBUG_STRESS {
-                GC.collect();
+                self.collect();
+            }
+            #[cfg(not(feature = "debug_stress_gc"))]
+            if self.should_collect() {
+                self.collect();
             }
         } else {
             state.bytes_allocated -= old_size - new_size;

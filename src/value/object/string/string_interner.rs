@@ -1,3 +1,5 @@
+use std::iter;
+
 use crate::{
     collections::{DynArray, HashTable},
     hashing::GlobalHashMethod,
@@ -26,6 +28,24 @@ impl StringInterner {
         let string = InternedString::new_raw(chars);
         self.strings.set(string, ());
         string
+    }
+
+    pub fn get_interned_strings_count(&self) -> usize {
+        self.strings.count()
+    }
+
+    pub(crate) fn get_interned_strings(&self) -> impl Iterator<Item = InternedString> {
+        self.strings.entries().map(|x| x.key)
+    }
+
+    pub fn remove(&mut self, string: InternedString) -> Result<(), &'static str> {
+        let mut string = self
+            .strings
+            .delete(&string)
+            .map(|x| x.key)
+            .ok_or("Could not find string to remove!")?;
+        string.dealloc();
+        Ok(())
     }
 
     pub fn make_string(&mut self, str: &str) -> InternedString {

@@ -1168,8 +1168,6 @@ impl Dealloc for Compiler<'_> {
     fn dealloc(&mut self) {
         dbg_println!("DEBUG COMPILER DEALLOC: {:?}", self);
         self.scanner.dealloc();
-
-        // We do not dealloc the heap, as it is managed by the VM.
     }
 }
 
