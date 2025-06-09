@@ -8,10 +8,10 @@ use crate::{
         scanner::Scanner,
         token::{Precedence, Token, TokenType},
     },
-    memory::{Dealloc, GC, HeapPtr},
+    memory::{Dealloc, GC, Gc, GcRoots, HeapPtr},
     value::{
         Value,
-        object::{Function, Object},
+        object::{Function, Object, ObjectRef},
     },
     vm::opcode::OpCode,
 };
@@ -67,7 +67,7 @@ impl JumpIndecies {
 pub struct Compiler<'src> {
     current_source: &'src [u8],
     scanner: HeapPtr<Scanner<'src>>,
-    current_function: HeapPtr<Object>,
+    current_function: ObjectRef<Function>,
     current_function_type: FunctionType,
     locals: Stack<Local, LOCAL_SLOTS>,
     upvalues: Stack<Upvalue, UPVALUES_MAX>,
@@ -85,7 +85,9 @@ impl<'src> Compiler<'src> {
         let mut locals = Stack::new();
         locals.push(Local::dummy()); // Reserve first slot as index 0 is used for the "main" function.
 
-        let current_function = GC.create_function(Function::new(0, Chunk::new(), None, 0));
+        let current_function = GC
+            .create_function(Function::new(0, Chunk::new(), None, 0))
+            .as_function();
 
         Self {
             current_source: &[],
@@ -147,7 +149,9 @@ impl<'src> Compiler<'src> {
     }
 
     fn fork(&mut self, function_type: FunctionType) -> Self {
-        let current_function = GC.create_function(Function::new(0, Chunk::new(), None, 0));
+        let current_function = GC
+            .create_function(Function::new(0, Chunk::new(), None, 0))
+            .as_function();
         Self {
             current_source: self.current_source,
             scanner: self.scanner.clone(),
@@ -166,12 +170,12 @@ impl<'src> Compiler<'src> {
 
     fn get_current_chunk(&self) -> &Chunk {
         // This is extremely ugly, but Rust thinks that I'm borrowing a value owned by this function, which is not true
-        unsafe { &*(self.current_function.as_function().get_chunk() as *const Chunk) }
+        unsafe { &*(self.current_function.get_chunk() as *const Chunk) }
     }
 
     fn get_current_chunk_mut(&mut self) -> &mut Chunk {
         // This is extremely ugly, but Rust thinks that I'm borrowing a value owned by this function, which is not true
-        unsafe { &mut *(self.current_function.as_function().get_chunk_mut() as *mut Chunk) }
+        unsafe { &mut *(self.current_function.get_chunk_mut() as *mut Chunk) }
     }
 
     fn get_rule(&self, token: TokenType) -> &ParseRule<'src> {
@@ -817,8 +821,7 @@ impl<'src> Compiler<'src> {
     }
 
     fn add_upvalue(&mut self, index: u16, is_local: bool) -> u16 {
-        let mut current_function = self.current_function.as_function();
-        let last_upvalue_count = current_function.get_upvalue_count();
+        let last_upvalue_count = self.current_function.get_upvalue_count();
 
         // Check if we already have an upvalue for the variable
         for (i, upvalue) in self.upvalues.bottom_iter().enumerate() {
@@ -836,7 +839,7 @@ impl<'src> Compiler<'src> {
 
         self.upvalues
             .set_at(last_upvalue_count as usize, Upvalue { is_local, index });
-        current_function.increment_upvalue_count(1);
+        self.current_function.increment_upvalue_count(1);
         last_upvalue_count
     }
 
@@ -1032,7 +1035,6 @@ impl<'src> Compiler<'src> {
 
     fn function(&mut self, function_type: FunctionType) {
         let mut compiler = self.fork(function_type);
-        let mut compiler_function = compiler.current_function.as_function();
 
         if function_type != FunctionType::Script {
             // Since we (the current compiler 'self') hit the fn token, the previous token is the function name.
@@ -1043,7 +1045,7 @@ impl<'src> Compiler<'src> {
                 .expect("Expected function name token.");
             let func_name_lexeme = previous_token.lexeme.get_str(self.current_source);
             let func_name = GC.create_string(func_name_lexeme);
-            compiler_function.set_name(func_name);
+            compiler.current_function.set_name(func_name);
         }
 
         compiler.begin_scope();
@@ -1051,7 +1053,7 @@ impl<'src> Compiler<'src> {
         if !compiler.is_current_token(TokenType::RightParen) {
             // Loop through parameters seperated by commas
             loop {
-                if compiler_function.get_arity() >= MAX_FUNCTION_ARITY {
+                if compiler.current_function.get_arity() >= MAX_FUNCTION_ARITY {
                     compiler.error(&format!(
                         "Function cannot have more than {} parameters.",
                         MAX_FUNCTION_ARITY
@@ -1059,7 +1061,7 @@ impl<'src> Compiler<'src> {
                 }
                 let constant = compiler.parse_variable("Expected parameter name.");
                 compiler.define_variable(constant);
-                compiler_function.increment_arity(1);
+                compiler.current_function.increment_arity(1);
                 if !compiler.match_and_advance(TokenType::Comma) {
                     break;
                 }
@@ -1142,7 +1144,7 @@ impl<'src> Compiler<'src> {
     fn pack_function(&mut self) -> HeapPtr<Object> {
         // We always emit an empty return implicitly.
         self.emit_empty_return();
-        self.current_function
+        self.current_function.upcast()
     }
 
     pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<HeapPtr<Object>> {
@@ -1165,11 +1167,21 @@ impl<'src> Compiler<'src> {
 impl Dealloc for Compiler<'_> {
     fn dealloc(&mut self) {
         dbg_println!("DEBUG COMPILER DEALLOC: {:?}", self);
-        if !self.scanner.is_null() {
-            self.scanner.dealloc();
-            self.scanner = HeapPtr::null()
-        }
+        self.scanner.dealloc();
 
         // We do not dealloc the heap, as it is managed by the VM.
+    }
+}
+
+impl GcRoots for Compiler<'_> {
+    fn mark_roots(&mut self, gc: &Gc) {
+        // MARK COMPILER FUNCTIONS
+        let mut compiler = Some(self as *mut _);
+        while let Some(comp) = compiler {
+            let comp: &mut Compiler<'_> = unsafe { &mut *comp };
+            let func_object = comp.current_function.upcast();
+            gc.mark_object(func_object);
+            compiler = comp.enclosing_compiler;
+        }
     }
 }

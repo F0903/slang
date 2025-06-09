@@ -119,6 +119,10 @@ impl Chunk {
         self.constants.get(index as usize)
     }
 
+    pub fn get_constants(&self) -> &[Value] {
+        self.constants.as_slice()
+    }
+
     pub fn get_line_number(&self, index: usize) -> u32 {
         self.line_numbers_map.copy_read(index)
     }

@@ -228,6 +228,63 @@ impl<T: std::fmt::Debug> DynArray<T> {
             }
         }
     }
+
+    pub fn remove_at(&mut self, index: usize) -> T {
+        debug_assert!(
+            index < self.count,
+            "Index out of bounds: {} (count: {})",
+            index,
+            self.count
+        );
+        unsafe {
+            let val_pointer = self.data.add(index);
+            let val = val_pointer.read();
+            val_pointer
+                .add(1)
+                .copy_to(val_pointer, self.count - (index + 1));
+            self.count -= 1;
+            val
+        }
+    }
+
+    pub fn pop(&mut self) -> T {
+        debug_assert!(self.count > 0, "Cannot pop from an empty array!");
+        self.remove_at(self.get_count() - 1)
+    }
+
+    pub fn remove_predicate(&mut self, predicate: impl Fn(&T) -> bool) -> Result<T, &'static str> {
+        let mut index_to_remove = None;
+        for (i, value) in self.iter().enumerate() {
+            if predicate(value) {
+                index_to_remove = Some(i);
+                break;
+            }
+        }
+
+        if let Some(index) = index_to_remove {
+            Ok(self.remove_at(index))
+        } else {
+            Err("No element found!")
+        }
+    }
+}
+
+impl<T: std::fmt::Debug + PartialEq> DynArray<T> {
+    pub fn remove_value(&mut self, val: T) -> Result<T, &'static str> {
+        let mut index_to_remove = None;
+        for (i, value) in self.iter().enumerate() {
+            if val == *value {
+                index_to_remove = Some(i);
+                break;
+            }
+        }
+
+        if let Some(index) = index_to_remove {
+            Ok(self.remove_at(index))
+        } else {
+            Err("No element found!")
+        }
+    }
 }
 
 impl<T: std::fmt::Debug + Clone> DynArray<T> {

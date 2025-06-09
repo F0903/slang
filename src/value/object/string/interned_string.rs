@@ -58,10 +58,7 @@ impl InternedString {
     // We rely on manual dealloc instead of Drop, as these are interned, thereby all potentially sharing memory.
     pub(super) fn dealloc(&mut self) {
         dbg_println!("DEBUG RAWSTRING DEALLOC: {}", self.as_str());
-        if !self.char_buf.is_null() {
-            self.char_buf.dealloc();
-            self.char_buf = HeapPtr::null();
-        }
+        self.char_buf.dealloc();
     }
 }
 

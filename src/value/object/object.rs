@@ -1,6 +1,7 @@
 use std::{
     fmt::{Debug, Display},
     mem::ManuallyDrop,
+    ptr::NonNull,
 };
 
 use crate::{
@@ -28,7 +29,8 @@ pub(crate) union ObjectUnion {
 pub struct Object {
     obj_type: ObjectType,
     casts: ObjectUnion,
-    next: HeapPtr<Object>,
+    next: Option<HeapPtr<Object>>,
+    marked: bool,
 }
 
 macro_rules! object_as_fn {
@@ -46,27 +48,54 @@ macro_rules! object_as_fn {
                 )
             );
             let ptr = unsafe { &self.casts.$variant };
-            ObjectRef::new(ptr as *const ManuallyDrop<$ty> as *const $ty)
+            ObjectRef::new(ptr as *const ManuallyDrop<$ty> as *const $ty, unsafe {
+                NonNull::new_unchecked(self as *const _ as *mut _)
+            })
         }
     };
 }
 
 impl Object {
     #[inline]
-    pub fn alloc(obj_type: ObjectType, inner: ObjectUnion, next: HeapPtr<Object>) -> HeapPtr<Self> {
+    pub(crate) fn alloc(
+        obj_type: ObjectType,
+        inner: ObjectUnion,
+        next: Option<HeapPtr<Object>>,
+    ) -> HeapPtr<Self> {
         dbg_println!("DEBUG OBJECT ALLOC: {:?}", obj_type);
 
         let me = HeapPtr::alloc(Self {
             obj_type,
             casts: inner,
             next,
+            marked: false,
         });
         me
     }
 
     #[inline]
-    pub const fn get_next_object_ptr(&self) -> HeapPtr<Object> {
+    pub(crate) const fn is_marked(&self) -> bool {
+        self.marked
+    }
+
+    #[inline]
+    pub(crate) const fn mark(&mut self) {
+        self.marked = true;
+    }
+
+    #[inline]
+    pub(crate) const fn unmark(&mut self) {
+        self.marked = false;
+    }
+
+    #[inline]
+    pub(crate) const fn get_next_object(&self) -> Option<HeapPtr<Object>> {
         self.next
+    }
+
+    #[inline]
+    pub(crate) const fn set_next_object(&mut self, next: Option<HeapPtr<Object>>) {
+        self.next = next;
     }
 
     #[inline]

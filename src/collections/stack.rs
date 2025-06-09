@@ -1,6 +1,6 @@
 use std::{fmt::Debug, mem::MaybeUninit};
 
-use super::{stack_iter::StackIter, stack_rev_iter::StackRevIter};
+use super::{stack_bottom_iter::StackBottomIter, stack_top_iter::StackTopIter};
 use crate::collections::UnsafePtrIter;
 
 pub const DEFAULT_STACK_SIZE: usize = 1024;
@@ -102,13 +102,13 @@ impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
     }
 
     /// Returns an iterator that iterates from the bottom of the stack to the top
-    pub const fn bottom_iter<'a>(&'a self) -> StackRevIter<'a, T, STACK_SIZE> {
-        StackRevIter::new(self)
+    pub const fn bottom_iter<'a>(&'a self) -> StackBottomIter<'a, T, STACK_SIZE> {
+        StackBottomIter::new(self)
     }
 
     /// Returns an iterator that iterates from the top of the stack to the bottom
-    pub const fn top_iter<'a>(&'a self) -> StackIter<'a, T, STACK_SIZE> {
-        StackIter::new(self)
+    pub const fn top_iter<'a>(&'a self) -> StackTopIter<'a, T, STACK_SIZE> {
+        StackTopIter::new(self)
     }
 
     pub unsafe fn unsafe_bottom_iter(&self) -> UnsafePtrIter<T> {

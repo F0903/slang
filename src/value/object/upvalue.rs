@@ -55,8 +55,8 @@ impl Upvalue {
         }
     }
 
-    pub const fn get_ref(&self) -> &Value {
-        unsafe { self.location.as_ref_unchecked() }
+    pub const fn get_value(&self) -> Value {
+        unsafe { self.location.read() }
     }
 }
 

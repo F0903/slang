@@ -2,8 +2,8 @@ mod dynarray;
 mod hash_table;
 mod owned_iter;
 mod stack;
-mod stack_iter;
-mod stack_rev_iter;
+mod stack_bottom_iter;
+mod stack_top_iter;
 mod unsafe_ptr_iter;
 
 pub use dynarray::DynArray;

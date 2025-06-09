@@ -30,6 +30,10 @@ impl Closure {
     pub fn get_upvalue(&self, index: usize) -> ObjectRef<object::Upvalue> {
         self.upvalues.copy_read(index as usize)
     }
+
+    pub fn get_upvalues(&self) -> &[ObjectRef<object::Upvalue>] {
+        self.upvalues.as_slice()
+    }
 }
 
 impl PartialEq for Closure {

@@ -1,17 +1,25 @@
 use std::{
     fmt::Display,
     ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
+
+use crate::{memory::HeapPtr, value::Object};
 
 #[derive(Debug)]
 pub struct ObjectRef<T> {
-    ///SAFETY: This is guaranteed to live until GC'd, at which point there is no references to the object (hence it was GC'd)
+    ///SAFETY: These is guaranteed to live until GC'd, at which point there is no references to the object (hence it was GC'd)
     ptr: *const T,
+    parent: NonNull<Object>,
 }
 
 impl<T> ObjectRef<T> {
-    pub(super) fn new(ptr: *const T) -> Self {
-        Self { ptr }
+    pub(super) fn new(ptr: *const T, parent: NonNull<Object>) -> Self {
+        Self { ptr, parent }
+    }
+
+    pub const fn upcast(&self) -> HeapPtr<Object> {
+        HeapPtr::from_raw(self.parent)
     }
 
     pub const fn as_ref(&self) -> &T {
@@ -38,7 +46,10 @@ impl<T> ObjectRef<T> {
 
 impl<T> Clone for ObjectRef<T> {
     fn clone(&self) -> Self {
-        Self { ptr: self.ptr }
+        Self {
+            ptr: self.ptr,
+            parent: self.parent,
+        }
     }
 }
 

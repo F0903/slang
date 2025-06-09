@@ -8,7 +8,7 @@ use crate::{
     debug::disassemble_chunk,
     error::{Error, Result},
     lexing::scanner::Scanner,
-    memory::{DeallocOnDrop, GC, HeapPtr},
+    memory::{DeallocOnDrop, GC, Gc, GcRoots, HeapPtr},
     value::{
         ObjectType,
         Value,
@@ -43,6 +43,7 @@ macro_rules! binary_op_from_bool {
     }};
 }
 
+#[derive(Debug)]
 pub struct Vm {
     stack: Stack<Value, STACK_MAX>,
     globals: HashTable<InternedString, Value>,
@@ -51,13 +52,15 @@ pub struct Vm {
 }
 
 impl Vm {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> HeapPtr<Self> {
+        let me = HeapPtr::alloc(Self {
             stack: Stack::new(),
             globals: HashTable::new(),
             callframes: Stack::new(),
             open_upvalues: None,
-        }
+        });
+        GC.register_roots(&*me);
+        me
     }
 
     pub fn register_native_function(&mut self, function: NativeFunction) {
@@ -348,7 +351,7 @@ impl Vm {
                     let frame = self.callframes.top_ref();
                     dbg_println!("GET UPVALUE FRAME: {:?}", frame);
                     let upvalue = frame.get_closure().get_upvalue(slot as usize);
-                    let value = upvalue.get_ref();
+                    let value = upvalue.get_value();
                     dbg_println!("GET UPVALUE = {:?}", value);
                     self.stack.push(value.clone());
                 }
@@ -534,5 +537,35 @@ impl Vm {
 impl Drop for Vm {
     fn drop(&mut self) {
         dbg_println!("DEBUG DROP VM");
+        GC.unregister_roots(self);
+    }
+}
+
+impl GcRoots for Vm {
+    fn mark_roots(&mut self, gc: &Gc) {
+        // MARK STACK
+        for value in self.stack.bottom_iter().cloned() {
+            gc.mark_value(value);
+        }
+
+        // MARK GLOBALS
+        for global in self.globals.entries().map(|x| x.value) {
+            gc.mark_value(global);
+        }
+
+        // MARK CALLFRAME CLOSURES
+        for callframe in self.callframes.bottom_iter() {
+            let object = callframe.get_closure().upcast();
+            gc.mark_object(object);
+        }
+
+        // MARK OPEN UPVALUES
+        if let Some(upvalue) = self.open_upvalues {
+            let mut upvalue = Some(upvalue);
+            while let Some(up) = upvalue {
+                gc.mark_object(up.upcast());
+                upvalue = up.get_next();
+            }
+        }
     }
 }
