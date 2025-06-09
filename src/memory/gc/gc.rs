@@ -268,7 +268,11 @@ impl Gc {
         string
     }
 
-    pub fn concat_strings(&self, lhs: String, rhs: String) -> ObjectRef<String> {
+    pub fn concat_strings(
+        &self,
+        lhs: ObjectRef<String>,
+        rhs: ObjectRef<String>,
+    ) -> ObjectRef<String> {
         let state = unsafe { &mut *self.state.get() };
         state.strings.concat_strings(lhs, rhs)
     }

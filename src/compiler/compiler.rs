@@ -85,6 +85,8 @@ impl<'src> Compiler<'src> {
         let mut locals = Stack::new();
         locals.push(Local::dummy()); // Reserve first slot as index 0 is used for the "main" function.
 
+        //TODO: implement GcRoots for Compiler (or something similar)
+        //TODO: make sure GC works
         let current_function = GC
             .create_function(Function::new(0, Chunk::new(), None, 0))
             .as_function();

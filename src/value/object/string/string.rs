@@ -1,10 +1,8 @@
-use std::{fmt::Display, ops::Add};
+use std::fmt::Display;
 
 use crate::{
     collections::DynArray,
-    dbg_println,
     hashing::{GlobalHashMethod, HashMethod, Hashable},
-    memory::{Dealloc, GC, HeapPtr},
     value::object::ObjectRef,
 };
 
@@ -57,14 +55,6 @@ impl String {
     #[inline]
     pub const fn get_hash(&self) -> u32 {
         self.hash
-    }
-}
-
-impl Add for String {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        GC.concat_strings(self, rhs)
     }
 }
 

@@ -113,6 +113,8 @@ impl Add for Value {
             },
             ValueType::Bool => Err(Error::Runtime("Cannot add boolean values!".to_owned())),
             ValueType::Object => {
+                // This might seem a little clunky compared to delegating it to an Add impl on Object
+                // But doing it here makes it easier to add things like adding numbers to string later and such.
                 let self_obj = self.as_object();
                 match self_obj.get_type() {
                     ObjectType::String => {
@@ -123,9 +125,8 @@ impl Add for Value {
                                 match rhs_object.get_type() {
                                     ObjectType::String => {
                                         let rhs_string = rhs_object.as_string();
-                                        let new_string =
-                                            GC.concat_strings(*self_string, *rhs_string);
-                                        Ok(Value::object(new_string))
+                                        let new_string = GC.concat_strings(self_string, rhs_string);
+                                        Ok(Value::object(new_string.upcast()))
                                     }
                                     _ => Err(Error::Runtime(
                                         "Cannot add non-string types to strings!".to_owned(),

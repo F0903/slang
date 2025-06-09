@@ -75,7 +75,11 @@ impl StringInterner {
             .unwrap_or_else(|| self.create_string(str))
     }
 
-    pub fn concat_strings(&mut self, lhs: String, rhs: String) -> ObjectRef<String> {
+    pub fn concat_strings(
+        &mut self,
+        lhs: ObjectRef<String>,
+        rhs: ObjectRef<String>,
+    ) -> ObjectRef<String> {
         let mut new_char_buf = DynArray::new_with_cap(lhs.get_len() + rhs.get_len());
         new_char_buf.push_array(lhs.get_char_buf());
         new_char_buf.push_array(rhs.get_char_buf());
