@@ -20,6 +20,11 @@ where
         GC.register_temp_root(value.get_raw().as_ptr());
         Self { value }
     }
+
+    /// Takes the inner pointer, unrooting and returning it.
+    pub fn take(self) -> GcPtr<T> {
+        self.value
+    }
 }
 
 impl<T> Drop for GcScopedRoot<T>

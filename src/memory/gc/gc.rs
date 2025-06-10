@@ -8,7 +8,7 @@ use std::{
 use crate::{
     collections::DynArray,
     dbg_println,
-    memory::{GcPtr, GcRoots, Markable},
+    memory::{GcPtr, GcRoots, Markable, gc::GcScopedRoot},
     value::{
         Object,
         ObjectType,
@@ -261,11 +261,11 @@ impl Gc {
         &self,
         obj_type: ObjectType,
         obj_data: ObjectUnion,
-    ) -> GcPtr<Object> {
+    ) -> GcScopedRoot<Object> {
         let state = unsafe { &mut *self.state.get() };
         let new_head = Object::alloc(obj_type, obj_data, state.objects_head);
         state.objects_head = Some(new_head);
-        new_head
+        GcScopedRoot::from_ptr(new_head)
     }
 
     pub fn create_string(&self, str: &str) -> ObjectRef<InternedString> {

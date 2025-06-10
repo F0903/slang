@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     dbg_println,
-    memory::GcPtr,
+    memory::{GcPtr, Markable},
     value::object::{self, Closure, Function, InternedString, NativeFunction, ObjectRef},
 };
 
@@ -76,21 +76,6 @@ impl Object {
     }
 
     #[inline]
-    pub(crate) const fn is_marked(&self) -> bool {
-        self.marked
-    }
-
-    #[inline]
-    pub(crate) const fn mark(&mut self) {
-        self.marked = true;
-    }
-
-    #[inline]
-    pub(crate) const fn unmark(&mut self) {
-        self.marked = false;
-    }
-
-    #[inline]
     pub(crate) const fn get_next_object(&self) -> Option<GcPtr<Object>> {
         self.next
     }
@@ -115,6 +100,23 @@ impl Object {
     );
     object_as_fn!(as_closure, closure, Closure, ObjectType::Closure);
     object_as_fn!(as_upvalue, upvalue, object::Upvalue, ObjectType::Upvalue);
+}
+
+impl Markable for Object {
+    #[inline]
+    fn is_marked(&self) -> bool {
+        self.marked
+    }
+
+    #[inline]
+    fn mark(&mut self) {
+        self.marked = true;
+    }
+
+    #[inline]
+    fn unmark(&mut self) {
+        self.marked = false;
+    }
 }
 
 impl Display for Object {

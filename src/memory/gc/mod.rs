@@ -9,4 +9,5 @@ pub use drop_dealloc::DropDealloc;
 pub use gc::{GC, Gc};
 pub use gc_ptr::GcPtr;
 pub(crate) use gc_roots::GcRoots;
+pub use gc_scoped_root::GcScopedRoot;
 pub(crate) use markable::Markable;
