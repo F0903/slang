@@ -1,5 +1,6 @@
 use super::DynArray;
 use crate::{
+    dbg_println,
     hashing::{HashMethod, Hashable},
     value::object::{InternedString, ObjectRef},
 };
@@ -18,13 +19,18 @@ pub struct Bucket<K, V> {
     pub entry: Option<Entry<K, V>>,
 }
 
-pub struct HashTable<K: Hashable + PartialEq + Clone + std::fmt::Debug, V: std::fmt::Debug + Clone>
+pub struct HashTable<K, V>
+where
+    K: Hashable + PartialEq + Clone + std::fmt::Debug,
+    V: std::fmt::Debug + Clone,
 {
     data: DynArray<Bucket<K, V>>,
 }
 
-impl<K: Hashable + PartialEq + Clone + std::fmt::Debug, V: Clone + std::fmt::Debug>
-    HashTable<K, V>
+impl<K, V> HashTable<K, V>
+where
+    K: Hashable + PartialEq + Clone + std::fmt::Debug,
+    V: Clone + std::fmt::Debug,
 {
     pub const fn new() -> Self {
         Self {
@@ -185,7 +191,10 @@ impl<K: Hashable + PartialEq + Clone + std::fmt::Debug, V: Clone + std::fmt::Deb
     }
 }
 
-impl<V: std::fmt::Debug + Clone> HashTable<ObjectRef<InternedString>, V> {
+impl<V> HashTable<ObjectRef<InternedString>, V>
+where
+    V: std::fmt::Debug + Clone,
+{
     pub fn get_by_str<H: HashMethod>(
         &mut self,
         key_name: &str,
@@ -204,8 +213,10 @@ impl<V: std::fmt::Debug + Clone> HashTable<ObjectRef<InternedString>, V> {
     }
 }
 
-impl<K: Hashable + PartialEq + Clone + std::fmt::Debug, V: Clone + std::fmt::Debug> std::fmt::Debug
-    for HashTable<K, V>
+impl<K, V> std::fmt::Debug for HashTable<K, V>
+where
+    K: Hashable + PartialEq + Clone + std::fmt::Debug,
+    V: Clone + std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HashTable")
@@ -226,5 +237,32 @@ impl<K: Hashable + PartialEq + Clone + std::fmt::Debug, V: Clone + std::fmt::Deb
                     .collect::<Vec<&Bucket<K, V>>>(),
             )
             .finish()
+    }
+}
+
+impl<K, V> Drop for HashTable<K, V>
+where
+    K: Hashable + PartialEq + Clone + std::fmt::Debug,
+    V: std::fmt::Debug + Clone,
+{
+    fn drop(&mut self) {
+        dbg_println!("DEBUG HASHTABLE DROP");
+        // Since the buckets are not guaranteed to be in a contiguous order, we can not rely on the normal DynArray drop for the elements.
+        for entry in self.entries_mut() {
+            // SAFETY: It's safe to call drop here, since entries_mut() is guaranteed to be an iterator over valid entries.
+            if std::mem::needs_drop::<K>() {
+                unsafe {
+                    std::ptr::drop_in_place(&mut entry.key);
+                }
+            }
+            if std::mem::needs_drop::<V>() {
+                unsafe {
+                    std::ptr::drop_in_place(&mut entry.value);
+                }
+            }
+        }
+        unsafe {
+            self.data.set_count(0);
+        }
     }
 }
