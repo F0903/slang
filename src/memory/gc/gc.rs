@@ -262,14 +262,14 @@ impl Gc {
         obj_type: ObjectType,
         obj_data: ObjectUnion,
     ) -> GcScopedRoot<Object> {
-        let state = unsafe { &mut *self.state.get() };
+        let state = unsafe { self.state.get().as_mut_unchecked() };
         let new_head = Object::alloc(obj_type, obj_data, state.objects_head);
         state.objects_head = Some(new_head);
         GcScopedRoot::from_ptr(new_head)
     }
 
     pub fn create_string(&self, str: &str) -> ObjectRef<InternedString> {
-        let state = unsafe { &mut *self.state.get() };
+        let state = unsafe { self.state.get().as_mut_unchecked() };
         let string = state.strings.make_string(str);
         string
     }
@@ -279,7 +279,7 @@ impl Gc {
         lhs: ObjectRef<InternedString>,
         rhs: ObjectRef<InternedString>,
     ) -> ObjectRef<InternedString> {
-        let state = unsafe { &mut *self.state.get() };
+        let state = unsafe { self.state.get().as_mut_unchecked() };
         state.strings.concat_strings(lhs, rhs)
     }
 
