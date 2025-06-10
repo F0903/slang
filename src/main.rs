@@ -63,7 +63,7 @@ fn interpret(buf: &[u8], vm: &mut Vm) -> Result<()> {
 
 fn main() -> Result<()> {
     let mut args = args();
-    let mut vm = Vm::new();
+    let mut vm = Vm::new().dealloc_on_drop();
     std_lib::init(&mut vm);
     match args.len() {
         1 => repl(&mut vm),
