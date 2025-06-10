@@ -1,7 +1,7 @@
 use super::DynArray;
 use crate::{
     hashing::{HashMethod, Hashable},
-    value::object::{ObjectRef, String},
+    value::object::{InternedString, ObjectRef},
 };
 
 const TABLE_MAX_LOAD: f32 = 0.75;
@@ -185,11 +185,11 @@ impl<K: Hashable + PartialEq + Clone + std::fmt::Debug, V: Clone + std::fmt::Deb
     }
 }
 
-impl<V: std::fmt::Debug + Clone> HashTable<ObjectRef<String>, V> {
+impl<V: std::fmt::Debug + Clone> HashTable<ObjectRef<InternedString>, V> {
     pub fn get_by_str<H: HashMethod>(
         &mut self,
         key_name: &str,
-    ) -> Option<&Entry<ObjectRef<String>, V>> {
+    ) -> Option<&Entry<ObjectRef<InternedString>, V>> {
         if self.data.get_count() == 0 {
             return None;
         }

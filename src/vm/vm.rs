@@ -13,7 +13,7 @@ use crate::{
         ObjectType,
         Value,
         ValueType,
-        object::{self, Closure, String, NativeFunction, ObjectRef},
+        object::{self, Closure, InternedString, NativeFunction, ObjectRef},
     },
 };
 
@@ -46,7 +46,7 @@ macro_rules! binary_op_from_bool {
 #[derive(Debug)]
 pub struct Vm {
     stack: Stack<Value, STACK_MAX>,
-    globals: HashTable<String, Value>,
+    globals: HashTable<ObjectRef<InternedString>, Value>,
     callframes: Stack<CallFrame, MAX_CALLFRAMES>,
     open_upvalues: Option<ObjectRef<object::Upvalue>>,
 }
@@ -65,7 +65,7 @@ impl Vm {
 
     pub fn register_native_function(&mut self, function: NativeFunction) {
         let func_name = GC.create_string(&function.name);
-        let func_value = Value::object(GC.create_native_function(function));
+        let func_value = Value::object(GC.create_native_function(function).upcast());
         self.globals.set(func_name, func_value);
     }
 
@@ -268,9 +268,8 @@ impl Vm {
 
         let new_upvalue = if let Some(upvalue_ref) = upvalue {
             GC.create_upvalue(object::Upvalue::new_with_next(local, upvalue_ref))
-                .as_upvalue()
         } else {
-            GC.create_upvalue(object::Upvalue::new(local)).as_upvalue()
+            GC.create_upvalue(object::Upvalue::new(local))
         };
 
         if previous_upvalue.is_none() {
@@ -299,11 +298,9 @@ impl Vm {
         let function_obj = compiler
             .compile(source)
             .map_err(|e| Error::CompileTime(e.to_string()))?;
-        let closure_obj =
-            GC.create_closure(Closure::new(function_obj.as_function(), DynArray::new()));
-        self.stack.push(Value::object(closure_obj));
+        let closure = GC.create_closure(Closure::new(function_obj.as_function(), DynArray::new()));
+        self.stack.push(Value::object(closure.upcast()));
 
-        let closure = closure_obj.as_closure();
         self.callframes.push(CallFrame::new(
             closure,
             closure.get_function().get_chunk().get_code_ptr(),
@@ -376,9 +373,9 @@ impl Vm {
                         }
                     }
 
-                    let closure = Closure::new(function.clone(), closure_upvalues);
-                    let closure_obj = GC.create_closure(closure);
-                    self.stack.push(Value::object(closure_obj));
+                    let closure =
+                        GC.create_closure(Closure::new(function.clone(), closure_upvalues));
+                    self.stack.push(Value::object(closure.upcast()));
                 }
                 OpCode::Return => {
                     let result = self.stack.pop();
@@ -455,12 +452,12 @@ impl Vm {
                     self.stack.pop();
                 }
                 OpCode::SetGlobal => {
-                    let name_string = self.read_constant_quad().as_string();
+                    let name_string = self.read_constant_quad().as_object().as_string();
                     let value = self.stack.peek(0).clone();
                     dbg_println!("SETTING GLOBAL {} = {}", name_string, value);
                     if self.globals.set(name_string, value) {
                         // If the variable did not already exist at this point, return error
-                        self.globals.delete(&name_string);
+                        self.globals.delete(name_string);
                         return Err(Error::Runtime(format!(
                             "Undefined variable '{}'",
                             name_string
@@ -468,7 +465,7 @@ impl Vm {
                     }
                 }
                 OpCode::GetGlobal => {
-                    let name_string = self.read_constant_quad().as_string();
+                    let name_string = self.read_constant_quad().as_object().as_string();
                     let global = self.globals.get(&name_string);
                     match global {
                         Some(global) => {
@@ -485,7 +482,7 @@ impl Vm {
                     }
                 }
                 OpCode::DefineGlobal => {
-                    let name_string = self.read_constant_quad().as_string();
+                    let name_string = self.read_constant_quad().as_object().as_string();
                     let global_value = self.stack.peek(0).clone();
                     dbg_println!("DEFINING GLOBAL: {} = ({})", name_string, global_value);
                     self.globals.set(name_string, global_value);

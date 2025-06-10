@@ -7,7 +7,7 @@ use std::{
 use crate::{
     dbg_println,
     memory::HeapPtr,
-    value::object::{self, Closure, Function, String, NativeFunction, ObjectRef},
+    value::object::{self, Closure, Function, InternedString, NativeFunction, ObjectRef},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -21,7 +21,7 @@ pub enum ObjectType {
 }
 
 pub(crate) union ObjectUnion {
-    pub(crate) string: ManuallyDrop<String>,
+    pub(crate) string: ManuallyDrop<InternedString>,
     pub(crate) function: ManuallyDrop<Function>,
     pub(crate) native_function: ManuallyDrop<NativeFunction>,
     pub(crate) closure: ManuallyDrop<Closure>,
@@ -105,7 +105,7 @@ impl Object {
         self.obj_type
     }
 
-    object_as_fn!(as_string, string, String, ObjectType::String);
+    object_as_fn!(as_string, string, InternedString, ObjectType::String);
     object_as_fn!(as_function, function, Function, ObjectType::Function);
     object_as_fn!(
         as_native_function,

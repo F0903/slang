@@ -87,14 +87,11 @@ impl<'src> Compiler<'src> {
 
         //TODO: implement GcRoots for Compiler (or something similar)
         //TODO: make sure GC works
-        let current_function = GC
-            .create_function(Function::new(0, Chunk::new(), None, 0))
-            .as_function();
 
         Self {
             current_source: &[],
             scanner,
-            current_function,
+            current_function: GC.create_function(Function::new(0, Chunk::new(), None, 0)),
             current_function_type: function_type,
             locals,
             upvalues: Stack::new(),
@@ -151,13 +148,10 @@ impl<'src> Compiler<'src> {
     }
 
     fn fork(&mut self, function_type: FunctionType) -> Self {
-        let current_function = GC
-            .create_function(Function::new(0, Chunk::new(), None, 0))
-            .as_function();
         Self {
             current_source: self.current_source,
             scanner: self.scanner.clone(),
-            current_function,
+            current_function: GC.create_function(Function::new(0, Chunk::new(), None, 0)),
             current_function_type: function_type,
             locals: Stack::new(),
             upvalues: Stack::new(),
@@ -393,7 +387,7 @@ impl<'src> Compiler<'src> {
         };
 
         let string = GC.create_string(name);
-        let value = Value::string(string);
+        let value = Value::object(string.upcast());
         self.emit_constant_with_op(value, line);
     }
 
@@ -795,8 +789,9 @@ impl<'src> Compiler<'src> {
     /// Returns the index of the constant.
     fn identifier_constant(&mut self, name_token: &Token) -> u32 {
         let lexeme = name_token.lexeme.get_str(self.get_current_source());
-        let string = Value::string(GC.create_string(lexeme));
-        self.emit_constant(string)
+        let string = GC.create_string(lexeme);
+        let value = Value::object(string.upcast());
+        self.emit_constant(value)
     }
 
     /// Returns None if no local variable with the name is found.

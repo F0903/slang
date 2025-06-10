@@ -6,13 +6,13 @@ use crate::{
     memory::{Dealloc, GC},
     value::{
         ObjectType,
-        object::{ObjectRef, ObjectUnion, String},
+        object::{InternedString, ObjectRef, ObjectUnion},
     },
 };
 
 #[derive(Debug)]
 pub struct StringInterner {
-    strings: HashTable<ObjectRef<String>, ()>,
+    strings: HashTable<ObjectRef<InternedString>, ()>,
 }
 
 impl StringInterner {
@@ -22,8 +22,8 @@ impl StringInterner {
         }
     }
 
-    fn create_string(&mut self, str: &str) -> ObjectRef<String> {
-        let string = String::new(str);
+    fn create_string(&mut self, str: &str) -> ObjectRef<InternedString> {
+        let string = InternedString::new(str);
         let string_object = GC
             .create_object(
                 ObjectType::String,
@@ -36,8 +36,8 @@ impl StringInterner {
         string_object
     }
 
-    fn create_string_raw(&mut self, chars: DynArray<u8>) -> ObjectRef<String> {
-        let string = String::new_raw(chars);
+    fn create_string_raw(&mut self, chars: DynArray<u8>) -> ObjectRef<InternedString> {
+        let string = InternedString::new_raw(chars);
         let string_object = GC
             .create_object(
                 ObjectType::String,
@@ -54,11 +54,11 @@ impl StringInterner {
         self.strings.count()
     }
 
-    pub(crate) fn get_interned_strings(&self) -> impl Iterator<Item = ObjectRef<String>> {
+    pub(crate) fn get_interned_strings(&self) -> impl Iterator<Item = ObjectRef<InternedString>> {
         self.strings.entries().map(|x| x.key)
     }
 
-    pub fn remove(&mut self, string: ObjectRef<String>) -> Result<(), &'static str> {
+    pub fn remove(&mut self, string: ObjectRef<InternedString>) -> Result<(), &'static str> {
         let string = self
             .strings
             .delete(string)
@@ -68,7 +68,7 @@ impl StringInterner {
         Ok(())
     }
 
-    pub fn make_string(&mut self, str: &str) -> ObjectRef<String> {
+    pub fn make_string(&mut self, str: &str) -> ObjectRef<InternedString> {
         self.strings
             .get_by_str::<GlobalHashMethod>(str)
             .map(|x| x.key)
@@ -77,9 +77,9 @@ impl StringInterner {
 
     pub fn concat_strings(
         &mut self,
-        lhs: ObjectRef<String>,
-        rhs: ObjectRef<String>,
-    ) -> ObjectRef<String> {
+        lhs: ObjectRef<InternedString>,
+        rhs: ObjectRef<InternedString>,
+    ) -> ObjectRef<InternedString> {
         let mut new_char_buf = DynArray::new_with_cap(lhs.get_len() + rhs.get_len());
         new_char_buf.push_array(lhs.get_char_buf());
         new_char_buf.push_array(rhs.get_char_buf());

@@ -20,7 +20,7 @@ use crate::{
             NativeFunction,
             ObjectRef,
             ObjectUnion,
-            String,
+            InternedString,
             StringInterner,
         },
     },
@@ -262,7 +262,7 @@ impl Gc {
         new_head
     }
 
-    pub fn create_string(&self, str: &str) -> ObjectRef<String> {
+    pub fn create_string(&self, str: &str) -> ObjectRef<InternedString> {
         let state = unsafe { &mut *self.state.get() };
         let string = state.strings.make_string(str);
         string
@@ -270,9 +270,9 @@ impl Gc {
 
     pub fn concat_strings(
         &self,
-        lhs: ObjectRef<String>,
-        rhs: ObjectRef<String>,
-    ) -> ObjectRef<String> {
+        lhs: ObjectRef<InternedString>,
+        rhs: ObjectRef<InternedString>,
+    ) -> ObjectRef<InternedString> {
         let state = unsafe { &mut *self.state.get() };
         state.strings.concat_strings(lhs, rhs)
     }

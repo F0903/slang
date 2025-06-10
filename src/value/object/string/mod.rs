@@ -1,5 +1,5 @@
-mod string;
+mod interned_string;
 mod string_interner;
 
-pub use string::String;
+pub use interned_string::InternedString;
 pub use string_interner::StringInterner;

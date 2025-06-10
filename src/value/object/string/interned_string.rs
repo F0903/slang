@@ -7,12 +7,12 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct String {
+pub struct InternedString {
     char_buf: DynArray<u8>,
     hash: u32,
 }
 
-impl String {
+impl InternedString {
     pub(super) fn new_raw(chars: DynArray<u8>) -> Self {
         Self {
             hash: GlobalHashMethod::hash(chars.as_slice()),
@@ -58,26 +58,26 @@ impl String {
     }
 }
 
-impl PartialEq for String {
+impl PartialEq for InternedString {
     fn eq(&self, other: &Self) -> bool {
         // Since all strings are interned, we can just compare the pointers
         (self as *const _) == (other as *const _)
     }
 }
 
-impl Display for String {
+impl Display for InternedString {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-impl Hashable for String {
+impl Hashable for InternedString {
     fn get_hash(&self) -> u32 {
         self.hash
     }
 }
 
-impl Hashable for ObjectRef<String> {
+impl Hashable for ObjectRef<InternedString> {
     fn get_hash(&self) -> u32 {
         self.hash
     }
