@@ -2,13 +2,14 @@ use std::{
     alloc::{Allocator, Layout, System},
     cell::UnsafeCell,
     mem::ManuallyDrop,
+    ops::DerefMut,
     ptr::NonNull,
 };
 
 use crate::{
     collections::DynArray,
     dbg_println,
-    memory::{GcPtr, GcRoots, Markable, gc::GcScopedRoot},
+    memory::{GcPtr, RootMarker, gc::ScopedRootObject},
     value::{
         Object,
         ObjectType,
@@ -48,8 +49,8 @@ struct GcState {
     next_collect: usize,
     objects_head: Option<GcPtr<Object>>,
     strings: StringInterner,
-    roots: DynArray<*const dyn GcRoots>,
-    temp_roots: DynArray<*const dyn Markable>,
+    root_markers: DynArray<RootMarker>,
+    temp_roots: DynArray<GcPtr<Object>>,
     gray_stack: DynArray<GcPtr<Object>>,
 }
 
@@ -67,7 +68,7 @@ impl Gc {
                 next_collect: 1024 * 1024,
                 objects_head: None,
                 strings: StringInterner::new(),
-                roots: DynArray::new(),
+                root_markers: DynArray::new(),
                 temp_roots: DynArray::new(),
                 gray_stack: DynArray::new(),
             }),
@@ -81,25 +82,31 @@ impl Gc {
     }
 
     /// SAFETY: Remember to unregister pointer manually!
-    pub fn register_temp_root(&self, root: *const dyn Markable) {
+    pub fn register_temp_root(&self, root: GcPtr<Object>) {
         let state = unsafe { self.state.get().as_mut_unchecked() };
         state.temp_roots.push(root);
     }
 
-    pub fn unregister_temp_root(&self, root: *const dyn Markable) {
+    pub fn unregister_temp_root(&self, root: GcPtr<Object>) {
         let state = unsafe { self.state.get().as_mut_unchecked() };
-        state.temp_roots.remove_value(root).ok();
+        state
+            .temp_roots
+            .remove_value(root)
+            .expect("Could not remove, temp root object did not exist!");
     }
 
     /// SAFETY: Remember to unregister pointer manually!
-    pub fn register_roots(&self, roots: *const dyn GcRoots) {
+    pub fn add_root_marker(&self, marker: RootMarker) {
         let state = unsafe { self.state.get().as_mut_unchecked() };
-        state.roots.push(roots);
+        state.root_markers.push(marker);
     }
 
-    pub fn unregister_roots(&self, roots: *const dyn GcRoots) {
+    pub fn remove_root_marker_by_address(&self, address: usize) {
         let state = unsafe { self.state.get().as_mut_unchecked() };
-        state.roots.remove_value(roots).ok();
+        state
+            .root_markers
+            .remove_predicate(|x| x.get_marker_address() == address)
+            .expect("Could not remove, RootRegistrator did not exist!");
     }
 
     pub fn mark_object(&self, mut object: GcPtr<Object>) {
@@ -113,14 +120,14 @@ impl Gc {
         } else if object_type == ObjectType::String {
             // Strings are a special case that does not need tracing. So we just mark and return.
             object.mark();
-            dbg_println!("\t MARKED STRING '{:?}'", object);
+            dbg_println!("| MARKED STRING '{:?}'", object);
             return;
         }
 
         object.mark();
         state.gray_stack.push(object);
 
-        dbg_println!("\t MARKED '{:?}'", object);
+        dbg_println!("| MARKED '{:?}'", object);
     }
 
     pub fn mark_value(&self, value: Value) {
@@ -134,7 +141,7 @@ impl Gc {
     }
 
     fn blacken_object(&self, object: GcPtr<Object>) {
-        dbg_println!("\t BLACKEN '{:?}'", object);
+        dbg_println!("| BLACKEN '{:?}'", object);
         match object.get_type() {
             ObjectType::Upvalue => {
                 let up = object.as_upvalue();
@@ -161,7 +168,7 @@ impl Gc {
         }
     }
 
-    fn trace_objects(&self) {
+    fn trace_gray_objects(&self) {
         let state = unsafe { self.state.get().as_mut_unchecked() };
         while state.gray_stack.get_count() > 0 {
             let object = state.gray_stack.pop();
@@ -213,7 +220,7 @@ impl Gc {
 
         for string in strings_to_remove {
             if let Err(err) = state.strings.remove(string) {
-                println!("\t GC ERROR: {}", err);
+                println!("| GC ERROR: {}", err);
             }
         }
     }
@@ -230,29 +237,24 @@ impl Gc {
         state.running = true;
         let start_alloc = state.bytes_allocated;
         dbg_println!("\n===== GC BEGIN =====");
-        dbg_println!("\t GC CURRENT ALLOCATION: {}", start_alloc);
+        dbg_println!("| GC CURRENT ALLOCATION: {}", start_alloc);
 
-        for roots in state.roots.iter() {
-            unsafe {
-                // Don't ask...
-                (*(*roots as *mut dyn GcRoots)).mark_roots(self);
-            }
+        for marker in state.root_markers.iter_mut() {
+            marker.mark_roots(self)
         }
-        for root in state.temp_roots.iter() {
-            unsafe {
-                // Yeah, this doesn't feel the best. But for now it should be safe enough.
-                (*(*root as *mut dyn Markable)).mark();
-            }
+        for root in state.temp_roots.iter_mut() {
+            root.deref_mut().mark();
         }
-        self.trace_objects();
+
+        self.trace_gray_objects();
         self.sweep_unreachable_strings();
         self.sweep();
         let end_alloc = state.bytes_allocated;
         state.next_collect = state.bytes_allocated * GC_HEAP_GROW_FACTOR;
 
-        dbg_println!("\t GC CURRENT ALLOCATION: {}", end_alloc);
-        dbg_println!("\t GC RECLAIMED {} BYTES", start_alloc - end_alloc);
-        dbg_println!("\t GC NEXT RUN: {}", state.next_collect);
+        dbg_println!("| GC CURRENT ALLOCATION: {}", end_alloc);
+        dbg_println!("| GC RECLAIMED {} BYTES", start_alloc - end_alloc);
+        dbg_println!("| GC NEXT RUN: {}", state.next_collect);
         dbg_println!("\n===== GC END   =====");
         state.running = false;
     }
@@ -261,11 +263,11 @@ impl Gc {
         &self,
         obj_type: ObjectType,
         obj_data: ObjectUnion,
-    ) -> GcScopedRoot<Object> {
+    ) -> ScopedRootObject {
         let state = unsafe { self.state.get().as_mut_unchecked() };
         let new_head = Object::alloc(obj_type, obj_data, state.objects_head);
         state.objects_head = Some(new_head);
-        GcScopedRoot::from_ptr(new_head)
+        ScopedRootObject::from_ptr(new_head)
     }
 
     pub fn create_string(&self, str: &str) -> ObjectRef<InternedString> {
@@ -352,9 +354,7 @@ unsafe impl Allocator for Gc {
         layout: Layout,
     ) -> std::result::Result<NonNull<[u8]>, std::alloc::AllocError> {
         #[cfg(feature = "debug_stress_gc")]
-        if DEBUG_STRESS {
-            self.collect();
-        }
+        self.collect();
         #[cfg(not(feature = "debug_stress_gc"))]
         if self.should_collect() {
             self.collect();
@@ -378,9 +378,7 @@ unsafe impl Allocator for Gc {
 
     fn allocate_zeroed(&self, layout: Layout) -> Result<NonNull<[u8]>, std::alloc::AllocError> {
         #[cfg(feature = "debug_stress_gc")]
-        if DEBUG_STRESS {
-            self.collect();
-        }
+        self.collect();
         #[cfg(not(feature = "debug_stress_gc"))]
         if self.should_collect() {
             self.collect();
@@ -400,9 +398,7 @@ unsafe impl Allocator for Gc {
         new_layout: Layout,
     ) -> Result<NonNull<[u8]>, std::alloc::AllocError> {
         #[cfg(feature = "debug_stress_gc")]
-        if DEBUG_STRESS {
-            self.collect();
-        }
+        self.collect();
         #[cfg(not(feature = "debug_stress_gc"))]
         if self.should_collect() {
             self.collect();
@@ -424,9 +420,7 @@ unsafe impl Allocator for Gc {
         new_layout: Layout,
     ) -> Result<NonNull<[u8]>, std::alloc::AllocError> {
         #[cfg(feature = "debug_stress_gc")]
-        if DEBUG_STRESS {
-            self.collect();
-        }
+        self.collect();
         #[cfg(not(feature = "debug_stress_gc"))]
         if self.should_collect() {
             self.collect();

@@ -1,10 +1,11 @@
-use std::ptr::null;
+use std::ptr::NonNull;
 
 use super::{
     scanner_error::ScannerError,
     span::Span,
     token::{Token, TokenType},
 };
+use crate::memory::GcPtr;
 
 type ScannerResult<'t> = std::result::Result<&'t Token, ScannerError>;
 
@@ -21,43 +22,39 @@ const fn is_alpha(ch: u8) -> bool {
 }
 
 #[derive(Debug)]
-pub struct Scanner<'src> {
-    start: *const u8,
-    current_start: *const u8,
-    current_end: *const u8,
-    end: *const u8,
+pub struct Scanner {
+    start: NonNull<u8>,
+    current_start: NonNull<u8>,
+    current_end: NonNull<u8>,
+    end: NonNull<u8>,
     line: u32,
     current_token: Option<Token>,
     previous_token: Option<Token>,
-    _src_lifetime: std::marker::PhantomData<&'src ()>,
 }
 
-impl<'src> Scanner<'src> {
-    pub fn new() -> Self {
+impl Scanner {
+    pub fn new(mut source: GcPtr<[u8]>) -> Self {
+        let start = unsafe { NonNull::new_unchecked(source.as_mut_ptr()) };
+        let current_start = start;
+        let current_end = current_start;
+        let end = unsafe { NonNull::new_unchecked(source.as_mut_ptr().add(source.len())) };
+
         Self {
-            start: null(),
-            current_start: null(),
-            current_end: null(),
-            end: null(),
+            start,
+            current_start,
+            current_end,
+            end,
             line: 1,
             current_token: None,
             previous_token: None,
-            _src_lifetime: std::marker::PhantomData,
         }
-    }
-
-    pub fn set_source(&mut self, source: &'src [u8]) {
-        self.start = source.as_ptr();
-        self.current_start = self.start;
-        self.current_end = self.current_start;
-        self.end = unsafe { source.as_ptr().add(source.len()) };
     }
 
     pub const fn get_current_line(&self) -> u32 {
         self.line
     }
 
-    pub fn get_current_token(&'src self) -> Option<&'src Token> {
+    pub fn get_current_token(&self) -> Option<&Token> {
         self.current_token.as_ref()
     }
 
@@ -80,7 +77,10 @@ impl<'src> Scanner<'src> {
             use crate::hashing::{GlobalHashMethod, HashMethod};
 
             let lexeme_str = unsafe {
-                std::str::from_utf8_unchecked(std::slice::from_raw_parts(self.current_start, len))
+                std::str::from_utf8_unchecked(std::slice::from_raw_parts(
+                    self.current_start.as_ptr(),
+                    len,
+                ))
             };
             let hash = GlobalHashMethod::hash(lexeme_str.as_bytes());
             Span::new(start, end, hash)
@@ -97,7 +97,7 @@ impl<'src> Scanner<'src> {
     // Gets the current character and advances to the next
     fn get_and_advance(&mut self) -> u8 {
         unsafe {
-            let ch = *self.current_end;
+            let ch = self.current_end.read();
             self.current_end = self.current_end.add(1);
             ch
         }
@@ -108,7 +108,7 @@ impl<'src> Scanner<'src> {
             return false;
         }
         unsafe {
-            if *self.current_end != expected {
+            if self.current_end.read() != expected {
                 return false;
             }
             self.current_end = self.current_end.add(1);
@@ -117,14 +117,14 @@ impl<'src> Scanner<'src> {
     }
 
     fn peek(&self) -> u8 {
-        unsafe { *self.current_end }
+        unsafe { self.current_end.read() }
     }
 
     fn peek_next(&self) -> Option<u8> {
         if self.is_at_end() {
             return None;
         }
-        unsafe { Some(*self.current_end.add(1)) }
+        unsafe { Some(self.current_end.add(1).read()) }
     }
 
     fn skip_whitespace(&mut self) {
@@ -193,7 +193,7 @@ impl<'src> Scanner<'src> {
             unsafe {
                 if self.current_end.offset_from(self.current_start) == (start + length) as isize
                     && std::slice::from_raw_parts(
-                        self.current_start.add(start as usize),
+                        self.current_start.add(start as usize).as_ptr(),
                         length as usize,
                     ) == std::slice::from_raw_parts(name, length as usize)
                 {
@@ -206,7 +206,7 @@ impl<'src> Scanner<'src> {
 
     fn identifier_type(&self) -> TokenType {
         unsafe {
-            match *self.current_start {
+            match self.current_start.read() {
                 b'a' => self.check_keywords(1, &[("nd", TokenType::And)]),
                 b'b' => self.check_keywords(1, &[("reak", TokenType::Break)]),
                 b'c' => self.check_keywords(

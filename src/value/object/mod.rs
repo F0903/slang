@@ -1,3 +1,4 @@
+mod as_object_ptr;
 mod closure;
 mod function;
 mod native_function;
@@ -6,6 +7,7 @@ mod object_ref;
 mod string;
 mod upvalue;
 
+pub use as_object_ptr::AsObjectPtr;
 pub use closure::Closure;
 pub use function::Function;
 pub use native_function::NativeFunction;

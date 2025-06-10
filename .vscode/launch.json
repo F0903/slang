@@ -22,6 +22,26 @@
     {
       "type": "lldb",
       "request": "launch",
+      "name": "Debug executable 'slang' with debug file and stress GC flag.",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=slang",
+          "--package=slang",
+          "--features=debug_stress_gc"
+        ],
+        "filter": {
+          "name": "slang",
+          "kind": "bin"
+        }
+      },
+      "args": ["./test.slang"],
+      "cwd": "${workspaceFolder}",
+      "console": "externalTerminal"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
       "name": "Debug executable 'slang' with REPL",
       "cargo": {
         "args": ["build", "--bin=slang", "--package=slang"],

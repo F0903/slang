@@ -193,6 +193,14 @@ impl<T: std::fmt::Debug> DynArray<T> {
         self.as_slice().iter()
     }
 
+    pub fn iter_mut<'a>(&'a mut self) -> std::slice::IterMut<'a, T> {
+        if self.data.is_null() {
+            return [].iter_mut();
+        }
+
+        self.as_mut_slice().iter_mut()
+    }
+
     /// An iterator over the memory of the array (the whole capacity), which may contain uninitialized values.
     pub fn memory_iter<'a>(&'a self) -> std::slice::Iter<'a, MaybeUninit<T>> {
         if self.data.is_null() {

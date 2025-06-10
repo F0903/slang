@@ -4,7 +4,10 @@ use std::{
     ptr::NonNull,
 };
 
-use crate::{memory::GcPtr, value::Object};
+use crate::{
+    memory::GcPtr,
+    value::{Object, object::AsObjectPtr},
+};
 
 #[derive(Debug)]
 pub struct ObjectRef<T> {
@@ -86,5 +89,11 @@ impl<T: PartialOrd> PartialOrd for ObjectRef<T> {
 impl<T: Display> Display for ObjectRef<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         T::fmt(self.as_ref(), f)
+    }
+}
+
+impl<T> AsObjectPtr for ObjectRef<T> {
+    fn as_object_ptr(&self) -> GcPtr<Object> {
+        self.upcast()
     }
 }

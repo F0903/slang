@@ -10,10 +10,10 @@ use crate::{
         scanner::Scanner,
         token::{Precedence, Token, TokenType},
     },
-    memory::{GC, Gc, GcPtr, GcRoots},
+    memory::{GC, Gc, GcPtr, MarkRoots, RootMarker},
     value::{
         Value,
-        object::{Function, Object, ObjectRef},
+        object::{Function, ObjectRef},
     },
     vm::opcode::OpCode,
 };
@@ -25,12 +25,12 @@ const UPVALUES_MAX: usize = 255;
 
 type CompilerResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-type ParseFn<'src> = fn(&mut Compiler<'src>, bool);
+type ParseFn = fn(&mut Compiler, bool);
 
 #[derive(Debug, Clone)]
-struct ParseRule<'src> {
-    prefix: Option<ParseFn<'src>>,
-    infix: Option<ParseFn<'src>>,
+struct ParseRule {
+    prefix: Option<ParseFn>,
+    infix: Option<ParseFn>,
     precedence: Precedence,
 }
 
@@ -65,10 +65,9 @@ impl JumpIndecies {
     }
 }
 
-#[derive(Debug)]
-pub struct Compiler<'src> {
-    current_source: &'src [u8],
-    scanner: GcPtr<Scanner<'src>>,
+pub struct Compiler {
+    source: GcPtr<[u8]>,
+    scanner: GcPtr<Scanner>,
     current_function: ObjectRef<Function>,
     current_function_type: FunctionType,
     locals: Stack<Local, LOCAL_SLOTS>,
@@ -76,20 +75,20 @@ pub struct Compiler<'src> {
     scope_depth: i32,
     enclosing_loop: Option<EnclosingLoop>,
     // SAFETY: It is guaranteed that the enclosing compiler outlives the holder of the reference.
-    enclosing_compiler: Option<GcPtr<Compiler<'src>>>,
+    enclosing_compiler: Option<GcPtr<Compiler>>,
     had_error: bool,
     panic_mode: bool,
-    parse_rule_table: DynArray<ParseRule<'src>>,
+    parse_rule_table: DynArray<ParseRule>,
 }
 
-impl<'src> Compiler<'src> {
-    pub fn new(scanner: GcPtr<Scanner<'src>>, function_type: FunctionType) -> GcPtr<Self> {
+impl Compiler {
+    pub fn new(source: GcPtr<[u8]>, function_type: FunctionType) -> GcPtr<Self> {
         let mut locals = Stack::new();
         locals.push(Local::dummy()); // Reserve first slot as index 0 is used for the "main" function.
 
-        let self_ptr: GcPtr<Compiler<'src>> = GcPtr::alloc(Self {
-            current_source: &[],
-            scanner,
+        let self_ptr: GcPtr<Compiler> = GcPtr::alloc(Self {
+            source,
+            scanner: GcPtr::alloc(Scanner::new(source)),
             current_function: GC.create_function(Function::new(0, Chunk::new(), None, 0)),
             current_function_type: function_type,
             locals,
@@ -145,7 +144,7 @@ impl<'src> Compiler<'src> {
             },
         });
 
-        GC.register_roots(self_ptr.get_raw().as_ptr() as *const _);
+        GC.add_root_marker(RootMarker::new(self_ptr.as_dyn()));
 
         self_ptr
     }
@@ -153,7 +152,7 @@ impl<'src> Compiler<'src> {
     fn fork(&mut self, function_type: FunctionType) -> GcPtr<Self> {
         let self_ptr = GcPtr::from_raw(unsafe { NonNull::new_unchecked(self) });
         GcPtr::alloc(Self {
-            current_source: self.current_source,
+            source: self.source,
             scanner: self.scanner.clone(),
             current_function: GC.create_function(Function::new(0, Chunk::new(), None, 0)),
             current_function_type: function_type,
@@ -178,7 +177,7 @@ impl<'src> Compiler<'src> {
         unsafe { &mut *(self.current_function.get_chunk_mut() as *mut Chunk) }
     }
 
-    fn get_rule(&self, token: TokenType) -> &ParseRule<'src> {
+    fn get_rule(&self, token: TokenType) -> &ParseRule {
         debug_assert!(
             self.parse_rule_table.get_count() > token as usize,
             "Token index out of bounds in parse rule table.\nMight be missing parse rule for newly added tokens.",
@@ -186,8 +185,8 @@ impl<'src> Compiler<'src> {
         self.parse_rule_table.get(token as usize)
     }
 
-    pub const fn get_current_source(&self) -> &'src [u8] {
-        self.current_source
+    pub fn get_current_source(&self) -> &[u8] {
+        &self.source
     }
 
     fn get_current_token(&self) -> Option<&Token> {
@@ -1043,7 +1042,7 @@ impl<'src> Compiler<'src> {
                 .get_previous_token()
                 .cloned()
                 .expect("Expected function name token.");
-            let func_name_lexeme = previous_token.lexeme.get_str(self.current_source);
+            let func_name_lexeme = previous_token.lexeme.get_str(&self.source);
             let func_name = GC.create_string(func_name_lexeme);
             compiler.current_function.set_name(func_name);
         }
@@ -1074,8 +1073,7 @@ impl<'src> Compiler<'src> {
         compiler.consume(TokenType::LeftBrace, "Expected '{' before function body.");
         compiler.block();
 
-        let compiler_function_object = compiler.pack_function();
-        let compiler_function = compiler.pack_function().as_function();
+        let compiler_function = compiler.pack_function();
 
         #[cfg(debug_assertions)]
         {
@@ -1097,7 +1095,7 @@ impl<'src> Compiler<'src> {
             ));
         }
 
-        let function_value = Value::object(compiler_function_object);
+        let function_value = Value::object(compiler_function.upcast());
         let line = self.get_current_line();
         let constant_index = self.emit_constant(function_value);
         if constant_index > u16::MAX as u32 {
@@ -1141,16 +1139,13 @@ impl<'src> Compiler<'src> {
         }
     }
 
-    fn pack_function(&mut self) -> GcPtr<Object> {
+    fn pack_function(&mut self) -> ObjectRef<Function> {
         // We always emit an empty return implicitly.
         self.emit_empty_return();
-        self.current_function.upcast()
+        self.current_function
     }
 
-    pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<GcPtr<Object>> {
-        self.current_source = source;
-        self.scanner.set_source(source);
-
+    pub fn compile(&mut self) -> CompilerResult<ObjectRef<Function>> {
         self.advance();
         while !self.match_and_advance(TokenType::EOF) {
             self.declaration();
@@ -1164,20 +1159,20 @@ impl<'src> Compiler<'src> {
     }
 }
 
-impl Drop for Compiler<'_> {
+impl Drop for Compiler {
     fn drop(&mut self) {
-        dbg_println!("DEBUG COMPILER DROP: {:?}", self);
+        dbg_println!("DEBUG COMPILER DROP");
         self.scanner.dealloc();
 
-        GC.unregister_roots(self as *mut _ as *const _);
+        GC.remove_root_marker_by_address((self as *const Self).addr());
     }
 }
 
-impl GcRoots for Compiler<'_> {
+impl MarkRoots for Compiler {
     fn mark_roots(&mut self, gc: &Gc) {
         // MARK COMPILER FUNCTIONS
         let mut compiler = Some(GcPtr::from_raw(unsafe {
-            NonNull::new_unchecked(self as *mut Compiler<'_>)
+            NonNull::new_unchecked(self as *mut Compiler)
         }));
         while let Some(comp) = compiler {
             let func_object = comp.current_function.upcast();

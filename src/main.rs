@@ -3,6 +3,7 @@
 #![feature(maybe_uninit_slice)]
 #![feature(allocator_api)]
 #![feature(slice_ptr_get)]
+#![feature(unsize)]
 
 mod collections;
 mod compiler;
@@ -57,9 +58,9 @@ fn run_file(path: String, vm: &mut Vm) -> Result<()> {
     interpret(&buf, vm)
 }
 
-fn interpret(buf: &[u8], vm: &mut Vm) -> Result<()> {
+fn interpret(src: &[u8], vm: &mut Vm) -> Result<()> {
     //let mut vm = Vm::new(); // Create a new VM each time to debug the drop implementations.
-    vm.interpret(buf)?;
+    vm.interpret(src)?;
     Ok(())
 }
 

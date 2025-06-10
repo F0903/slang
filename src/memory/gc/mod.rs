@@ -1,13 +1,11 @@
 mod drop_dealloc;
 mod gc;
 mod gc_ptr;
-mod gc_roots;
-mod gc_scoped_root;
-mod markable;
+mod root_marker;
+mod scoped_root_object;
 
 pub use drop_dealloc::DropDealloc;
 pub use gc::{GC, Gc};
 pub use gc_ptr::GcPtr;
-pub(crate) use gc_roots::GcRoots;
-pub use gc_scoped_root::GcScopedRoot;
-pub(crate) use markable::Markable;
+pub(crate) use root_marker::{MarkRoots, RootMarker};
+pub use scoped_root_object::ScopedRootObject;

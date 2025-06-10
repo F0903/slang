@@ -7,8 +7,7 @@ use crate::{
     dbg_println,
     debug::disassemble_chunk,
     error::{Error, Result},
-    lexing::scanner::Scanner,
-    memory::{GC, Gc, GcRoots, GcPtr},
+    memory::{GC, Gc, GcPtr, MarkRoots, RootMarker},
     value::{
         ObjectType,
         Value,
@@ -59,7 +58,8 @@ impl Vm {
             callframes: Stack::new(),
             open_upvalues: None,
         });
-        GC.register_roots(&*me);
+        // SAFETY: Since Vm's can only be created via heap allocation, its address is guaranteed to be stable.
+        GC.add_root_marker(RootMarker::new(me.as_dyn()));
         me
     }
 
@@ -291,14 +291,14 @@ impl Vm {
         }
     }
 
-    pub fn interpret<'src>(&mut self, source: &'src [u8]) -> Result<()> {
-        let mut compiler =
-            Compiler::new(GcPtr::alloc(Scanner::new()), FunctionType::Script).dealloc_on_drop();
+    pub fn interpret(&mut self, source: &[u8]) -> Result<()> {
+        let source = GcPtr::take_box(source.to_owned().into_boxed_slice()).dealloc_on_drop();
+        let mut compiler = Compiler::new(*source, FunctionType::Script).dealloc_on_drop();
 
-        let function_obj = compiler
-            .compile(source)
+        let function = compiler
+            .compile()
             .map_err(|e| Error::CompileTime(e.to_string()))?;
-        let closure = GC.create_closure(Closure::new(function_obj.as_function(), DynArray::new()));
+        let closure = GC.create_closure(Closure::new(function, DynArray::new()));
         self.stack.push(Value::object(closure.upcast()));
 
         self.callframes.push(CallFrame::new(
@@ -534,11 +534,12 @@ impl Vm {
 impl Drop for Vm {
     fn drop(&mut self) {
         dbg_println!("DEBUG DROP VM");
-        GC.unregister_roots(self);
+        // SAFETY: Since Vm's can only be created via heap allocation, its address is guaranteed to be stable.
+        GC.remove_root_marker_by_address((self as *const Self).addr());
     }
 }
 
-impl GcRoots for Vm {
+impl MarkRoots for Vm {
     fn mark_roots(&mut self, gc: &Gc) {
         // MARK STACK
         for value in self.stack.bottom_iter().cloned() {
