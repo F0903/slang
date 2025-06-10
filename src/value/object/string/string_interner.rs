@@ -3,7 +3,7 @@ use std::mem::ManuallyDrop;
 use crate::{
     collections::{DynArray, HashTable},
     hashing::GlobalHashMethod,
-    memory::{Dealloc, GC},
+    memory::GC,
     value::{
         ObjectType,
         object::{InternedString, ObjectRef, ObjectUnion},

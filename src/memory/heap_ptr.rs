@@ -4,8 +4,7 @@ use std::{
     ptr::NonNull,
 };
 
-use super::Dealloc;
-use crate::{hashing::Hashable, memory::WeakRef};
+use crate::{hashing::Hashable, memory::DropDealloc};
 
 // A manual version of Box<T> that REQUIRES YOU TO MANUALLY CALL DEALLOC TO FREE MEMORY
 // This is useful for heap allocated objects that require multiple references to the same object and lowest overhead (thus not using Rc<RefCell<T>> or similar).
@@ -17,23 +16,62 @@ pub struct HeapPtr<T: ?Sized> {
 
 impl<T> HeapPtr<T>
 where
-    T: Debug,
+    T: Sized + Debug,
 {
     pub fn alloc(obj: T) -> Self {
-        // Using Box::leak is more efficient than manually allocating due to some internal Rust optimizations. ;
+        // Using Box::leak is more efficient than manually allocating due to some internal Rust optimizations.
         Self {
             // SAFETY: This is guaranteed to be non-null, as we are literally creating the Box right here.
             mem: unsafe { NonNull::new_unchecked(Box::leak(Box::new(obj))) },
             #[cfg(debug_assertions)]
-            dealloced: true,
+            dealloced: false,
         }
     }
 
+    pub fn dealloc(&mut self) {
+        #[cfg(debug_assertions)]
+        {
+            assert!(!self.dealloced, "Double free detected!");
+            println!("HEAPPTR DEALLOC: {:?}", self);
+            self.dealloced = true;
+        }
+        unsafe {
+            if std::mem::needs_drop::<T>() {
+                drop(Box::from_raw(self.mem.as_ptr()));
+            }
+        }
+    }
+
+    pub fn dealloc_on_drop(self) -> DropDealloc<T> {
+        DropDealloc::new(self)
+    }
+}
+
+impl<T> HeapPtr<T>
+where
+    T: Debug,
+{
+    /// This will take ownership of the object and return it.
+    /// This makes the underlying value be exposed to the normal drop rules.
+    pub fn take(self) -> T {
+        let val = unsafe { *Box::from_raw(self.mem.as_ptr()) };
+        val
+    }
+
+    pub fn read(&self) -> T {
+        unsafe { self.mem.read() }
+    }
+}
+
+impl<T> HeapPtr<T>
+where
+    T: ?Sized + Debug,
+{
     pub const fn from_raw(ptr: NonNull<T>) -> Self {
         Self {
             mem: ptr,
             #[cfg(debug_assertions)]
-            dealloced: true,
+            dealloced: false,
         }
     }
 
@@ -47,56 +85,6 @@ where
 
     pub const fn get_raw(&self) -> NonNull<T> {
         self.mem
-    }
-
-    /// This will take ownership of the object and return it.
-    /// This makes the underlying value be exposed to the normal drop rules.
-    pub fn take(self) -> T {
-        let val = unsafe { *Box::from_raw(self.mem.as_ptr()) };
-        val
-    }
-
-    pub fn read(&self) -> T {
-        unsafe { self.mem.read() }
-    }
-
-    pub fn weak_ref(&self) -> WeakRef<T> {
-        WeakRef::new(*self)
-    }
-}
-
-impl<T> Dealloc for HeapPtr<T>
-where
-    T: Debug,
-{
-    // Despite specilization being unsound, I do not believe this case will cause UB
-    default fn dealloc(&mut self) {
-        #[cfg(debug_assertions)]
-        {
-            assert!(!self.dealloced, "Double free detected!");
-            println!("HEAPPTR DEALLOC (INNER DROP): {:?}", self);
-            self.dealloced = true;
-        }
-        unsafe {
-            if std::mem::needs_drop::<T>() {
-                drop(Box::from_raw(self.mem.as_ptr()));
-            }
-        }
-    }
-}
-
-impl<T> Dealloc for HeapPtr<T>
-where
-    T: Dealloc + Debug,
-{
-    fn dealloc(&mut self) {
-        #[cfg(debug_assertions)]
-        {
-            assert!(!self.dealloced, "Double free detected!");
-            println!("HEAPPTR DEALLOC (INNER DEALLOC): {:?}", self);
-            self.dealloced = true;
-        }
-        self.take().dealloc();
     }
 }
 
@@ -130,7 +118,10 @@ where
     }
 }
 
-impl<T> Deref for HeapPtr<T> {
+impl<T> Deref for HeapPtr<T>
+where
+    T: ?Sized,
+{
     type Target = T;
 
     fn deref(&self) -> &Self::Target {

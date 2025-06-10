@@ -8,7 +8,7 @@ use crate::{
     debug::disassemble_chunk,
     error::{Error, Result},
     lexing::scanner::Scanner,
-    memory::{DeallocOnDrop, GC, Gc, GcRoots, HeapPtr},
+    memory::{GC, Gc, GcRoots, HeapPtr},
     value::{
         ObjectType,
         Value,

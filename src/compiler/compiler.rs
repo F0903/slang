@@ -1,3 +1,5 @@
+use std::ptr::NonNull;
+
 use super::{FunctionType, chunk::Chunk, local::Local};
 use crate::{
     collections::{DynArray, Stack},
@@ -8,7 +10,7 @@ use crate::{
         scanner::Scanner,
         token::{Precedence, Token, TokenType},
     },
-    memory::{Dealloc, GC, Gc, GcRoots, HeapPtr},
+    memory::{GC, Gc, GcRoots, HeapPtr},
     value::{
         Value,
         object::{Function, Object, ObjectRef},
@@ -74,21 +76,18 @@ pub struct Compiler<'src> {
     scope_depth: i32,
     enclosing_loop: Option<EnclosingLoop>,
     // SAFETY: It is guaranteed that the enclosing compiler outlives the holder of the reference.
-    enclosing_compiler: Option<*mut Compiler<'src>>,
+    enclosing_compiler: Option<HeapPtr<Compiler<'src>>>,
     had_error: bool,
     panic_mode: bool,
     parse_rule_table: DynArray<ParseRule<'src>>,
 }
 
 impl<'src> Compiler<'src> {
-    pub fn new(scanner: HeapPtr<Scanner<'src>>, function_type: FunctionType) -> Self {
+    pub fn new(scanner: HeapPtr<Scanner<'src>>, function_type: FunctionType) -> HeapPtr<Self> {
         let mut locals = Stack::new();
         locals.push(Local::dummy()); // Reserve first slot as index 0 is used for the "main" function.
 
-        //TODO: implement GcRoots for Compiler (or something similar)
-        //TODO: make sure GC works
-
-        Self {
+        let self_ptr: HeapPtr<Compiler<'src>> = HeapPtr::alloc(Self {
             current_source: &[],
             scanner,
             current_function: GC.create_function(Function::new(0, Chunk::new(), None, 0)),
@@ -144,11 +143,16 @@ impl<'src> Compiler<'src> {
                 TokenType::Break        => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::EOF          => {prefix: None, infix: None, precedence: Precedence::None}
             },
-        }
+        });
+
+        GC.register_roots(self_ptr.get_raw().as_ptr() as *const _);
+
+        self_ptr
     }
 
-    fn fork(&mut self, function_type: FunctionType) -> Self {
-        Self {
+    fn fork(&mut self, function_type: FunctionType) -> HeapPtr<Self> {
+        let self_ptr = HeapPtr::from_raw(unsafe { NonNull::new_unchecked(self) });
+        HeapPtr::alloc(Self {
             current_source: self.current_source,
             scanner: self.scanner.clone(),
             current_function: GC.create_function(Function::new(0, Chunk::new(), None, 0)),
@@ -157,11 +161,11 @@ impl<'src> Compiler<'src> {
             upvalues: Stack::new(),
             scope_depth: 0,
             enclosing_loop: None,
-            enclosing_compiler: Some(self),
+            enclosing_compiler: Some(self_ptr),
             had_error: false,
             panic_mode: false,
             parse_rule_table: self.parse_rule_table.clone(),
-        }
+        })
     }
 
     fn get_current_chunk(&self) -> &Chunk {
@@ -842,9 +846,7 @@ impl<'src> Compiler<'src> {
 
     fn resolve_upvalue(&mut self, name_token: &Token) -> Option<u16> {
         match self.enclosing_compiler {
-            Some(enclosing) => {
-                let enclosing = unsafe { enclosing.as_mut_unchecked() };
-
+            Some(mut enclosing) => {
                 if let Some(enclosing_local) = enclosing.resolve_local(name_token) {
                     enclosing
                         .locals
@@ -1031,7 +1033,8 @@ impl<'src> Compiler<'src> {
     }
 
     fn function(&mut self, function_type: FunctionType) {
-        let mut compiler = self.fork(function_type);
+        //IMPORTANT: We dealloc the compiler when it goes out of scope.
+        let mut compiler = self.fork(function_type).dealloc_on_drop();
 
         if function_type != FunctionType::Script {
             // Since we (the current compiler 'self') hit the fn token, the previous token is the function name.
@@ -1161,19 +1164,22 @@ impl<'src> Compiler<'src> {
     }
 }
 
-impl Dealloc for Compiler<'_> {
-    fn dealloc(&mut self) {
-        dbg_println!("DEBUG COMPILER DEALLOC: {:?}", self);
+impl Drop for Compiler<'_> {
+    fn drop(&mut self) {
+        dbg_println!("DEBUG COMPILER DROP: {:?}", self);
         self.scanner.dealloc();
+
+        GC.unregister_roots(self as *mut _ as *const _);
     }
 }
 
 impl GcRoots for Compiler<'_> {
     fn mark_roots(&mut self, gc: &Gc) {
         // MARK COMPILER FUNCTIONS
-        let mut compiler = Some(self as *mut _);
+        let mut compiler = Some(HeapPtr::from_raw(unsafe {
+            NonNull::new_unchecked(self as *mut Compiler<'_>)
+        }));
         while let Some(comp) = compiler {
-            let comp: &mut Compiler<'_> = unsafe { &mut *comp };
             let func_object = comp.current_function.upcast();
             gc.mark_object(func_object);
             compiler = comp.enclosing_compiler;

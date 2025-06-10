@@ -7,7 +7,7 @@ use std::{
 use crate::{
     collections::DynArray,
     dbg_println,
-    memory::{Dealloc, GcRoots, HeapPtr, Markable},
+    memory::{GcRoots, HeapPtr, Markable},
     value::{
         Object,
         ObjectType,
@@ -17,10 +17,10 @@ use crate::{
             self,
             Closure,
             Function,
+            InternedString,
             NativeFunction,
             ObjectRef,
             ObjectUnion,
-            InternedString,
             StringInterner,
         },
     },
@@ -232,10 +232,16 @@ impl Gc {
         dbg_println!("\n===== GC BEGIN =====");
         dbg_println!("\t GC CURRENT ALLOCATION: {}", start_alloc);
 
-        for roots in (&state.roots).iter() {
+        for roots in state.roots.iter() {
             unsafe {
                 // Don't ask...
                 (*(*roots as *mut dyn GcRoots)).mark_roots(self);
+            }
+        }
+        for root in state.temp_roots.iter() {
+            unsafe {
+                // Yeah, this doesn't feel the best. But for now it should be safe enough.
+                (*(*root as *mut dyn Markable)).mark();
             }
         }
         self.trace_objects();

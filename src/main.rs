@@ -1,6 +1,5 @@
 #![feature(str_from_raw_parts)]
 #![feature(ptr_as_ref_unchecked)]
-#![feature(specialization)]
 #![feature(maybe_uninit_slice)]
 
 mod collections;
