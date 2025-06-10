@@ -1,13 +1,14 @@
 use std::{
-    alloc::{GlobalAlloc, Layout, System},
+    alloc::{Allocator, Layout, System},
     cell::UnsafeCell,
     mem::ManuallyDrop,
+    ptr::NonNull,
 };
 
 use crate::{
     collections::DynArray,
     dbg_println,
-    memory::{GcRoots, HeapPtr, Markable},
+    memory::{GcPtr, GcRoots, Markable},
     value::{
         Object,
         ObjectType,
@@ -26,7 +27,6 @@ use crate::{
     },
 };
 
-#[global_allocator]
 pub static GC: Gc = Gc::new();
 const GC_HEAP_GROW_FACTOR: usize = 2;
 
@@ -46,11 +46,11 @@ struct GcState {
     running: bool,
     bytes_allocated: usize,
     next_collect: usize,
-    objects_head: Option<HeapPtr<Object>>,
+    objects_head: Option<GcPtr<Object>>,
     strings: StringInterner,
     roots: DynArray<*const dyn GcRoots>,
     temp_roots: DynArray<*const dyn Markable>,
-    gray_stack: DynArray<HeapPtr<Object>>,
+    gray_stack: DynArray<GcPtr<Object>>,
 }
 
 pub struct Gc {
@@ -102,7 +102,7 @@ impl Gc {
         state.roots.remove_value(roots).ok();
     }
 
-    pub fn mark_object(&self, mut object: HeapPtr<Object>) {
+    pub fn mark_object(&self, mut object: GcPtr<Object>) {
         let state = unsafe { self.state.get().as_mut_unchecked() };
 
         let object_type = object.get_type();
@@ -133,7 +133,7 @@ impl Gc {
         self.mark_object(object);
     }
 
-    fn blacken_object(&self, object: HeapPtr<Object>) {
+    fn blacken_object(&self, object: GcPtr<Object>) {
         dbg_println!("\t BLACKEN '{:?}'", object);
         match object.get_type() {
             ObjectType::Upvalue => {
@@ -261,7 +261,7 @@ impl Gc {
         &self,
         obj_type: ObjectType,
         obj_data: ObjectUnion,
-    ) -> HeapPtr<Object> {
+    ) -> GcPtr<Object> {
         let state = unsafe { &mut *self.state.get() };
         let new_head = Object::alloc(obj_type, obj_data, state.objects_head);
         state.objects_head = Some(new_head);
@@ -311,10 +311,46 @@ impl Gc {
         ObjectType::Upvalue,
         as_upvalue
     );
+
+    pub(crate) fn reallocate<T>(&self, ptr: *mut u8, old_cap: usize, new_cap: usize) -> *mut u8 {
+        let old_layout = Layout::array::<T>(old_cap).unwrap();
+        let new_layout = Layout::array::<T>(new_cap).unwrap();
+
+        if new_cap == 0 {
+            if !ptr.is_null() {
+                unsafe {
+                    self.deallocate(NonNull::new_unchecked(ptr), old_layout);
+                }
+            }
+            return std::ptr::null_mut();
+        }
+
+        if ptr.is_null() {
+            let nn = self.allocate(new_layout).unwrap();
+            return nn.as_ptr() as *mut u8;
+        }
+
+        if new_cap > old_cap {
+            let nn = unsafe {
+                self.grow(NonNull::new_unchecked(ptr), old_layout, new_layout)
+                    .unwrap()
+            };
+            nn.as_ptr() as *mut u8
+        } else {
+            let nn = unsafe {
+                self.shrink(NonNull::new_unchecked(ptr), old_layout, new_layout)
+                    .unwrap()
+            };
+            nn.as_ptr() as *mut u8
+        }
+    }
 }
 
-unsafe impl GlobalAlloc for Gc {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+unsafe impl Allocator for Gc {
+    fn allocate(
+        &self,
+        layout: Layout,
+    ) -> std::result::Result<NonNull<[u8]>, std::alloc::AllocError> {
         #[cfg(feature = "debug_stress_gc")]
         if DEBUG_STRESS {
             self.collect();
@@ -324,35 +360,96 @@ unsafe impl GlobalAlloc for Gc {
             self.collect();
         }
 
-        let state = unsafe { &mut *self.state.get() };
+        let state = unsafe { self.state.get().as_mut_unchecked() };
         state.bytes_allocated += layout.size();
-        unsafe { System.alloc(layout) }
+
+        // Use System allocator for actual memory
+        let ptr = System.allocate(layout)?;
+        Ok(ptr)
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        let state = unsafe { &mut *self.state.get() };
+    unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+        let state = unsafe { self.state.get().as_mut_unchecked() };
         state.bytes_allocated -= layout.size();
-        unsafe { System.dealloc(ptr, layout) }
+        unsafe {
+            System.deallocate(ptr, layout);
+        }
     }
 
-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let state = unsafe { &mut *self.state.get() };
-        let old_size = layout.size();
-        if new_size > old_size {
-            state.bytes_allocated += new_size - old_size;
-
-            #[cfg(feature = "debug_stress_gc")]
-            if DEBUG_STRESS {
-                self.collect();
-            }
-            #[cfg(not(feature = "debug_stress_gc"))]
-            if self.should_collect() {
-                self.collect();
-            }
-        } else {
-            state.bytes_allocated -= old_size - new_size;
+    fn allocate_zeroed(&self, layout: Layout) -> Result<NonNull<[u8]>, std::alloc::AllocError> {
+        #[cfg(feature = "debug_stress_gc")]
+        if DEBUG_STRESS {
+            self.collect();
         }
-        unsafe { System.realloc(ptr, layout, new_size) }
+        #[cfg(not(feature = "debug_stress_gc"))]
+        if self.should_collect() {
+            self.collect();
+        }
+
+        let state = unsafe { self.state.get().as_mut_unchecked() };
+        state.bytes_allocated += layout.size();
+
+        let ptr = System.allocate_zeroed(layout)?;
+        Ok(ptr)
+    }
+
+    unsafe fn grow(
+        &self,
+        ptr: NonNull<u8>,
+        old_layout: Layout,
+        new_layout: Layout,
+    ) -> Result<NonNull<[u8]>, std::alloc::AllocError> {
+        #[cfg(feature = "debug_stress_gc")]
+        if DEBUG_STRESS {
+            self.collect();
+        }
+        #[cfg(not(feature = "debug_stress_gc"))]
+        if self.should_collect() {
+            self.collect();
+        }
+
+        let state = unsafe { self.state.get().as_mut_unchecked() };
+        if new_layout.size() > old_layout.size() {
+            state.bytes_allocated += new_layout.size() - old_layout.size();
+        } else {
+            state.bytes_allocated -= old_layout.size() - new_layout.size();
+        }
+        unsafe { System.grow(ptr, old_layout, new_layout) }
+    }
+
+    unsafe fn grow_zeroed(
+        &self,
+        ptr: NonNull<u8>,
+        old_layout: Layout,
+        new_layout: Layout,
+    ) -> Result<NonNull<[u8]>, std::alloc::AllocError> {
+        #[cfg(feature = "debug_stress_gc")]
+        if DEBUG_STRESS {
+            self.collect();
+        }
+        #[cfg(not(feature = "debug_stress_gc"))]
+        if self.should_collect() {
+            self.collect();
+        }
+
+        let state = unsafe { self.state.get().as_mut_unchecked() };
+        if new_layout.size() > old_layout.size() {
+            state.bytes_allocated += new_layout.size() - old_layout.size();
+        } else {
+            state.bytes_allocated -= old_layout.size() - new_layout.size();
+        }
+        unsafe { System.grow_zeroed(ptr, old_layout, new_layout) }
+    }
+
+    unsafe fn shrink(
+        &self,
+        ptr: NonNull<u8>,
+        old_layout: Layout,
+        new_layout: Layout,
+    ) -> Result<NonNull<[u8]>, std::alloc::AllocError> {
+        let state = unsafe { self.state.get().as_mut_unchecked() };
+        state.bytes_allocated -= old_layout.size() - new_layout.size();
+        unsafe { System.shrink(ptr, old_layout, new_layout) }
     }
 }
 

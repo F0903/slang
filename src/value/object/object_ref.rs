@@ -4,7 +4,7 @@ use std::{
     ptr::NonNull,
 };
 
-use crate::{memory::HeapPtr, value::Object};
+use crate::{memory::GcPtr, value::Object};
 
 #[derive(Debug)]
 pub struct ObjectRef<T> {
@@ -20,8 +20,8 @@ impl<T> ObjectRef<T> {
 
     /// Upcast the object reference to a full Object.
     // SAFETY: Since all objects are heap allocated and managed by the GC, the parent pointer is guaranteed to be valid.
-    pub const fn upcast(&self) -> HeapPtr<Object> {
-        HeapPtr::from_raw(self.parent)
+    pub const fn upcast(&self) -> GcPtr<Object> {
+        GcPtr::from_raw(self.parent)
     }
 
     pub const fn as_ref(&self) -> &T {

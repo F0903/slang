@@ -4,17 +4,20 @@ use std::{
     ptr::NonNull,
 };
 
-use crate::{hashing::Hashable, memory::DropDealloc};
+use crate::{
+    hashing::Hashable,
+    memory::{DropDealloc, GC},
+};
 
-// A manual version of Box<T> that REQUIRES YOU TO MANUALLY CALL DEALLOC TO FREE MEMORY
-// This is useful for heap allocated objects that require multiple references to the same object and lowest overhead (thus not using Rc<RefCell<T>> or similar).
-pub struct HeapPtr<T: ?Sized> {
+/// A manual version of Box that allocates with the GC.
+/// SAFETY: This is a wrapper around a NonNull pointer, cloning will only clone the pointer, and not the underlying data.
+pub struct GcPtr<T: ?Sized> {
     mem: NonNull<T>,
     #[cfg(debug_assertions)]
     dealloced: bool,
 }
 
-impl<T> HeapPtr<T>
+impl<T> GcPtr<T>
 where
     T: Sized + Debug,
 {
@@ -22,7 +25,7 @@ where
         // Using Box::leak is more efficient than manually allocating due to some internal Rust optimizations.
         Self {
             // SAFETY: This is guaranteed to be non-null, as we are literally creating the Box right here.
-            mem: unsafe { NonNull::new_unchecked(Box::leak(Box::new(obj))) },
+            mem: unsafe { NonNull::new_unchecked(Box::leak(Box::new_in(obj, &GC))) },
             #[cfg(debug_assertions)]
             dealloced: false,
         }
@@ -32,7 +35,7 @@ where
         #[cfg(debug_assertions)]
         {
             assert!(!self.dealloced, "Double free detected!");
-            println!("HEAPPTR DEALLOC: {:?}", self);
+            println!("GCPTR DEALLOC: {:?}", self);
             self.dealloced = true;
         }
         unsafe {
@@ -47,23 +50,19 @@ where
     }
 }
 
-impl<T> HeapPtr<T>
+impl<T> GcPtr<T>
 where
     T: Debug,
 {
     /// This will take ownership of the object and return it.
     /// This makes the underlying value be exposed to the normal drop rules.
     pub fn take(self) -> T {
-        let val = unsafe { *Box::from_raw(self.mem.as_ptr()) };
+        let val = unsafe { *Box::from_raw_in(self.mem.as_ptr(), &GC) };
         val
-    }
-
-    pub fn read(&self) -> T {
-        unsafe { self.mem.read() }
     }
 }
 
-impl<T> HeapPtr<T>
+impl<T> GcPtr<T>
 where
     T: ?Sized + Debug,
 {
@@ -88,7 +87,7 @@ where
     }
 }
 
-impl<T> Clone for HeapPtr<T> {
+impl<T> Clone for GcPtr<T> {
     fn clone(&self) -> Self {
         Self {
             mem: self.mem,
@@ -98,9 +97,9 @@ impl<T> Clone for HeapPtr<T> {
     }
 }
 
-impl<T> Copy for HeapPtr<T> {}
+impl<T> Copy for GcPtr<T> {}
 
-impl<T> Display for HeapPtr<T>
+impl<T> Display for GcPtr<T>
 where
     T: Display + Debug,
 {
@@ -109,7 +108,7 @@ where
     }
 }
 
-impl<T> Debug for HeapPtr<T>
+impl<T> Debug for GcPtr<T>
 where
     T: Debug,
 {
@@ -118,7 +117,7 @@ where
     }
 }
 
-impl<T> Deref for HeapPtr<T>
+impl<T> Deref for GcPtr<T>
 where
     T: ?Sized,
 {
@@ -129,13 +128,13 @@ where
     }
 }
 
-impl<T> DerefMut for HeapPtr<T> {
+impl<T> DerefMut for GcPtr<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.mem.as_mut() }
     }
 }
 
-impl<T> PartialEq for HeapPtr<T>
+impl<T> PartialEq for GcPtr<T>
 where
     T: PartialEq + Debug,
 {
@@ -144,7 +143,7 @@ where
     }
 }
 
-impl<T> Hashable for HeapPtr<T>
+impl<T> Hashable for GcPtr<T>
 where
     T: Debug + Hashable,
 {

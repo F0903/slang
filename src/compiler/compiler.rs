@@ -10,7 +10,7 @@ use crate::{
         scanner::Scanner,
         token::{Precedence, Token, TokenType},
     },
-    memory::{GC, Gc, GcRoots, HeapPtr},
+    memory::{GC, Gc, GcPtr, GcRoots},
     value::{
         Value,
         object::{Function, Object, ObjectRef},
@@ -68,7 +68,7 @@ impl JumpIndecies {
 #[derive(Debug)]
 pub struct Compiler<'src> {
     current_source: &'src [u8],
-    scanner: HeapPtr<Scanner<'src>>,
+    scanner: GcPtr<Scanner<'src>>,
     current_function: ObjectRef<Function>,
     current_function_type: FunctionType,
     locals: Stack<Local, LOCAL_SLOTS>,
@@ -76,18 +76,18 @@ pub struct Compiler<'src> {
     scope_depth: i32,
     enclosing_loop: Option<EnclosingLoop>,
     // SAFETY: It is guaranteed that the enclosing compiler outlives the holder of the reference.
-    enclosing_compiler: Option<HeapPtr<Compiler<'src>>>,
+    enclosing_compiler: Option<GcPtr<Compiler<'src>>>,
     had_error: bool,
     panic_mode: bool,
     parse_rule_table: DynArray<ParseRule<'src>>,
 }
 
 impl<'src> Compiler<'src> {
-    pub fn new(scanner: HeapPtr<Scanner<'src>>, function_type: FunctionType) -> HeapPtr<Self> {
+    pub fn new(scanner: GcPtr<Scanner<'src>>, function_type: FunctionType) -> GcPtr<Self> {
         let mut locals = Stack::new();
         locals.push(Local::dummy()); // Reserve first slot as index 0 is used for the "main" function.
 
-        let self_ptr: HeapPtr<Compiler<'src>> = HeapPtr::alloc(Self {
+        let self_ptr: GcPtr<Compiler<'src>> = GcPtr::alloc(Self {
             current_source: &[],
             scanner,
             current_function: GC.create_function(Function::new(0, Chunk::new(), None, 0)),
@@ -150,9 +150,9 @@ impl<'src> Compiler<'src> {
         self_ptr
     }
 
-    fn fork(&mut self, function_type: FunctionType) -> HeapPtr<Self> {
-        let self_ptr = HeapPtr::from_raw(unsafe { NonNull::new_unchecked(self) });
-        HeapPtr::alloc(Self {
+    fn fork(&mut self, function_type: FunctionType) -> GcPtr<Self> {
+        let self_ptr = GcPtr::from_raw(unsafe { NonNull::new_unchecked(self) });
+        GcPtr::alloc(Self {
             current_source: self.current_source,
             scanner: self.scanner.clone(),
             current_function: GC.create_function(Function::new(0, Chunk::new(), None, 0)),
@@ -1141,13 +1141,13 @@ impl<'src> Compiler<'src> {
         }
     }
 
-    fn pack_function(&mut self) -> HeapPtr<Object> {
+    fn pack_function(&mut self) -> GcPtr<Object> {
         // We always emit an empty return implicitly.
         self.emit_empty_return();
         self.current_function.upcast()
     }
 
-    pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<HeapPtr<Object>> {
+    pub fn compile(&mut self, source: &'src [u8]) -> CompilerResult<GcPtr<Object>> {
         self.current_source = source;
         self.scanner.set_source(source);
 
@@ -1176,7 +1176,7 @@ impl Drop for Compiler<'_> {
 impl GcRoots for Compiler<'_> {
     fn mark_roots(&mut self, gc: &Gc) {
         // MARK COMPILER FUNCTIONS
-        let mut compiler = Some(HeapPtr::from_raw(unsafe {
+        let mut compiler = Some(GcPtr::from_raw(unsafe {
             NonNull::new_unchecked(self as *mut Compiler<'_>)
         }));
         while let Some(comp) = compiler {

@@ -1,5 +1,5 @@
 use super::Encoding;
-use crate::{collections::DynArray, memory::reallocate};
+use crate::{collections::DynArray, memory::GC};
 
 // Not actually sure this works at all lol. Needs testing
 pub struct RLE;
@@ -39,7 +39,7 @@ impl Encoding for RLE {
 
         // Resize value array to the new encoded values.
         let new_count = workspace.get_count();
-        let values = crate::memory::reallocate::<u8>(values, *count, new_count);
+        let values = GC.reallocate::<u8>(values, *count, new_count);
         *count = new_count;
 
         unsafe {
@@ -74,7 +74,7 @@ impl Encoding for RLE {
 
         // Resize value array to the new decoded values.
         let new_count = workspace.get_count();
-        let values = reallocate::<u8>(values, *count, new_count);
+        let values = GC.reallocate::<u8>(values, *count, new_count);
         *count = new_count;
 
         unsafe {

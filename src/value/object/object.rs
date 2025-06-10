@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     dbg_println,
-    memory::HeapPtr,
+    memory::GcPtr,
     value::object::{self, Closure, Function, InternedString, NativeFunction, ObjectRef},
 };
 
@@ -31,7 +31,7 @@ pub(crate) union ObjectUnion {
 pub struct Object {
     obj_type: ObjectType,
     casts: ObjectUnion,
-    next: Option<HeapPtr<Object>>,
+    next: Option<GcPtr<Object>>,
     marked: bool,
 }
 
@@ -62,11 +62,11 @@ impl Object {
     pub(crate) fn alloc(
         obj_type: ObjectType,
         inner: ObjectUnion,
-        next: Option<HeapPtr<Object>>,
-    ) -> HeapPtr<Self> {
+        next: Option<GcPtr<Object>>,
+    ) -> GcPtr<Self> {
         dbg_println!("DEBUG OBJECT ALLOC: {:?}", obj_type);
 
-        let me = HeapPtr::alloc(Self {
+        let me = GcPtr::alloc(Self {
             obj_type,
             casts: inner,
             next,
@@ -91,12 +91,12 @@ impl Object {
     }
 
     #[inline]
-    pub(crate) const fn get_next_object(&self) -> Option<HeapPtr<Object>> {
+    pub(crate) const fn get_next_object(&self) -> Option<GcPtr<Object>> {
         self.next
     }
 
     #[inline]
-    pub(crate) const fn set_next_object(&mut self, next: Option<HeapPtr<Object>>) {
+    pub(crate) const fn set_next_object(&mut self, next: Option<GcPtr<Object>>) {
         self.next = next;
     }
 

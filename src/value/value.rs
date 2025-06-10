@@ -6,7 +6,7 @@ use std::{
 use super::object::Object;
 use crate::{
     error::Error,
-    memory::{GC, HeapPtr},
+    memory::{GC, GcPtr},
     value::ObjectType,
 };
 
@@ -43,7 +43,7 @@ macro_rules! value_as_fn {
 union ValueUnion {
     bool: bool,
     number: f64,
-    object: HeapPtr<Object>,
+    object: GcPtr<Object>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -75,7 +75,7 @@ impl Value {
 
     value_ctor!(bool, bool, bool, ValueType::Bool);
     value_ctor!(number, number, f64, ValueType::Number);
-    value_ctor!(object, object, HeapPtr<Object>, ValueType::Object);
+    value_ctor!(object, object, GcPtr<Object>, ValueType::Object);
 
     #[inline]
     pub const fn none() -> Self {
@@ -84,7 +84,7 @@ impl Value {
 
     value_as_fn!(as_bool, bool, bool, ValueType::Bool);
     value_as_fn!(as_number, number, f64, ValueType::Number);
-    value_as_fn!(as_object, object, HeapPtr<Object>, ValueType::Object);
+    value_as_fn!(as_object, object, GcPtr<Object>, ValueType::Object);
 }
 
 impl Value {

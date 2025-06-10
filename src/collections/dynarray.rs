@@ -4,7 +4,7 @@ use super::owned_iter::OwnedIter;
 use crate::{
     dbg_println,
     hashing::{GlobalHashMethod, HashMethod, Hashable},
-    memory::reallocate,
+    memory::GC,
 };
 
 #[derive(Debug)]
@@ -215,7 +215,9 @@ impl<T: std::fmt::Debug> DynArray<T> {
     fn grow_array_to(&mut self, to: usize) {
         let old_cap = self.capacity;
         self.capacity = to;
-        self.data = reallocate::<T>(self.data.cast(), old_cap, self.capacity).cast();
+        self.data = GC
+            .reallocate::<T>(self.data.cast(), old_cap, self.capacity)
+            .cast();
 
         // Copy init value to each new slot
         if let Some(init) = &self.init_value {
@@ -378,7 +380,9 @@ impl<T: std::fmt::Debug> Drop for DynArray<T> {
             }
         }
 
-        self.data = reallocate::<T>(self.data.cast(), self.capacity, 0).cast();
+        self.data = GC
+            .reallocate::<T>(self.data.cast(), self.capacity, 0)
+            .cast();
         self.capacity = 0;
         self.count = 0;
     }

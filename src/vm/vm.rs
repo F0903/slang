@@ -8,7 +8,7 @@ use crate::{
     debug::disassemble_chunk,
     error::{Error, Result},
     lexing::scanner::Scanner,
-    memory::{GC, Gc, GcRoots, HeapPtr},
+    memory::{GC, Gc, GcRoots, GcPtr},
     value::{
         ObjectType,
         Value,
@@ -52,8 +52,8 @@ pub struct Vm {
 }
 
 impl Vm {
-    pub fn new() -> HeapPtr<Self> {
-        let me = HeapPtr::alloc(Self {
+    pub fn new() -> GcPtr<Self> {
+        let me = GcPtr::alloc(Self {
             stack: Stack::new(),
             globals: HashTable::new(),
             callframes: Stack::new(),
@@ -293,7 +293,7 @@ impl Vm {
 
     pub fn interpret<'src>(&mut self, source: &'src [u8]) -> Result<()> {
         let mut compiler =
-            Compiler::new(HeapPtr::alloc(Scanner::new()), FunctionType::Script).dealloc_on_drop();
+            Compiler::new(GcPtr::alloc(Scanner::new()), FunctionType::Script).dealloc_on_drop();
 
         let function_obj = compiler
             .compile(source)

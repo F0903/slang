@@ -1,6 +1,8 @@
 #![feature(str_from_raw_parts)]
 #![feature(ptr_as_ref_unchecked)]
 #![feature(maybe_uninit_slice)]
+#![feature(allocator_api)]
+#![feature(slice_ptr_get)]
 
 mod collections;
 mod compiler;
