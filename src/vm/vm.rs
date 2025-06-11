@@ -1,3 +1,5 @@
+use std::ptr::NonNull;
+
 use super::{callframe::CallFrame, opcode::OpCode};
 #[cfg(debug_assertions)]
 use crate::debug::disassemble_instruction;
@@ -64,9 +66,10 @@ impl Vm {
     }
 
     pub fn register_native_function(&mut self, function: NativeFunction) {
-        let func_name = GC.create_string(&function.name);
-        let func_value = Value::object(GC.create_native_function(function).upcast());
-        self.globals.set(func_name, func_value);
+        let func_name = GC.make_string(&function.name);
+        let func = GC.create_native_function(function);
+        let func_value = func.get_object().upcast().to_value();
+        self.globals.set(func_name.get_object(), func_value);
     }
 
     pub fn register_native_functions(&mut self, functions: &[NativeFunction]) {
@@ -82,9 +85,12 @@ impl Vm {
             let mut frame = frame.clone();
             let function = frame.get_closure().get_function();
             let instruction = unsafe {
-                let ip_offset = frame
-                    .get_ip()
-                    .offset_from(function.get_chunk().get_code_ptr());
+                let ip_offset = frame.get_ip().offset_from(
+                    function
+                        .get_chunk()
+                        .get_code_ptr()
+                        .expect("chunk code pointer was null!"),
+                );
                 frame.sub_ip((ip_offset as usize) - 1);
                 frame.get_ip().read()
             }; // -1 to get the previous instruction that failed
@@ -130,6 +136,7 @@ impl Vm {
     }
 
     /// Reads a constant from the chunk with a u8 index.
+    #[allow(dead_code)]
     fn read_constant(&mut self) -> Value {
         let index = self.read_byte();
         let frame = self.callframes.top_mut();
@@ -207,10 +214,16 @@ impl Vm {
         dbg_println!("STACK BASE -> {:?}", stack_base);
         dbg_println!("CALLFRAME SLOTS -> {:?}", callframe_slots);
 
+        // SAFETY: the stack will always be valid here
+        let nn = unsafe { NonNull::new_unchecked(callframe_slots) };
+
         self.callframes.push(CallFrame::new(
             closure,
-            function.get_chunk().get_code_ptr(),
-            callframe_slots,
+            function
+                .get_chunk()
+                .get_code_ptr()
+                .expect("chunk code pointer was null!"),
+            nn,
         ));
         Ok(())
     }
@@ -261,27 +274,29 @@ impl Vm {
         }
 
         if let Some(upvalue_ref) = upvalue
-            && upvalue_ref.get_location_raw() == local as *const Value
+            && upvalue_ref.addr_eq_addr(local)
         {
             return upvalue_ref;
         }
 
         let new_upvalue = if let Some(upvalue_ref) = upvalue {
-            GC.create_upvalue(object::Upvalue::new_with_next(local, upvalue_ref))
+            GC.create_upvalue(object::Upvalue::new_with_next(local.into(), upvalue_ref))
         } else {
-            GC.create_upvalue(object::Upvalue::new(local))
+            GC.create_upvalue(object::Upvalue::new(local.into()))
         };
 
         if previous_upvalue.is_none() {
-            self.open_upvalues = Some(new_upvalue);
+            self.open_upvalues = Some(new_upvalue.get_object());
         } else {
-            previous_upvalue.unwrap().set_next(Some(new_upvalue));
+            previous_upvalue
+                .unwrap()
+                .set_next(Some(new_upvalue.get_object()));
         }
 
-        new_upvalue
+        new_upvalue.get_object()
     }
 
-    fn close_upvalues(&mut self, stack_slot: *const Value) {
+    fn close_upvalues(&mut self, stack_slot: NonNull<Value>) {
         while let Some(open_upvalues) = self.open_upvalues
             && open_upvalues.get_location_raw() >= stack_slot
         {
@@ -299,14 +314,18 @@ impl Vm {
             .compile()
             .map_err(|e| Error::CompileTime(e.to_string()))?;
         let closure = GC.create_closure(Closure::new(function, DynArray::new()));
-        self.stack.push(Value::object(closure.upcast()));
+        self.stack.push(closure.get_object().upcast().to_value());
 
         self.callframes.push(CallFrame::new(
-            closure,
-            closure.get_function().get_chunk().get_code_ptr(),
-            self.stack.get_mut_at(0),
+            closure.get_object(),
+            closure
+                .get_function()
+                .get_chunk()
+                .get_code_ptr()
+                .expect("chunk code pointer was null!"),
+            self.stack.get_mut_at(0).into(),
         ));
-        self.call(closure, 0)?;
+        self.call(closure.get_object(), 0)?;
 
         loop {
             #[cfg(debug_assertions)]
@@ -317,7 +336,8 @@ impl Vm {
                         .get_closure()
                         .get_function()
                         .get_chunk()
-                        .get_code_ptr(),
+                        .get_code_ptr()
+                        .expect("chunk code pointer was null!"),
                 );
                 disassemble_instruction(
                     &frame.get_closure().get_function().get_chunk(),
@@ -329,7 +349,7 @@ impl Vm {
                 OpCode::CloseUpvalue => {
                     // We need a reference to the stack slot, so we can not use pop here and just pass the owned value.
                     let top = self.stack.top_ref();
-                    self.close_upvalues(top);
+                    self.close_upvalues(top.into());
                     self.stack.pop();
                 }
                 OpCode::SetUpvalue => {
@@ -373,9 +393,10 @@ impl Vm {
                         }
                     }
 
+                    dbg_println!("CLOSURE UPVALUES: {:?}", closure_upvalues);
                     let closure =
                         GC.create_closure(Closure::new(function.clone(), closure_upvalues));
-                    self.stack.push(Value::object(closure.upcast()));
+                    self.stack.push(closure.get_object().upcast().to_value());
                 }
                 OpCode::Return => {
                     let result = self.stack.pop();
@@ -465,6 +486,7 @@ impl Vm {
                     }
                 }
                 OpCode::GetGlobal => {
+                    dbg_println!("DEBUG GLOBALS:\n{}", self.globals);
                     let name_string = self.read_constant_quad().as_object().as_string();
                     let global = self.globals.get(&name_string);
                     match global {
@@ -547,8 +569,9 @@ impl MarkRoots for Vm {
         }
 
         // MARK GLOBALS
-        for global in self.globals.entries().map(|x| x.value) {
-            gc.mark_value(global);
+        for entry in self.globals.entries() {
+            gc.mark_value(entry.key.to_value());
+            gc.mark_value(entry.value);
         }
 
         // MARK CALLFRAME CLOSURES

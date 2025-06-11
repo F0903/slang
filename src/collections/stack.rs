@@ -1,7 +1,10 @@
 use std::{fmt::Debug, mem::MaybeUninit};
 
-use super::{stack_bottom_iter::StackBottomIter, stack_top_iter::StackTopIter};
-use crate::collections::UnsafePtrIter;
+use crate::collections::{
+    UnsafePtrIter,
+    stack_bottom_iter::StackBottomIter,
+    stack_top_iter::StackTopIter,
+};
 
 pub const DEFAULT_STACK_SIZE: usize = 1024;
 
@@ -12,6 +15,7 @@ pub struct Stack<T, const STACK_SIZE: usize = DEFAULT_STACK_SIZE> {
     count: usize,
 }
 
+#[allow(dead_code)]
 impl<T, const STACK_SIZE: usize> Stack<T, STACK_SIZE> {
     pub const fn new() -> Self {
         debug_assert!(STACK_SIZE > 0, "stack size must not be 0");

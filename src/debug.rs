@@ -7,6 +7,7 @@ fn simple_instruction(instruction: &OpCode) -> usize {
     1
 }
 
+#[allow(dead_code)]
 fn constant_instruction(instruction: &OpCode, chunk: &Chunk, offset: usize) -> usize {
     let constant_index = chunk.read_byte(offset + 1);
     let constant_value = chunk.get_constant(constant_index as u32);

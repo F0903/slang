@@ -76,11 +76,18 @@ pub enum Precedence {
     Factor,     // * /
     Unary,      // not -
     Call,       // . ()
-    Primary,
+    __COUNT__,
 }
 
 impl Precedence {
+    #[inline]
     pub fn add(self, num: usize) -> Precedence {
+        debug_assert!(
+            num < Precedence::__COUNT__ as usize,
+            "'{}' larger than Prececence enum count '{}'!",
+            num,
+            Precedence::__COUNT__ as usize
+        );
         unsafe { std::mem::transmute(self as usize + num) }
     }
 }

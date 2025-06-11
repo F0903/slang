@@ -178,6 +178,7 @@ where
 
         let bucket = self.find_bucket(hash);
         let entry = bucket.entry.take();
+
         bucket.tombstone = true;
         bucket.entry = None;
 
@@ -237,6 +238,20 @@ where
                     .collect::<Vec<&Bucket<K, V>>>(),
             )
             .finish()
+    }
+}
+
+impl<K, V> std::fmt::Display for HashTable<K, V>
+where
+    K: Hashable + PartialEq + Clone + std::fmt::Debug + std::fmt::Display,
+    V: Clone + std::fmt::Debug + std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("=== HashTable ===\n")?;
+        for entry in self.entries() {
+            f.write_fmt(format_args!("{} -> {}\n", entry.key, entry.value))?;
+        }
+        Ok(())
     }
 }
 

@@ -126,7 +126,7 @@ impl Add for Value {
                                     ObjectType::String => {
                                         let rhs_string = rhs_object.as_string();
                                         let new_string = GC.concat_strings(self_string, rhs_string);
-                                        Ok(Value::object(new_string.upcast()))
+                                        Ok(new_string.get_object().upcast().to_value())
                                     }
                                     _ => Err(Error::Runtime(
                                         "Cannot add non-string types to strings!".to_owned(),

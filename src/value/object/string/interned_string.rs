@@ -14,15 +14,17 @@ pub struct InternedString {
 
 impl InternedString {
     pub(super) fn new_raw(chars: DynArray<u8>) -> Self {
+        let hash = GlobalHashMethod::hash(chars.as_slice());
         Self {
-            hash: GlobalHashMethod::hash(chars.as_slice()),
+            hash,
             char_buf: chars,
         }
     }
 
     pub(super) fn new(str: &str) -> Self {
+        let hash = GlobalHashMethod::hash(str.as_bytes());
         Self {
-            hash: GlobalHashMethod::hash(str.as_bytes()),
+            hash,
             char_buf: DynArray::from_str(str),
         }
     }
@@ -30,11 +32,6 @@ impl InternedString {
     #[inline]
     pub(super) fn get_char_buf(&self) -> &DynArray<u8> {
         &self.char_buf
-    }
-
-    #[inline]
-    pub const fn is_empty(&self) -> bool {
-        self.as_str().is_empty()
     }
 
     #[inline]
@@ -53,15 +50,14 @@ impl InternedString {
     }
 
     #[inline]
-    pub const fn get_hash(&self) -> u32 {
-        self.hash
+    fn compare_contents(&self, other: &InternedString) -> bool {
+        self.as_slice() == other.as_slice()
     }
 }
 
 impl PartialEq for InternedString {
     fn eq(&self, other: &Self) -> bool {
-        // Since all strings are interned, we can just compare the pointers
-        (self as *const _) == (other as *const _)
+        (self.hash == other.hash) && self.compare_contents(other)
     }
 }
 

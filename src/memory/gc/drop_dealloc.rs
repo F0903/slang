@@ -1,21 +1,20 @@
 use std::ops::{Deref, DerefMut};
 
-use super::GcPtr;
-use crate::dbg_println;
+use crate::{dbg_println, memory::HeapPtr};
 
 /// A wrapper around a GcPtr that automatically deallocates the memory when dropped.
 pub struct DropDealloc<T: ?Sized> {
-    inner: GcPtr<T>,
+    inner: HeapPtr<T>,
 }
 
 impl<T: ?Sized> DropDealloc<T> {
-    pub const fn new(value: GcPtr<T>) -> Self {
+    pub const fn new(value: HeapPtr<T>) -> Self {
         Self { inner: value }
     }
 }
 
 impl<T: ?Sized> Deref for DropDealloc<T> {
-    type Target = GcPtr<T>;
+    type Target = HeapPtr<T>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner

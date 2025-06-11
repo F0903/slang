@@ -9,7 +9,7 @@ use std::{
 use crate::{
     collections::DynArray,
     dbg_println,
-    memory::{GcPtr, RootMarker, gc::ScopedRootObject},
+    memory::{GcPtr, RootMarker, gc::GcScopedRoot},
     value::{
         Object,
         ObjectType,
@@ -32,13 +32,21 @@ pub static GC: Gc = Gc::new();
 const GC_HEAP_GROW_FACTOR: usize = 2;
 
 macro_rules! object_ctor {
-    ($name:ident, $variant:ident, $ty:ty, $tag:expr, $cast_method:ident) => {
+    ($vis:vis, $name:ident, $variant:ident, $ty:ty, $tag:expr, $cast_method:ident) => {
         #[inline]
-        pub fn $name(&self, val: $ty) -> ObjectRef<$ty> {
-            let inner = ObjectUnion {
-                $variant: ManuallyDrop::new(val),
-            };
-            self.create_object($tag, inner).$cast_method()
+        $vis fn $name(&self, val: $ty) -> GcScopedRoot<ObjectRef<$ty>> {
+            let state = unsafe { self.state.get().as_mut_unchecked() };
+            let new_head = Object::alloc(
+                $tag,
+                ObjectUnion {
+                    $variant: ManuallyDrop::new(val),
+                },
+                state.objects_head,
+            );
+            let casted_obj = new_head.$cast_method();
+            let rooted_obj = GcScopedRoot::register(casted_obj);
+            state.objects_head = Some(new_head);
+            rooted_obj
         }
     };
 }
@@ -76,9 +84,14 @@ impl Gc {
     }
 
     #[inline]
+    #[cfg(not(feature = "debug_stress_gc"))]
     pub fn should_collect(&self) -> bool {
         let state = unsafe { self.state.get().as_ref_unchecked() };
-        state.bytes_allocated >= state.next_collect
+
+        // If we are already running we just return.
+        // We can land in this path if the GC itself allocates enough memory,
+        // and we don't want the GC to GC itself
+        !state.running && (state.bytes_allocated >= state.next_collect)
     }
 
     /// SAFETY: Remember to unregister pointer manually!
@@ -112,22 +125,23 @@ impl Gc {
     pub fn mark_object(&self, mut object: GcPtr<Object>) {
         let state = unsafe { self.state.get().as_mut_unchecked() };
 
-        let object_type = object.get_type();
-        if object_type == ObjectType::NativeFunction || object.is_marked() {
-            // We don't add NativeFunctions, these obviously don't need GC.
-            // We also don't want to mark object that are already marked.
+        // We don't want to mark object that are already marked.
+        if object.is_marked() {
             return;
-        } else if object_type == ObjectType::String {
-            // Strings are a special case that does not need tracing. So we just mark and return.
-            object.mark();
-            dbg_println!("| MARKED STRING '{:?}'", object);
+        }
+        object.mark();
+
+        let object_type = object.get_type();
+        if object_type == ObjectType::NativeFunction || object_type == ObjectType::String {
+            // We don't add NativeFunctions to the gray stack, these obviously don't need GC.
+            // We also don't add strings, since these are interned and need special treatment.
+            dbg_println!("| MARKED '{}'", object);
             return;
         }
 
-        object.mark();
         state.gray_stack.push(object);
 
-        dbg_println!("| MARKED '{:?}'", object);
+        dbg_println!("| MARKED '{}'", object);
     }
 
     pub fn mark_value(&self, value: Value) {
@@ -141,7 +155,7 @@ impl Gc {
     }
 
     fn blacken_object(&self, object: GcPtr<Object>) {
-        dbg_println!("| BLACKEN '{:?}'", object);
+        dbg_println!("| BLACKEN '{}'", object);
         match object.get_type() {
             ObjectType::Upvalue => {
                 let up = object.as_upvalue();
@@ -149,7 +163,7 @@ impl Gc {
             }
             ObjectType::Function => {
                 let func = object.as_function();
-                if let Some(func_name) = func.get_name().map(|x| Value::object(x.upcast())) {
+                if let Some(func_name) = func.get_name().map(|x| x.upcast().to_value()) {
                     self.mark_value(func_name);
                 }
                 for constant in func.get_chunk().get_constants() {
@@ -182,11 +196,13 @@ impl Gc {
         let mut previous = None;
         let mut object = state.objects_head;
         while let Some(mut obj) = object {
+            dbg_println!("| CHECKING OBJECT: () {}", obj);
             if obj.is_marked() {
                 // If the object is marked (is still reachable) we unmark it and go to the next.
                 obj.unmark();
                 previous = object;
                 object = obj.get_next_object();
+                dbg_println!("|- OBJECT WAS MARKED");
                 continue;
             }
 
@@ -198,6 +214,7 @@ impl Gc {
                 state.objects_head = Some(obj);
             }
 
+            dbg_println!("|- DEALLOCATING OBJECT");
             obj.dealloc();
         }
     }
@@ -208,29 +225,29 @@ impl Gc {
         let mut strings_to_remove =
             DynArray::new_with_cap(state.strings.get_interned_strings_count() / 2);
         for string in state.strings.get_interned_strings() {
-            let mut string_object = string.upcast();
+            let string_object = string.upcast();
             if string_object.is_marked() {
-                // If the string is marked (reachable), we unmark an loop on.
-                string_object.unmark();
                 continue;
             }
 
+            dbg_println!("| REMOVING STRING: {}", string);
             strings_to_remove.push(string);
         }
 
         for string in strings_to_remove {
+            dbg_println!("|- {}", string);
             if let Err(err) = state.strings.remove(string) {
-                println!("| GC ERROR: {}", err);
+                dbg_println!("| GC ERROR: {}", err);
             }
         }
     }
 
     pub fn collect(&self) {
         let state = unsafe { self.state.get().as_mut_unchecked() };
+
+        #[cfg(feature = "debug_stress_gc")]
         if state.running {
-            // If we are already running we just return.
-            // We can land in this path if the GC itself allocates enough memory,
-            // and we don't want the GC to GC itself
+            // If we are debug stressing the gc, then it will bypass self.should_collect() and we need to return here.
             return;
         }
 
@@ -253,39 +270,39 @@ impl Gc {
         state.next_collect = state.bytes_allocated * GC_HEAP_GROW_FACTOR;
 
         dbg_println!("| GC CURRENT ALLOCATION: {}", end_alloc);
-        dbg_println!("| GC RECLAIMED {} BYTES", start_alloc - end_alloc);
+        dbg_println!(
+            "| GC RECLAIMED {} BYTES",
+            (start_alloc as isize - end_alloc as isize)
+        );
         dbg_println!("| GC NEXT RUN: {}", state.next_collect);
         dbg_println!("\n===== GC END   =====");
         state.running = false;
     }
 
-    pub(crate) fn create_object(
-        &self,
-        obj_type: ObjectType,
-        obj_data: ObjectUnion,
-    ) -> ScopedRootObject {
+    pub fn make_string(&self, str: &str) -> GcScopedRoot<ObjectRef<InternedString>> {
         let state = unsafe { self.state.get().as_mut_unchecked() };
-        let new_head = Object::alloc(obj_type, obj_data, state.objects_head);
-        state.objects_head = Some(new_head);
-        ScopedRootObject::from_ptr(new_head)
-    }
-
-    pub fn create_string(&self, str: &str) -> ObjectRef<InternedString> {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
-        let string = state.strings.make_string(str);
-        string
+        state.strings.make_string(str)
     }
 
     pub fn concat_strings(
         &self,
         lhs: ObjectRef<InternedString>,
         rhs: ObjectRef<InternedString>,
-    ) -> ObjectRef<InternedString> {
+    ) -> GcScopedRoot<ObjectRef<InternedString>> {
         let state = unsafe { self.state.get().as_mut_unchecked() };
         state.strings.concat_strings(lhs, rhs)
     }
 
     object_ctor!(
+        pub(crate),
+        create_string,
+        string,
+        InternedString,
+        ObjectType::String,
+        as_string
+    );
+    object_ctor!(
+        pub,
         create_function,
         function,
         Function,
@@ -293,6 +310,7 @@ impl Gc {
         as_function
     );
     object_ctor!(
+        pub,
         create_native_function,
         native_function,
         NativeFunction,
@@ -300,6 +318,7 @@ impl Gc {
         as_native_function
     );
     object_ctor!(
+        pub,
         create_closure,
         closure,
         Closure,
@@ -307,6 +326,7 @@ impl Gc {
         as_closure
     );
     object_ctor!(
+        pub,
         create_upvalue,
         upvalue,
         object::Upvalue,

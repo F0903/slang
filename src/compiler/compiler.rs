@@ -10,7 +10,7 @@ use crate::{
         scanner::Scanner,
         token::{Precedence, Token, TokenType},
     },
-    memory::{GC, Gc, GcPtr, MarkRoots, RootMarker},
+    memory::{GC, GcPtr, GcScopedRoot, HeapPtr},
     value::{
         Value,
         object::{Function, ObjectRef},
@@ -66,9 +66,9 @@ impl JumpIndecies {
 }
 
 pub struct Compiler {
-    source: GcPtr<[u8]>,
-    scanner: GcPtr<Scanner>,
-    current_function: ObjectRef<Function>,
+    source: HeapPtr<[u8]>,
+    scanner: HeapPtr<Scanner>,
+    current_function: GcScopedRoot<ObjectRef<Function>>,
     current_function_type: FunctionType,
     locals: Stack<Local, LOCAL_SLOTS>,
     upvalues: Stack<Upvalue, UPVALUES_MAX>,
@@ -82,13 +82,13 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn new(source: GcPtr<[u8]>, function_type: FunctionType) -> GcPtr<Self> {
+    pub fn new(source: HeapPtr<[u8]>, function_type: FunctionType) -> GcPtr<Self> {
         let mut locals = Stack::new();
         locals.push(Local::dummy()); // Reserve first slot as index 0 is used for the "main" function.
 
-        let self_ptr: GcPtr<Compiler> = GcPtr::alloc(Self {
+        GcPtr::alloc(Self {
             source,
-            scanner: GcPtr::alloc(Scanner::new(source)),
+            scanner: HeapPtr::alloc(Scanner::new(source)),
             current_function: GC.create_function(Function::new(0, Chunk::new(), None, 0)),
             current_function_type: function_type,
             locals,
@@ -142,11 +142,7 @@ impl Compiler {
                 TokenType::Break        => {prefix: None, infix: None, precedence: Precedence::None},
                 TokenType::EOF          => {prefix: None, infix: None, precedence: Precedence::None}
             },
-        });
-
-        GC.add_root_marker(RootMarker::new(self_ptr.as_dyn()));
-
-        self_ptr
+        })
     }
 
     fn fork(&mut self, function_type: FunctionType) -> GcPtr<Self> {
@@ -314,7 +310,9 @@ impl Compiler {
     fn patch_jump(&mut self, offset: u32) {
         let (code, jump) = {
             (
-                self.get_current_chunk().get_code_ptr(),
+                self.get_current_chunk()
+                    .get_code_ptr()
+                    .expect("chunk code pointer was null!"),
                 self.get_instruction_count() as u32 - offset - (JumpIndecies::ARGUMENT_SIZE),
             )
         };
@@ -389,8 +387,8 @@ impl Compiler {
             (name, token.line)
         };
 
-        let string = GC.create_string(name);
-        let value = Value::object(string.upcast());
+        let string = GC.make_string(name);
+        let value = string.get_object().upcast().to_value();
         self.emit_constant_with_op(value, line);
     }
 
@@ -792,8 +790,8 @@ impl Compiler {
     /// Returns the index of the constant.
     fn identifier_constant(&mut self, name_token: &Token) -> u32 {
         let lexeme = name_token.lexeme.get_str(self.get_current_source());
-        let string = GC.create_string(lexeme);
-        let value = Value::object(string.upcast());
+        let string = GC.make_string(lexeme);
+        let value = string.get_object().upcast().to_value();
         self.emit_constant(value)
     }
 
@@ -1043,8 +1041,8 @@ impl Compiler {
                 .cloned()
                 .expect("Expected function name token.");
             let func_name_lexeme = previous_token.lexeme.get_str(&self.source);
-            let func_name = GC.create_string(func_name_lexeme);
-            compiler.current_function.set_name(func_name);
+            let func_name = GC.make_string(func_name_lexeme);
+            compiler.current_function.set_name(func_name.get_object());
         }
 
         compiler.begin_scope();
@@ -1095,7 +1093,7 @@ impl Compiler {
             ));
         }
 
-        let function_value = Value::object(compiler_function.upcast());
+        let function_value = compiler_function.upcast().to_value();
         let line = self.get_current_line();
         let constant_index = self.emit_constant(function_value);
         if constant_index > u16::MAX as u32 {
@@ -1142,7 +1140,7 @@ impl Compiler {
     fn pack_function(&mut self) -> ObjectRef<Function> {
         // We always emit an empty return implicitly.
         self.emit_empty_return();
-        self.current_function
+        self.current_function.get_object()
     }
 
     pub fn compile(&mut self) -> CompilerResult<ObjectRef<Function>> {
@@ -1163,21 +1161,5 @@ impl Drop for Compiler {
     fn drop(&mut self) {
         dbg_println!("DEBUG COMPILER DROP");
         self.scanner.dealloc();
-
-        GC.remove_root_marker_by_address((self as *const Self).addr());
-    }
-}
-
-impl MarkRoots for Compiler {
-    fn mark_roots(&mut self, gc: &Gc) {
-        // MARK COMPILER FUNCTIONS
-        let mut compiler = Some(GcPtr::from_raw(unsafe {
-            NonNull::new_unchecked(self as *mut Compiler)
-        }));
-        while let Some(comp) = compiler {
-            let func_object = comp.current_function.upcast();
-            gc.mark_object(func_object);
-            compiler = comp.enclosing_compiler;
-        }
     }
 }

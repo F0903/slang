@@ -1,24 +1,30 @@
-use std::{mem::MaybeUninit, ptr::null_mut};
+use std::{fmt::Debug, mem::MaybeUninit, ptr::NonNull};
 
-use super::owned_iter::OwnedIter;
 use crate::{
+    collections::DynArrayIter,
     dbg_println,
     hashing::{GlobalHashMethod, HashMethod, Hashable},
     memory::GC,
 };
 
 #[derive(Debug)]
-pub struct DynArray<T: std::fmt::Debug> {
-    data: *mut T,
+pub struct DynArray<T>
+where
+    T: Debug,
+{
+    data: Option<NonNull<T>>,
     count: usize,
     capacity: usize,
     init_value: Option<T>,
 }
 
-impl<T: std::fmt::Debug> Default for DynArray<T> {
+impl<T> Default for DynArray<T>
+where
+    T: Debug,
+{
     fn default() -> Self {
         Self {
-            data: null_mut(),
+            data: None,
             count: 0,
             capacity: 0,
             init_value: None,
@@ -27,10 +33,14 @@ impl<T: std::fmt::Debug> Default for DynArray<T> {
 }
 
 /// SAFETY: This is a simple "dynamic array" with minimal safety. It is up to the user to ensure that the data inside is initialized and valid for reading.
-impl<T: std::fmt::Debug> DynArray<T> {
+#[allow(dead_code)]
+impl<T> DynArray<T>
+where
+    T: Debug,
+{
     pub const fn new() -> Self {
         Self {
-            data: null_mut(),
+            data: None,
             count: 0,
             capacity: 0,
             init_value: None,
@@ -39,11 +49,13 @@ impl<T: std::fmt::Debug> DynArray<T> {
 
     pub fn new_with_cap(cap: usize) -> Self {
         let mut me = Self::new();
-        me.grow_array_to(cap);
+        if cap > 0 {
+            me.grow_array_to(cap);
+        }
         me
     }
 
-    pub(crate) const fn get_raw_ptr(&self) -> *mut T {
+    pub(crate) const fn get_raw_ptr(&self) -> Option<NonNull<T>> {
         self.data
     }
 
@@ -78,9 +90,11 @@ impl<T: std::fmt::Debug> DynArray<T> {
         if self.capacity < index + 1 {
             self.grow_array_to(index + 1);
         }
+        // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+        let data = unsafe { self.data.unwrap_unchecked() };
 
         unsafe {
-            let value = self.data.add(index);
+            let value = data.add(index);
 
             if index < self.count {
                 // Shift everything over once for our element to be inserted.
@@ -96,9 +110,11 @@ impl<T: std::fmt::Debug> DynArray<T> {
         if self.capacity < self.count + 1 {
             self.grow_array();
         }
+        // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+        let data = unsafe { self.data.unwrap_unchecked() };
 
         unsafe {
-            self.data.add(self.count).write(val);
+            data.add(self.count).write(val);
             self.count += 1;
         }
     }
@@ -107,28 +123,37 @@ impl<T: std::fmt::Debug> DynArray<T> {
         if self.capacity < self.count + count {
             self.grow_array_to(self.count + count);
         }
+        // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+        let data = unsafe { self.data.unwrap_unchecked() };
 
         unsafe {
-            let base = self.data.add(self.count);
-            val.copy_to_nonoverlapping(base, count);
+            let mut base = data.add(self.count);
+            val.copy_to_nonoverlapping(base.as_mut(), count);
             self.count += count
         }
     }
 
     pub fn push_array(&mut self, other: &DynArray<T>) {
-        self.push_ptr(other.data, other.count)
+        if let Some(other_data) = other.data {
+            self.push_ptr(other_data.as_ptr(), other.count)
+        }
     }
 
     pub fn copy_read(&self, index: usize) -> T {
-        unsafe { self.data.add(index).read() }
+        debug_assert!(self.data.is_some(), "Tried to read from empty array!");
+        // SAFETY: In debug mode we are guaranteed to have data here, in release mode this isn't supposed to happen (lol)
+        let data = unsafe { self.data.unwrap_unchecked() };
+        unsafe { data.add(index).read() }
     }
 
     pub fn replace(&mut self, index: usize, new_val: T) {
         debug_assert!(index < self.count, "Index out of bounds: {}", index);
+        // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+        let data = unsafe { self.data.unwrap_unchecked() };
         unsafe {
-            let value = self.data.add(index);
+            let value = data.add(index);
             // Drop the old value at index
-            std::ptr::drop_in_place(value);
+            std::ptr::drop_in_place(value.as_ptr());
             value.write(new_val)
         }
     }
@@ -141,7 +166,9 @@ impl<T: std::fmt::Debug> DynArray<T> {
             offset,
             self.count
         );
-        unsafe { self.data.add(offset).as_ref_unchecked() }
+        // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+        let data = unsafe { self.data.unwrap_unchecked() };
+        unsafe { data.add(offset).as_ref() }
     }
 
     /// Gets a mutable reference to the value at the given offset within the capacity of the array.
@@ -152,7 +179,9 @@ impl<T: std::fmt::Debug> DynArray<T> {
             offset,
             self.count
         );
-        unsafe { self.data.add(offset).as_mut_unchecked() }
+        // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+        let data = unsafe { self.data.unwrap_unchecked() };
+        unsafe { data.add(offset).as_mut() }
     }
 
     /// Gets a reference to the value at the given index within the element count of the array.
@@ -163,7 +192,9 @@ impl<T: std::fmt::Debug> DynArray<T> {
             index,
             self.count
         );
-        unsafe { self.data.add(index).as_ref_unchecked() }
+        // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+        let data = unsafe { self.data.unwrap_unchecked() };
+        unsafe { data.add(index).as_ref() }
     }
 
     /// Gets a mutable reference to the value at the given index within the element count of the array.
@@ -174,19 +205,29 @@ impl<T: std::fmt::Debug> DynArray<T> {
             index,
             self.count
         );
-        unsafe { self.data.add(index).as_mut_unchecked() }
+        // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+        let data = unsafe { self.data.unwrap_unchecked() };
+        unsafe { data.add(index).as_mut() }
     }
 
     pub const fn as_slice(&self) -> &[T] {
-        unsafe { std::slice::from_raw_parts(self.data, self.count) }
+        if let Some(data) = self.data {
+            unsafe { std::slice::from_raw_parts(data.as_ptr(), self.count) }
+        } else {
+            &[]
+        }
     }
 
     pub const fn as_mut_slice(&mut self) -> &mut [T] {
-        unsafe { std::slice::from_raw_parts_mut(self.data, self.count) }
+        if let Some(data) = self.data {
+            unsafe { std::slice::from_raw_parts_mut(data.as_ptr(), self.count) }
+        } else {
+            &mut []
+        }
     }
 
     pub fn iter<'a>(&'a self) -> std::slice::Iter<'a, T> {
-        if self.data.is_null() {
+        if self.data.is_none() {
             return [].iter();
         }
 
@@ -194,7 +235,7 @@ impl<T: std::fmt::Debug> DynArray<T> {
     }
 
     pub fn iter_mut<'a>(&'a mut self) -> std::slice::IterMut<'a, T> {
-        if self.data.is_null() {
+        if self.data.is_none() {
             return [].iter_mut();
         }
 
@@ -203,37 +244,51 @@ impl<T: std::fmt::Debug> DynArray<T> {
 
     /// An iterator over the memory of the array (the whole capacity), which may contain uninitialized values.
     pub fn memory_iter<'a>(&'a self) -> std::slice::Iter<'a, MaybeUninit<T>> {
-        if self.data.is_null() {
-            return [].iter();
+        if let Some(data) = self.data {
+            unsafe { std::slice::from_raw_parts(data.as_ptr().cast(), self.capacity) }.iter()
+        } else {
+            [].iter()
         }
-
-        unsafe { std::slice::from_raw_parts(self.data.cast(), self.capacity) }.iter()
     }
 
     /// An iterator over the memory of the array (the whole capacity), which may contain uninitialized values.
     /// This aditionally is a mutable iterator, so be careful.
     pub fn memory_iter_mut<'a>(&'a self) -> std::slice::IterMut<'a, MaybeUninit<T>> {
-        if self.data.is_null() {
-            return [].iter_mut();
+        if let Some(data) = self.data {
+            unsafe {
+                std::slice::from_raw_parts_mut(data.as_ptr().cast(), self.capacity).iter_mut()
+            }
+        } else {
+            [].iter_mut()
         }
-
-        unsafe { std::slice::from_raw_parts_mut(self.data.cast(), self.capacity).iter_mut() }
     }
 
     fn grow_array_to(&mut self, to: usize) {
         let old_cap = self.capacity;
         self.capacity = to;
-        self.data = GC
-            .reallocate::<T>(self.data.cast(), old_cap, self.capacity)
-            .cast();
+        let data = GC.reallocate::<T>(
+            self.data.map(|x| x.as_ptr()).unwrap_or_default().cast(),
+            old_cap,
+            self.capacity,
+        );
+
+        if to > 0 {
+            let nn: NonNull<T> = unsafe { NonNull::new_unchecked(data.cast()) };
+            self.data = Some(nn);
+        } else {
+            self.data = None;
+            return;
+        }
 
         // Copy init value to each new slot
         if let Some(init) = &self.init_value {
+            // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+            let data = unsafe { self.data.unwrap_unchecked() };
             let copy_start = old_cap;
             let copy_end = self.capacity;
             for i in copy_start..copy_end {
                 unsafe {
-                    (init as *const T).copy_to_nonoverlapping(self.data.add(i), 1);
+                    (init as *const T).copy_to_nonoverlapping(data.as_ptr().add(i), 1);
                 }
             }
         }
@@ -246,8 +301,10 @@ impl<T: std::fmt::Debug> DynArray<T> {
             index,
             self.count
         );
+        // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+        let data = unsafe { self.data.unwrap_unchecked() };
         unsafe {
-            let val_pointer = self.data.add(index);
+            let val_pointer = data.add(index);
             let val = val_pointer.read();
             val_pointer
                 .add(1)
@@ -279,7 +336,10 @@ impl<T: std::fmt::Debug> DynArray<T> {
     }
 }
 
-impl<T: std::fmt::Debug + PartialEq> DynArray<T> {
+impl<T> DynArray<T>
+where
+    T: std::fmt::Debug + PartialEq,
+{
     pub fn remove_value(&mut self, val: T) -> Result<T, &'static str> {
         let mut index_to_remove = None;
         for (i, value) in self.iter().enumerate() {
@@ -297,10 +357,13 @@ impl<T: std::fmt::Debug + PartialEq> DynArray<T> {
     }
 }
 
-impl<T: std::fmt::Debug + Clone> DynArray<T> {
+impl<T> DynArray<T>
+where
+    T: Debug + Clone,
+{
     pub const fn new_with_init(init_value: T) -> Self {
         Self {
-            data: null_mut(),
+            data: None,
             count: 0,
             capacity: 0,
             init_value: Some(init_value),
@@ -314,20 +377,27 @@ impl<T: std::fmt::Debug + Clone> DynArray<T> {
     }
 }
 
-impl<T: std::fmt::Debug + Clone> Clone for DynArray<T> {
+impl<T> Clone for DynArray<T>
+where
+    T: Debug + Clone,
+{
     fn clone(&self) -> Self {
         let mut new_array = if let Some(init) = &self.init_value {
             Self::new_with_cap_and_init(self.count, init.clone())
         } else {
             Self::new_with_cap(self.count)
         };
-        if self.data.is_null() {
+
+        if let None = self.data {
             return new_array;
+        } else if let Some(data) = self.data {
+            // SAFETY: We can unwrap here, as the new array is guaranteed to be in the same state as this.
+            let new_data = unsafe { new_array.data.unwrap_unchecked() };
+            unsafe {
+                data.copy_to_nonoverlapping(new_data, self.count);
+            }
         }
 
-        unsafe {
-            self.data.copy_to_nonoverlapping(new_array.data, self.count);
-        }
         new_array.count = self.count;
         new_array
     }
@@ -342,9 +412,11 @@ impl DynArray<u8> {
             byte_offset,
             self.count
         );
+        // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+        let data = unsafe { self.data.unwrap_unchecked() };
 
         // First offset by n-bytes and then cast
-        unsafe { self.data.add(byte_offset).cast::<A>().read() }
+        unsafe { data.add(byte_offset).cast::<A>().read() }
     }
 
     pub fn from_str(str: &str) -> Self {
@@ -354,13 +426,23 @@ impl DynArray<u8> {
     }
 
     pub const fn as_str(&self) -> &str {
-        unsafe { std::str::from_raw_parts(self.data, self.count) }
+        if let Some(data) = self.data {
+            unsafe { std::str::from_raw_parts(data.as_ptr(), self.count) }
+        } else {
+            ""
+        }
     }
 }
 
 impl Hashable for DynArray<u8> {
     fn get_hash(&self) -> u32 {
-        unsafe { GlobalHashMethod::hash(std::slice::from_raw_parts_mut(self.data, self.count)) }
+        if let Some(data) = self.data {
+            unsafe {
+                GlobalHashMethod::hash(std::slice::from_raw_parts_mut(data.as_ptr(), self.count))
+            }
+        } else {
+            0
+        }
     }
 }
 
@@ -372,35 +454,42 @@ impl PartialEq for DynArray<u8> {
 
 impl<T: std::fmt::Debug> Drop for DynArray<T> {
     fn drop(&mut self) {
-        if self.data.is_null() {
+        if self.data.is_none() {
             return;
         }
+        // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+        let data = unsafe { self.data.unwrap_unchecked() };
 
-        dbg_println!("DEBUG DYNARRAY DROP: {:?}", self);
+        dbg_println!("DEBUG DYNARRAY DROP: {:?}", self.data);
 
         unsafe {
             if self.init_value.is_some() {
                 std::ptr::drop_in_place(self.as_mut_slice());
             } else {
                 // If we don't have an init value, we only drop up until self.count which is guaranteed to be initialized.
-                let values = std::slice::from_raw_parts_mut(self.data, self.count);
+
+                let values = std::slice::from_raw_parts_mut(data.as_ptr(), self.count);
                 std::ptr::drop_in_place(values);
             }
         }
 
-        self.data = GC
-            .reallocate::<T>(self.data.cast(), self.capacity, 0)
-            .cast();
+        // Dealloc the data.
+        GC.reallocate::<T>(data.as_ptr().cast(), self.capacity, 0);
+
+        self.data = None;
         self.capacity = 0;
         self.count = 0;
     }
 }
 
-impl<T: std::fmt::Debug + Clone> IntoIterator for DynArray<T> {
+impl<T> IntoIterator for DynArray<T>
+where
+    T: Debug,
+{
     type Item = T;
-    type IntoIter = OwnedIter<T>;
+    type IntoIter = DynArrayIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
-        OwnedIter::new(self.data, self.count)
+        DynArrayIter::new(self)
     }
 }

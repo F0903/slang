@@ -7,103 +7,93 @@ use std::{
 
 use crate::{
     hashing::Hashable,
-    memory::{DropDealloc, GC},
-    value::{Object, object::AsObjectPtr},
+    memory::{DropDealloc, GC, HeapPtr},
+    value::{Object, Value, object::AsObjectPtr},
 };
 
 /// A manual version of Box that allocates with the GC.
 /// SAFETY: This is a wrapper around a NonNull pointer, cloning will only clone the pointer, and not the underlying data.
 pub struct GcPtr<T: ?Sized> {
-    mem: NonNull<T>,
-    #[cfg(debug_assertions)]
-    dealloced: bool,
+    inner: HeapPtr<T>,
 }
 
+#[allow(dead_code)]
 impl<T> GcPtr<T>
 where
     T: Sized,
 {
+    #[inline]
     pub fn alloc(obj: T) -> Self {
-        // Using Box::leak is more efficient than manually allocating due to some internal Rust optimizations.
         Self {
-            // SAFETY: This is guaranteed to be non-null, as we are literally creating the Box right here.
-            mem: unsafe { NonNull::new_unchecked(Box::leak(Box::new_in(obj, &GC))) },
-            #[cfg(debug_assertions)]
-            dealloced: false,
+            inner: HeapPtr::alloc_in(obj, &GC),
         }
     }
 
     /// This will take ownership of the object and return it.
     /// This makes the underlying value be exposed to the normal drop rules.
+    #[inline]
     pub fn take(self) -> T {
-        let val = unsafe { *Box::from_raw_in(self.mem.as_ptr(), &GC) };
-        val
+        self.inner.take_in(&GC)
     }
 }
 
+#[allow(dead_code)]
 impl<T> GcPtr<T>
 where
     T: ?Sized,
 {
-    pub fn dealloc(&mut self) {
-        #[cfg(debug_assertions)]
-        {
-            assert!(!self.dealloced, "Double free detected!");
-            self.dealloced = true;
-        }
-        unsafe {
-            if std::mem::needs_drop::<T>() {
-                drop(Box::from_raw(self.mem.as_ptr()));
-            }
-        }
-    }
-
-    pub fn dealloc_on_drop(self) -> DropDealloc<T> {
-        DropDealloc::new(self)
-    }
-
+    #[inline]
     pub fn take_box(boxed: Box<T>) -> Self {
         Self {
-            mem: unsafe { NonNull::new_unchecked(Box::leak(boxed)) },
-            dealloced: false,
+            inner: HeapPtr::take_box(boxed),
         }
     }
 
+    #[inline]
     pub const fn from_raw(ptr: NonNull<T>) -> Self {
         Self {
-            mem: ptr,
-            #[cfg(debug_assertions)]
-            dealloced: false,
+            inner: HeapPtr::from_raw(ptr),
         }
     }
 
+    #[inline]
+    pub(super) fn dealloc(&mut self) {
+        self.inner.dealloc();
+    }
+
+    #[inline]
+    pub fn dealloc_on_drop(self) -> DropDealloc<T> {
+        self.inner.dealloc_on_drop()
+    }
+
+    #[inline]
     pub const fn get(&self) -> &T {
-        unsafe { self.mem.as_ref() }
+        self.inner.get()
     }
 
+    #[inline]
     pub const fn get_mut(&mut self) -> &mut T {
-        unsafe { self.mem.as_mut() }
+        self.inner.get_mut()
     }
 
+    #[inline]
     pub const fn get_raw(&self) -> NonNull<T> {
-        self.mem
+        self.inner.get_raw()
     }
 
+    #[inline]
     pub fn get_address(&self) -> usize {
-        self.mem.addr().into()
+        self.inner.get_address()
     }
 
     /// Coerce this pointer to a trait object pointer (e.g., GcPtr<dyn Trait>).
+    #[inline]
     pub fn as_dyn<D: ?Sized>(&self) -> GcPtr<D>
     where
         T: Unsize<D>,
     {
-        // SAFETY: The pointer was originally created from a Box<T> and T: Unsize<D>,
-        // so the conversion is valid (just like Box<T> -> Box<D>).
         GcPtr {
-            mem: self.mem,
-            #[cfg(debug_assertions)]
-            dealloced: self.dealloced,
+            inner: self.inner.as_dyn(),
         }
     }
 }
@@ -112,11 +102,10 @@ impl<T> Clone for GcPtr<T>
 where
     T: ?Sized,
 {
+    #[inline]
     fn clone(&self) -> Self {
         Self {
-            mem: self.mem,
-            #[cfg(debug_assertions)]
-            dealloced: self.dealloced,
+            inner: self.inner.clone(),
         }
     }
 }
@@ -128,7 +117,7 @@ where
     T: ?Sized + Display + Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        unsafe { f.write_fmt(format_args!("{:?} -> {}", self.mem, self.mem.as_ref())) }
+        f.write_fmt(format_args!("GCPTR {}", self.inner))
     }
 }
 
@@ -137,7 +126,7 @@ where
     T: ?Sized + Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{:?} -> {:?}", self.mem, self.mem))
+        f.write_fmt(format_args!("GCPTR {:?}  ", self.inner))
     }
 }
 
@@ -147,8 +136,9 @@ where
 {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
-        unsafe { self.mem.as_ref() }
+        self.inner.deref()
     }
 }
 
@@ -156,8 +146,9 @@ impl<T> DerefMut for GcPtr<T>
 where
     T: ?Sized,
 {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { self.mem.as_mut() }
+        self.inner.deref_mut()
     }
 }
 
@@ -165,8 +156,9 @@ impl<T> PartialEq for GcPtr<T>
 where
     T: ?Sized,
 {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.mem == other.mem
+        self.inner == other.inner
     }
 }
 
@@ -174,12 +166,20 @@ impl<T> Hashable for GcPtr<T>
 where
     T: ?Sized + Hashable,
 {
+    #[inline]
     fn get_hash(&self) -> u32 {
         T::get_hash(self.get())
     }
 }
 
+impl GcPtr<Object> {
+    pub const fn to_value(self) -> Value {
+        Value::object(self)
+    }
+}
+
 impl AsObjectPtr for GcPtr<Object> {
+    #[inline]
     fn as_object_ptr(&self) -> GcPtr<Object> {
         self.clone()
     }

@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     memory::GcPtr,
-    value::{Object, object::AsObjectPtr},
+    value::{Object, Value, object::AsObjectPtr},
 };
 
 #[derive(Debug)]
@@ -16,6 +16,7 @@ pub struct ObjectRef<T> {
     parent: NonNull<Object>,
 }
 
+#[allow(dead_code)]
 impl<T> ObjectRef<T> {
     pub(super) fn new(ptr: *const T, parent: NonNull<Object>) -> Self {
         Self { ptr, parent }
@@ -34,6 +35,10 @@ impl<T> ObjectRef<T> {
     pub const fn as_mut(&mut self) -> &mut T {
         // Casting from const to mut here is obviously extra unsafe, but we are riding wild out here.
         unsafe { (self.ptr as *mut T).as_mut_unchecked() }
+    }
+
+    pub const fn to_value(self) -> Value {
+        Value::object(self.upcast())
     }
 
     pub fn addr_gt_addr<A>(&self, other: *const A) -> bool {
@@ -77,12 +82,6 @@ impl<T> DerefMut for ObjectRef<T> {
 impl<T: PartialEq> PartialEq for ObjectRef<T> {
     fn eq(&self, other: &Self) -> bool {
         T::eq(self.as_ref(), other.as_ref())
-    }
-}
-
-impl<T: PartialOrd> PartialOrd for ObjectRef<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        T::partial_cmp(self.as_ref(), other.as_ref())
     }
 }
 

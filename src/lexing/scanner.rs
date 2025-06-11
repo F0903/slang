@@ -5,7 +5,7 @@ use super::{
     span::Span,
     token::{Token, TokenType},
 };
-use crate::memory::GcPtr;
+use crate::memory::HeapPtr;
 
 type ScannerResult<'t> = std::result::Result<&'t Token, ScannerError>;
 
@@ -33,7 +33,7 @@ pub struct Scanner {
 }
 
 impl Scanner {
-    pub fn new(mut source: GcPtr<[u8]>) -> Self {
+    pub fn new(mut source: HeapPtr<[u8]>) -> Self {
         let start = unsafe { NonNull::new_unchecked(source.as_mut_ptr()) };
         let current_start = start;
         let current_end = current_start;

@@ -1,4 +1,5 @@
 use core::panic;
+use std::ptr::NonNull;
 
 use crate::{collections::DynArray, dbg_println, value::Value, vm::opcode::OpCode};
 
@@ -19,7 +20,7 @@ impl Chunk {
         }
     }
 
-    pub(crate) const fn get_code_ptr(&self) -> *mut u8 {
+    pub(crate) const fn get_code_ptr(&self) -> Option<NonNull<u8>> {
         self.code.get_raw_ptr()
     }
 

@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, ptr::NonNull};
 
 use crate::value::{
     Value,
@@ -8,18 +8,18 @@ use crate::value::{
 #[derive(Clone)]
 pub struct CallFrame {
     closure: ObjectRef<Closure>,
-    ip: *mut u8,
+    ip: NonNull<u8>,
     /// Pointer to the point in the stack where this CallFrame begins.
     /// Since CallFrames only live within the VM, this is always valid.
-    slots: *mut Value,
+    slots: NonNull<Value>,
 }
 
 impl CallFrame {
-    pub const fn new(closure: ObjectRef<Closure>, ip: *mut u8, slots: *mut Value) -> Self {
+    pub const fn new(closure: ObjectRef<Closure>, ip: NonNull<u8>, slots: NonNull<Value>) -> Self {
         Self { closure, ip, slots }
     }
 
-    pub const fn get_ip(&mut self) -> *mut u8 {
+    pub const fn get_ip(&mut self) -> NonNull<u8> {
         self.ip
     }
 
@@ -35,11 +35,7 @@ impl CallFrame {
         }
     }
 
-    pub const fn get_slots_raw(&self) -> *const Value {
-        self.slots
-    }
-
-    pub const fn get_slots_raw_mut(&mut self) -> *mut Value {
+    pub const fn get_slots_raw(&self) -> NonNull<Value> {
         self.slots
     }
 
@@ -50,11 +46,11 @@ impl CallFrame {
     }
 
     pub const fn get_slot_ref(&self, index: usize) -> &Value {
-        unsafe { self.slots.add(index).as_ref_unchecked() }
+        unsafe { self.slots.add(index).as_ref() }
     }
 
     pub const fn get_slot_mut(&mut self, index: usize) -> &mut Value {
-        unsafe { self.slots.add(index).as_mut_unchecked() }
+        unsafe { self.slots.add(index).as_mut() }
     }
 
     pub fn get_closure(&self) -> ObjectRef<Closure> {
