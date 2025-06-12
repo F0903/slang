@@ -25,12 +25,12 @@ const UPVALUES_MAX: usize = 255;
 
 type CompilerResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
-type ParseFn = fn(&mut Compiler, bool);
+type ParseFn<'src> = fn(&mut Compiler<'src>, bool);
 
 #[derive(Debug, Clone)]
-struct ParseRule {
-    prefix: Option<ParseFn>,
-    infix: Option<ParseFn>,
+struct ParseRule<'src> {
+    prefix: Option<ParseFn<'src>>,
+    infix: Option<ParseFn<'src>>,
     precedence: Precedence,
 }
 
@@ -65,9 +65,9 @@ impl JumpIndecies {
     }
 }
 
-pub struct Compiler {
-    source: HeapPtr<[u8]>,
-    scanner: HeapPtr<Scanner>,
+pub struct Compiler<'src> {
+    source: &'src [u8],
+    scanner: HeapPtr<Scanner<'src>>,
     current_function: GcScopedRoot<ObjectRef<Function>>,
     current_function_type: FunctionType,
     locals: Stack<Local, LOCAL_SLOTS>,
@@ -75,14 +75,14 @@ pub struct Compiler {
     scope_depth: i32,
     enclosing_loop: Option<EnclosingLoop>,
     // SAFETY: It is guaranteed that the enclosing compiler outlives the holder of the reference.
-    enclosing_compiler: Option<GcPtr<Compiler>>,
+    enclosing_compiler: Option<GcPtr<Compiler<'src>>>,
     had_error: bool,
     panic_mode: bool,
-    parse_rule_table: DynArray<ParseRule>,
+    parse_rule_table: DynArray<ParseRule<'src>>,
 }
 
-impl Compiler {
-    pub fn new(source: HeapPtr<[u8]>, function_type: FunctionType) -> GcPtr<Self> {
+impl<'src> Compiler<'src> {
+    pub fn new(source: &'src [u8], function_type: FunctionType) -> GcPtr<Self> {
         let mut locals = Stack::new();
         locals.push(Local::dummy()); // Reserve first slot as index 0 is used for the "main" function.
 
@@ -173,7 +173,7 @@ impl Compiler {
         unsafe { &mut *(self.current_function.get_chunk_mut() as *mut Chunk) }
     }
 
-    fn get_rule(&self, token: TokenType) -> &ParseRule {
+    fn get_rule(&self, token: TokenType) -> &ParseRule<'src> {
         debug_assert!(
             self.parse_rule_table.get_count() > token as usize,
             "Token index out of bounds in parse rule table.\nMight be missing parse rule for newly added tokens.",
@@ -181,7 +181,7 @@ impl Compiler {
         self.parse_rule_table.get(token as usize)
     }
 
-    pub fn get_current_source(&self) -> &[u8] {
+    pub fn get_current_source(&self) -> &'src [u8] {
         &self.source
     }
 
@@ -1157,7 +1157,7 @@ impl Compiler {
     }
 }
 
-impl Drop for Compiler {
+impl Drop for Compiler<'_> {
     fn drop(&mut self) {
         dbg_println!("DEBUG COMPILER DROP");
         self.scanner.dealloc();

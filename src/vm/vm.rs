@@ -307,8 +307,7 @@ impl Vm {
     }
 
     pub fn interpret(&mut self, source: &[u8]) -> Result<()> {
-        let source = GcPtr::take_box(source.to_owned().into_boxed_slice()).dealloc_on_drop();
-        let mut compiler = Compiler::new(*source, FunctionType::Script).dealloc_on_drop();
+        let mut compiler = Compiler::new(source, FunctionType::Script).dealloc_on_drop();
 
         let function = compiler
             .compile()

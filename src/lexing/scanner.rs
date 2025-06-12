@@ -5,7 +5,6 @@ use super::{
     span::Span,
     token::{Token, TokenType},
 };
-use crate::memory::HeapPtr;
 
 type ScannerResult<'t> = std::result::Result<&'t Token, ScannerError>;
 
@@ -22,7 +21,7 @@ const fn is_alpha(ch: u8) -> bool {
 }
 
 #[derive(Debug)]
-pub struct Scanner {
+pub struct Scanner<'src> {
     start: NonNull<u8>,
     current_start: NonNull<u8>,
     current_end: NonNull<u8>,
@@ -30,14 +29,17 @@ pub struct Scanner {
     line: u32,
     current_token: Option<Token>,
     previous_token: Option<Token>,
+    _src_lifetime: std::marker::PhantomData<&'src [u8]>,
 }
 
-impl Scanner {
-    pub fn new(mut source: HeapPtr<[u8]>) -> Self {
-        let start = unsafe { NonNull::new_unchecked(source.as_mut_ptr()) };
+impl<'src> Scanner<'src> {
+    pub fn new(source: &'src [u8]) -> Self {
+        // For some reason NonNull only takes a *mut, but the Scanner will never mutatate the source buffer.
+        let src_ptr = source.as_ptr() as *mut u8;
+        let start = unsafe { NonNull::new_unchecked(src_ptr) };
         let current_start = start;
         let current_end = current_start;
-        let end = unsafe { NonNull::new_unchecked(source.as_mut_ptr().add(source.len())) };
+        let end = unsafe { NonNull::new_unchecked(src_ptr.add(source.len())) };
 
         Self {
             start,
@@ -47,6 +49,7 @@ impl Scanner {
             line: 1,
             current_token: None,
             previous_token: None,
+            _src_lifetime: std::marker::PhantomData,
         }
     }
 
