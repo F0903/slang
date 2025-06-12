@@ -34,7 +34,7 @@ pub struct Scanner<'src> {
 
 impl<'src> Scanner<'src> {
     pub fn new(source: &'src [u8]) -> Self {
-        // For some reason NonNull only takes a *mut, but the Scanner will never mutatate the source buffer.
+        // SAFETY: For some reason NonNull only takes a *mut, but the Scanner will never mutatate the source buffer.
         let src_ptr = source.as_ptr() as *mut u8;
         let start = unsafe { NonNull::new_unchecked(src_ptr) };
         let current_start = start;
