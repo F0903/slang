@@ -22,6 +22,21 @@
     {
       "type": "lldb",
       "request": "launch",
+      "name": "Debug executable 'slang' with debug file in Release mode.",
+      "cargo": {
+        "args": ["build", "--bin=slang", "--package=slang", "--release"],
+        "filter": {
+          "name": "slang",
+          "kind": "bin"
+        }
+      },
+      "args": ["./test.slang"],
+      "cwd": "${workspaceFolder}",
+      "console": "externalTerminal"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
       "name": "Debug executable 'slang' with debug file and stress GC flag.",
       "cargo": {
         "args": [
