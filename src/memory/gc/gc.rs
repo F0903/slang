@@ -250,7 +250,7 @@ impl Gc {
         for string in strings_to_remove {
             dbg_println!("|- {}", string);
             if let Err(err) = state.strings.remove(string) {
-                dbg_println!("| GC ERROR: {}", err);
+                println!("| GC ERROR: {}", err);
             }
         }
     }
@@ -265,6 +265,8 @@ impl Gc {
         }
 
         state.running = true;
+
+        #[cfg(debug_assertions)]
         let start_alloc = state.bytes_allocated;
         dbg_println!("\n===== GC BEGIN =====");
         dbg_println!("| GC CURRENT ALLOCATION: {}", start_alloc);
@@ -279,9 +281,10 @@ impl Gc {
         self.trace_gray_objects();
         self.sweep_unreachable_strings();
         self.sweep();
-        let end_alloc = state.bytes_allocated;
         state.next_collect = state.bytes_allocated * GC_HEAP_GROW_FACTOR;
 
+        #[cfg(debug_assertions)]
+        let end_alloc = state.bytes_allocated;
         dbg_println!("| GC CURRENT ALLOCATION: {}", end_alloc);
         dbg_println!(
             "| GC RECLAIMED {} BYTES",

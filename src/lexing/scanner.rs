@@ -79,7 +79,7 @@ impl<'src> Scanner<'src> {
 
     fn make_token(&mut self, typ: TokenType) -> &Token {
         // SAFETY: make_token is only called from places where we are guaranteed to be in-bounds.
-        let (start, len, end) = unsafe {
+        let (start, _len, end) = unsafe {
             let start = self.current_start.offset_from(self.start) as usize;
             let len = self.current_end.offset_from(self.current_start) as usize;
             (start, len, start + len)
@@ -93,7 +93,7 @@ impl<'src> Scanner<'src> {
             let lexeme_str = unsafe {
                 std::str::from_utf8_unchecked(std::slice::from_raw_parts(
                     self.current_start.as_ptr(),
-                    len,
+                    _len,
                 ))
             };
             let hash = GlobalHashMethod::hash(lexeme_str.as_bytes());

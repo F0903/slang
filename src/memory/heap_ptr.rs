@@ -90,6 +90,7 @@ where
         Self {
             // SAFETY: This is guaranteed to be non-null, as we are literally creating the Box right here.
             mem: unsafe { NonNull::new_unchecked(Box::leak(boxed)) },
+            #[cfg(debug_assertions)]
             dealloced: false,
         }
     }

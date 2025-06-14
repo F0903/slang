@@ -211,6 +211,7 @@ impl Vm {
                 .unwrap_or("<script>"),
             arg_count
         );
+        #[cfg(debug_assertions)]
         disassemble_chunk(
             function.get_chunk(),
             function

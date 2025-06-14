@@ -1,11 +1,12 @@
 use std::ptr::NonNull;
 
 use super::{FunctionType, chunk::Chunk, local::Local};
+#[cfg(debug_assertions)]
+use crate::debug::disassemble_chunk;
 use crate::{
     collections::{DynArray, Stack},
     compiler::upvalue::Upvalue,
     dbg_println,
-    debug::disassemble_chunk,
     lexing::{
         scanner::Scanner,
         token::{Precedence, Token, TokenType},

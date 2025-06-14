@@ -117,7 +117,7 @@ where
     T: ?Sized + Display + Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("GCPTR {}", self.inner))
+        Display::fmt(self.get(), f)
     }
 }
 
