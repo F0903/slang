@@ -36,6 +36,7 @@ where
     /// This makes the underlying value be exposed to the normal drop rules.
     #[inline]
     pub fn take(self) -> T {
+        // SAFETY: This is always guaranteed to be non-null.
         let val = unsafe { *Box::from_raw(self.mem.as_ptr()) };
         val
     }
@@ -55,6 +56,7 @@ where
     /// This makes the underlying value be exposed to the normal drop rules.
     #[inline]
     pub fn take_in(self, alloc: impl Allocator) -> T {
+        // SAFETY: This is always guaranteed to be non-null.
         let val = unsafe { *Box::from_raw_in(self.mem.as_ptr(), &alloc) };
         val
     }
@@ -70,6 +72,7 @@ where
             assert!(!self.dealloced, "Double free detected!");
             self.dealloced = true;
         }
+        // SAFETY: We are deallocating the memory that we own, and we are guaranteed to have a valid pointer.
         unsafe {
             if std::mem::needs_drop::<T>() {
                 drop(Box::from_raw(self.mem.as_ptr()));
@@ -85,6 +88,7 @@ where
     #[inline]
     pub fn take_box(boxed: Box<T>) -> Self {
         Self {
+            // SAFETY: This is guaranteed to be non-null, as we are literally creating the Box right here.
             mem: unsafe { NonNull::new_unchecked(Box::leak(boxed)) },
             dealloced: false,
         }
@@ -101,11 +105,13 @@ where
 
     #[inline]
     pub const fn get(&self) -> &T {
+        // SAFETY: self.mem is always guaranteed to be non-null and valid.
         unsafe { self.mem.as_ref() }
     }
 
     #[inline]
     pub const fn get_mut(&mut self) -> &mut T {
+        // SAFETY: self.mem is always guaranteed to be non-null and valid.
         unsafe { self.mem.as_mut() }
     }
 
@@ -120,6 +126,7 @@ where
     }
 
     /// Coerce this pointer to a trait object pointer (e.g., GcPtr<dyn Trait>).
+    #[inline]
     pub fn as_dyn<D: ?Sized>(&self) -> HeapPtr<D>
     where
         T: Unsize<D>,
@@ -155,6 +162,7 @@ where
     T: ?Sized + Display + Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // SAFETY: self.mem is always guaranteed to be non-null and valid.
         unsafe { f.write_fmt(format_args!("{:?} -> {}", self.mem, self.mem.as_ref())) }
     }
 }
@@ -176,6 +184,7 @@ where
 
     #[inline]
     fn deref(&self) -> &Self::Target {
+        // SAFETY: self.mem is always guaranteed to be non-null and valid.
         unsafe { self.mem.as_ref() }
     }
 }
@@ -186,6 +195,7 @@ where
 {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: self.mem is always guaranteed to be non-null and valid.
         unsafe { self.mem.as_mut() }
     }
 }
@@ -196,6 +206,7 @@ where
 {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
+        // SAFETY: self.mem is always guaranteed to be non-null and valid.
         std::ptr::addr_eq(self.mem.as_ptr(), other.mem.as_ptr())
     }
 }

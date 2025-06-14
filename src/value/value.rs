@@ -34,6 +34,8 @@ macro_rules! value_as_fn {
                     "!"
                 )
             );
+
+            // SAFETY: We are guaranteed that the value is of the correct type, so we can safely access the union.
             unsafe { self.casts.$variant }
         }
     };

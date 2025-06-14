@@ -49,8 +49,17 @@ macro_rules! object_as_fn {
                     "!"
                 )
             );
-            let ptr = unsafe { &self.casts.$variant };
-            ObjectRef::new(ptr as *const ManuallyDrop<$ty> as *const $ty, unsafe {
+            // SAFETY: We are guaranteed that the object is of the correct type, so we can safely access the union.
+            let variant = unsafe { &self.casts.$variant };
+
+            // SAFETY: We are guaranteed that variant is valid and initialized here.
+            let nn = unsafe {
+                // We cast the variant out of the ManuallyDrop, as this is already guaranteed by the ObjectRef.
+                // We then cast to a *mut despie being being a reference, as ObjectRef<T> is a pointer type.
+                // Borrow rules are checked later by the ObjectRef<T> type.
+                NonNull::new_unchecked(variant as &$ty as *const _ as *mut _)
+            };
+            ObjectRef::new(nn, unsafe {
                 NonNull::new_unchecked(self as *const _ as *mut _)
             })
         }

@@ -84,6 +84,8 @@ impl Vm {
             // Since this is a debug function, it doesn't matter that we are cloning here
             let mut frame = frame.clone();
             let function = frame.get_closure().get_function();
+
+            // SAFETY: The instruction pointer is guaranteed to be valid as long as the CallFrame is alive.
             let instruction = unsafe {
                 let ip_offset = frame.get_ip().offset_from(
                     function
@@ -108,7 +110,9 @@ impl Vm {
         str_buf
     }
 
+    #[inline]
     fn read_byte(&mut self) -> u8 {
+        // SAFETY: The instruction pointer is guaranteed to be valid as long as the CallFrame is alive.
         unsafe {
             let frame = self.callframes.top_mut();
             let val = frame.get_ip().read();
@@ -117,7 +121,9 @@ impl Vm {
         }
     }
 
+    #[inline]
     fn read_double(&mut self) -> u16 {
+        // SAFETY: The instruction pointer is guaranteed to be valid as long as the CallFrame is alive.
         unsafe {
             let frame = self.callframes.top_mut();
             let val = frame.get_ip().cast::<u16>().read();
@@ -126,7 +132,9 @@ impl Vm {
         }
     }
 
+    #[inline]
     fn read_quad(&mut self) -> u32 {
+        // SAFETY: The instruction pointer is guaranteed to be valid as long as the CallFrame is alive.
         unsafe {
             let frame = self.callframes.top_mut();
             let val = frame.get_ip().cast::<u32>().read();
@@ -137,6 +145,7 @@ impl Vm {
 
     /// Reads a constant from the chunk with a u8 index.
     #[allow(dead_code)]
+    #[inline]
     fn read_constant(&mut self) -> Value {
         let index = self.read_byte();
         let frame = self.callframes.top_mut();
@@ -149,6 +158,7 @@ impl Vm {
     }
 
     /// Reads a constant from the chunk with a u16 index.
+    #[inline]
     fn read_constant_double(&mut self) -> Value {
         let index = self.read_double();
         let frame = self.callframes.top_mut();
@@ -161,6 +171,7 @@ impl Vm {
     }
 
     /// Reads a constant from the chunk with a u32 index.
+    #[inline]
     fn read_constant_quad(&mut self) -> Value {
         let index = self.read_quad();
         let frame = self.callframes.top_mut();
@@ -210,6 +221,7 @@ impl Vm {
         );
 
         let stack_base = self.stack.get_mut_at(0) as *mut Value;
+        // SAFETY: This will always be in-bounds, as we are guaranteed to have at least `arg_count` slots in the stack.
         let callframe_slots = unsafe { stack_base.add(self.stack.count() - arg_count as usize) };
         dbg_println!("STACK BASE -> {:?}", stack_base);
         dbg_println!("CALLFRAME SLOTS -> {:?}", callframe_slots);
@@ -228,6 +240,7 @@ impl Vm {
         Ok(())
     }
 
+    #[inline]
     fn native_call(&mut self, native_func: ObjectRef<NativeFunction>, arg_count: u8) -> Result<()> {
         if arg_count != native_func.arity {
             return Err(Error::Runtime(format!(
@@ -242,6 +255,7 @@ impl Vm {
         Ok(())
     }
 
+    #[inline]
     fn call_value(&mut self, callee: Value, arg_count: u8) -> Result<()> {
         match callee.get_type() {
             ValueType::Object => {
@@ -296,6 +310,7 @@ impl Vm {
         new_upvalue.get_object()
     }
 
+    #[inline]
     fn close_upvalues(&mut self, stack_slot: NonNull<Value>) {
         while let Some(open_upvalues) = self.open_upvalues
             && open_upvalues.get_location_raw() >= stack_slot
@@ -309,12 +324,16 @@ impl Vm {
     pub fn interpret(&mut self, source: &[u8]) -> Result<()> {
         let mut compiler = Compiler::new(source, FunctionType::Script).dealloc_on_drop();
 
+        // Compile the source code into a Function object
         let function = compiler
             .compile()
             .map_err(|e| Error::CompileTime(e.to_string()))?;
         let closure = GC.create_closure(Closure::new(function, DynArray::new()));
+
+        // Push the closure onto the stack
         self.stack.push(closure.get_object().upcast().to_value());
 
+        // Create the initial call frame for the main function
         self.callframes.push(CallFrame::new(
             closure.get_object(),
             closure
@@ -324,9 +343,11 @@ impl Vm {
                 .expect("chunk code pointer was null!"),
             self.stack.get_mut_at(0).into(),
         ));
+        // Call the initial main function, setting the instruction pointer to the start of the function
         self.call(closure.get_object(), 0)?;
 
         loop {
+            // SAFETY: The instruction pointer is guaranteed to be valid as long as the CallFrame is alive.
             #[cfg(debug_assertions)]
             unsafe {
                 let frame = self.callframes.top_mut();

@@ -32,6 +32,7 @@ where
 
         let ptr = self.inner.get_raw_ptr();
         if let Some(ptr) = ptr {
+            // SAFETY: we just checked that index is less than len, so we are in-bounds
             let val = unsafe { ptr.add(self.index).read() };
             self.index += 1;
             Some(val)

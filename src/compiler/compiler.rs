@@ -60,6 +60,7 @@ impl JumpIndecies {
     const ARGUMENT_SIZE: u32 = 2;
     const JUMP_SIZE: u32 = Self::OPCODE_SIZE + Self::ARGUMENT_SIZE;
 
+    #[inline]
     pub const fn get_argument_index(&self) -> u32 {
         self.instruction_index + Self::OPCODE_SIZE
     }
@@ -74,7 +75,6 @@ pub struct Compiler<'src> {
     upvalues: Stack<Upvalue, UPVALUES_MAX>,
     scope_depth: i32,
     enclosing_loop: Option<EnclosingLoop>,
-    // SAFETY: It is guaranteed that the enclosing compiler outlives the holder of the reference.
     enclosing_compiler: Option<GcPtr<Compiler<'src>>>,
     had_error: bool,
     panic_mode: bool,
@@ -145,7 +145,9 @@ impl<'src> Compiler<'src> {
         })
     }
 
+    #[inline]
     fn fork(&mut self, function_type: FunctionType) -> GcPtr<Self> {
+        // SAFETY: self is guaranteed to be valid. Obviously...
         let self_ptr = GcPtr::from_raw(unsafe { NonNull::new_unchecked(self) });
         GcPtr::alloc(Self {
             source: self.source,
@@ -163,16 +165,17 @@ impl<'src> Compiler<'src> {
         })
     }
 
+    #[inline]
     fn get_current_chunk(&self) -> &Chunk {
-        // This is extremely ugly, but Rust thinks that I'm borrowing a value owned by this function, which is not true
-        unsafe { &*(self.current_function.get_chunk() as *const Chunk) }
+        self.current_function.get_chunk()
     }
 
+    #[inline]
     fn get_current_chunk_mut(&mut self) -> &mut Chunk {
-        // This is extremely ugly, but Rust thinks that I'm borrowing a value owned by this function, which is not true
-        unsafe { &mut *(self.current_function.get_chunk_mut() as *mut Chunk) }
+        self.current_function.get_chunk_mut()
     }
 
+    #[inline]
     fn get_rule(&self, token: TokenType) -> &ParseRule<'src> {
         debug_assert!(
             self.parse_rule_table.get_count() > token as usize,
@@ -181,23 +184,28 @@ impl<'src> Compiler<'src> {
         self.parse_rule_table.get(token as usize)
     }
 
+    #[inline]
     pub fn get_current_source(&self) -> &'src [u8] {
         &self.source
     }
 
+    #[inline]
     fn get_current_token(&self) -> Option<&Token> {
         self.scanner.get_current_token()
     }
 
+    #[inline]
     fn get_previous_token(&self) -> Option<&Token> {
         self.scanner.get_previous_token()
     }
 
+    #[inline]
     pub fn get_current_line(&self) -> u32 {
         self.get_previous_token()
             .map_or_else(|| self.scanner.get_current_line(), |token| token.line)
     }
 
+    #[inline]
     fn get_instruction_count(&self) -> usize {
         self.get_current_chunk().get_bytes_count()
     }
@@ -241,47 +249,56 @@ impl<'src> Compiler<'src> {
         }
     }
 
+    #[inline]
     pub fn had_error(&self) -> bool {
         self.had_error
     }
 
+    #[inline]
     pub fn is_panic_mode(&self) -> bool {
         self.panic_mode
     }
 
+    #[inline]
     pub fn set_panic_mode(&mut self, value: bool) {
         self.panic_mode = value;
     }
 
     /// Convenience function to write an opcode to the current chunk.
+    #[inline]
     fn emit_op(&mut self, op: OpCode, line: u32) {
         self.get_current_chunk_mut().write_opcode(op, line);
     }
 
     /// Convenience function to write an opcode with a u8 arg to the current chunk.
+    #[inline]
     fn emit_op_with_byte(&mut self, op: OpCode, arg: u8, line: u32) {
         self.get_current_chunk_mut()
             .write_opcode_with_byte_arg(op, arg, line);
     }
 
     /// Convenience function to write an opcode with a u16 arg to the current chunk.
+    #[inline]
     fn emit_op_with_double(&mut self, op: OpCode, arg: u16, line: u32) {
         self.get_current_chunk_mut()
             .write_opcode_with_double_arg(op, arg, line);
     }
 
     /// Convenience function to write an opcode with a u32 arg to the current chunk.
+    #[inline]
     fn emit_op_with_quad(&mut self, op: OpCode, arg: u32, line: u32) {
         self.get_current_chunk_mut()
             .write_opcode_with_quad(op, arg, line);
     }
 
     /// Convenience function to replace the last opcode in the current chunk.
+    #[inline]
     fn replace_last_op(&mut self, op: OpCode) {
         self.get_current_chunk_mut().replace_last_op(op);
     }
 
     /// Convenience function to write a jump opcode.
+    #[inline]
     fn emit_jump(&mut self, op: OpCode, arg: u32) {
         debug_assert!(
             op == OpCode::Jump
@@ -298,6 +315,7 @@ impl<'src> Compiler<'src> {
     }
 
     /// Convenience function to write a jump opcode for backpatching.
+    #[inline]
     fn emit_jump_backpatch(&mut self, op: OpCode) -> JumpIndecies {
         self.emit_jump(op, u16::MAX as u32);
         let index = self.get_instruction_count() as u32 - JumpIndecies::JUMP_SIZE;
@@ -307,6 +325,7 @@ impl<'src> Compiler<'src> {
     }
 
     /// Function to patch a jump instruction at the specified offset to point to the current instruction.
+    #[inline]
     fn patch_jump(&mut self, offset: u32) {
         let (code, jump) = {
             (
@@ -322,33 +341,116 @@ impl<'src> Compiler<'src> {
         }
         let jump = jump as u16;
 
+        debug_assert!(
+            (offset as usize) < self.get_current_chunk().get_bytes_count(),
+            "patch_jump offset is out of bounds!\n\t offset = '{}'",
+            offset
+        );
+        // SAFETY: Code is guranteed to be valid and non-null. We also just checked that offset is in-bounds
         unsafe { code.add(offset as usize).cast::<u16>().write(jump) };
     }
 
     /// Convenience function to write a jumpback opcode that jumps back to the specified index.
+    #[inline]
     fn emit_backjump(&mut self, to: u32) {
         let backward = self.get_instruction_count() as u32 + JumpIndecies::JUMP_SIZE - to;
         self.emit_jump(OpCode::Backjump, backward);
     }
 
     /// Returns constant index
+    #[inline]
     fn emit_constant_with_op(&mut self, value: Value, line: u32) -> u32 {
         self.get_current_chunk_mut()
             .add_constant_with_op(value, line)
     }
 
     /// Returns constant index
+    #[inline]
     fn emit_constant(&mut self, value: Value) -> u32 {
         self.get_current_chunk_mut().add_constant(value)
     }
 
+    #[inline]
     fn emit_empty_return(&mut self) {
         self.emit_op(OpCode::None, self.get_current_line());
         self.emit_op(OpCode::Return, self.get_current_line());
     }
 
+    #[inline]
+    fn is_previous_token(&self, token_type: TokenType) -> bool {
+        self.get_previous_token()
+            .map_or(false, |token| token.token_type == token_type)
+    }
+
+    #[inline]
+    fn is_current_token(&self, token_type: TokenType) -> bool {
+        self.get_current_token()
+            .map_or(false, |token| token.token_type == token_type)
+    }
+
+    #[inline]
+    fn advance(&mut self) {
+        if let Err(err) = self.scanner.scan() {
+            self.error(err.get_message());
+            return;
+        }
+
+        dbg_println!(
+            "Advanced to next token.\n\tlast: {:?}, current: {:?}",
+            self.get_previous_token(),
+            self.get_current_token()
+        );
+    }
+
+    fn synchronize(&mut self) {
+        self.set_panic_mode(false);
+
+        while !self.is_current_token(TokenType::EOF) {
+            if self.is_previous_token(TokenType::Semicolon) {
+                return;
+            }
+            match self.get_current_token() {
+                Some(t) => match t.token_type {
+                    TokenType::Class
+                    | TokenType::Fn
+                    | TokenType::Let
+                    | TokenType::For
+                    | TokenType::If
+                    | TokenType::While
+                    | TokenType::Return => return,
+                    _ => {}
+                },
+                None => {}
+            }
+
+            self.advance();
+        }
+    }
+
+    #[inline]
+    fn match_and_advance(&mut self, token_type: TokenType) -> bool {
+        let value = self.is_current_token(token_type);
+        if value {
+            self.advance();
+        }
+        value
+    }
+
+    #[inline]
+    fn consume(&mut self, token_type: TokenType, err_msg: &str) {
+        if !self.match_and_advance(token_type) {
+            self.error(err_msg);
+        }
+    }
+
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
+
+        debug_assert!(
+            self.get_previous_token().is_some(),
+            "get_previous_token() was None in parse_precedence!"
+        );
+        // SAFETY: we just checked that get_previous_token is Some.
         let previous_token_type =
             unsafe { self.get_previous_token().unwrap_unchecked().token_type };
         let prefix_rule = self.get_rule(previous_token_type).prefix;
@@ -361,16 +463,30 @@ impl<'src> Compiler<'src> {
             }
         }
 
+        debug_assert!(
+            self.get_current_token().is_some(),
+            "get_current_token() was None in parse_precedence!"
+        );
+        // SAFETY: we just checked that get_current_token is Some.
         while precedence
             <= self
                 .get_rule(unsafe { self.get_current_token().unwrap_unchecked().token_type })
                 .precedence
         {
             self.advance();
+            // SAFETY: since get_current_token was just Some, we know that the get_previous_token will be Some now.
             let previous_token_type =
                 unsafe { self.get_previous_token().unwrap_unchecked().token_type };
             let infix_rule = self.get_rule(previous_token_type).infix;
-            infix_rule.unwrap()(self, can_assign);
+
+            debug_assert!(
+                infix_rule.is_some(),
+                "infix_rule was None in parse_precedence!"
+            );
+            // SAFETY: since the parse table is predefined, this will always be Some unless a development error occured.
+            unsafe {
+                infix_rule.unwrap_unchecked()(self, can_assign);
+            }
         }
 
         if can_assign && self.match_and_advance(TokenType::Equal) {
@@ -380,7 +496,12 @@ impl<'src> Compiler<'src> {
 
     fn string(&mut self, _can_assign: bool) {
         let (name, line) = {
-            let token = self.get_previous_token().expect("Expected a string token.");
+            debug_assert!(
+                self.get_previous_token().is_some(),
+                "get_previous_token() was None in string!"
+            );
+            // SAFETY: this will always be Some unless a development error has occured.
+            let token = unsafe { self.get_previous_token().unwrap_unchecked() };
             let source = self.get_current_source();
             let name = token.lexeme.get_str(source);
             let name = &name[1..name.len() - 1]; // Don't include the leading and trailing "
@@ -393,6 +514,11 @@ impl<'src> Compiler<'src> {
     }
 
     fn literal(&mut self, _can_assign: bool) {
+        debug_assert!(
+            self.get_previous_token().is_some(),
+            "get_previous_token() was None in literal!"
+        );
+        // SAFETY: get_previous_token() in this case will always be Some unless a development error has occured.
         let (operator_type, token_line) = unsafe {
             let token = self.get_previous_token().unwrap_unchecked();
             (token.token_type, token.line)
@@ -408,6 +534,11 @@ impl<'src> Compiler<'src> {
     }
 
     fn unary(&mut self, _can_assign: bool) {
+        debug_assert!(
+            self.get_previous_token().is_some(),
+            "get_previous_token() was None in unary!"
+        );
+        // SAFETY: get_previous_token() in this case will always be Some unless a development error has occured.
         let (operator_type, token_line) = unsafe {
             let token = self.get_previous_token().unwrap_unchecked();
             (token.token_type, token.line)
@@ -425,7 +556,18 @@ impl<'src> Compiler<'src> {
     }
 
     fn binary(&mut self, _can_assign: bool) {
+        debug_assert!(
+            self.get_current_token().is_some(),
+            "get_current_token() was None in binary!"
+        );
+        // SAFETY: get_current_token() in this case will always be Some unless a development error has occured.
         let next_token_type = unsafe { self.get_current_token().unwrap_unchecked().token_type };
+
+        debug_assert!(
+            self.get_previous_token().is_some(),
+            "get_previous_token() was None in binary!"
+        );
+        // SAFETY: get_previous_token() in this case will always be Some unless a development error has occured.
         let (operator_type, token_line) = unsafe {
             let token = self.get_previous_token().unwrap_unchecked();
             (token.token_type, token.line)
@@ -464,6 +606,11 @@ impl<'src> Compiler<'src> {
     }
 
     fn number(&mut self, _can_assign: bool) {
+        debug_assert!(
+            self.get_previous_token().is_some(),
+            "get_previous_token() was None in number!"
+        );
+        // SAFETY: get_previous_token() in this case will always be Some unless a development error has occured.
         let (num, token_line) = unsafe {
             let token = self.get_previous_token().unwrap_unchecked();
             let number = token
@@ -476,70 +623,8 @@ impl<'src> Compiler<'src> {
         self.emit_constant_with_op(Value::number(num), token_line);
     }
 
-    fn advance(&mut self) {
-        if let Err(err) = self.scanner.scan() {
-            self.error(err.get_message());
-            return;
-        }
-
-        dbg_println!(
-            "Advanced to next token.\n\tlast: {:?}, current: {:?}",
-            self.get_previous_token(),
-            self.get_current_token()
-        );
-    }
-
     fn expression(&mut self) {
         self.parse_precedence(Precedence::Assignment);
-    }
-
-    fn is_previous_token(&self, token_type: TokenType) -> bool {
-        self.get_previous_token()
-            .map_or(false, |token| token.token_type == token_type)
-    }
-
-    fn is_current_token(&self, token_type: TokenType) -> bool {
-        self.get_current_token()
-            .map_or(false, |token| token.token_type == token_type)
-    }
-
-    fn match_and_advance(&mut self, token_type: TokenType) -> bool {
-        let value = self.is_current_token(token_type);
-        if value {
-            self.advance();
-        }
-        value
-    }
-
-    fn consume(&mut self, token_type: TokenType, err_msg: &str) {
-        if !self.match_and_advance(token_type) {
-            self.error(err_msg);
-        }
-    }
-
-    fn synchronize(&mut self) {
-        self.set_panic_mode(false);
-
-        while !self.is_current_token(TokenType::EOF) {
-            if self.is_previous_token(TokenType::Semicolon) {
-                return;
-            }
-            match self.get_current_token() {
-                Some(t) => match t.token_type {
-                    TokenType::Class
-                    | TokenType::Fn
-                    | TokenType::Let
-                    | TokenType::For
-                    | TokenType::If
-                    | TokenType::While
-                    | TokenType::Return => return,
-                    _ => {}
-                },
-                None => {}
-            }
-
-            self.advance();
-        }
     }
 
     fn expression_statement(&mut self) {
@@ -569,11 +654,12 @@ impl<'src> Compiler<'src> {
         }
 
         self.scope_depth -= 1;
-
         let line = self.get_current_line();
+
         // Pop all locals in scope
         let mut locals_to_pop = 0;
         let mut pop_n = 0;
+
         //SAFETY: We do not modify the array, and locals are valid for the lifetime of Compiler.
         for local in unsafe { self.locals.unsafe_bottom_iter() } {
             if local.is_captured() {
@@ -1105,6 +1191,7 @@ impl<'src> Compiler<'src> {
         self.emit_op_with_double(OpCode::Closure, constant_index as u16, line);
 
         let line = self.get_current_line();
+
         // SAFETY: We can use the unsafe_bottom_iter since it is guaranteed that the upvalues array will outlive this function.
         let upvalues_iter = unsafe { compiler.upvalues.unsafe_bottom_iter() };
         let chunk = self.get_current_chunk_mut();

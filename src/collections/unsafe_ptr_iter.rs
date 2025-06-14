@@ -25,6 +25,7 @@ impl<T: 'static> Iterator for UnsafePtrIter<T> {
             return None;
         }
 
+        // SAFETY: we just checked that index is less than len, so we are in-bounds
         let val = unsafe { self.data.add(self.index).as_ref_unchecked() };
         self.index += 1;
         Some(val)

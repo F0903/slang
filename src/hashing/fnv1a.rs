@@ -4,6 +4,7 @@ use super::HashMethod;
 pub struct FNV1a;
 
 impl HashMethod for FNV1a {
+    #[inline]
     fn hash(data: &[u8]) -> u32 {
         let mut hash = 2166136261u32;
         for &byte in data {

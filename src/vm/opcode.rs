@@ -39,22 +39,28 @@ pub enum OpCode {
 }
 
 impl OpCode {
+    #[inline]
     pub const fn to_code(self) -> u8 {
+        // SAFETY: OpCode is repr(u8), so we can safely transmute it to u8.
         unsafe { std::mem::transmute(self) }
     }
 
+    #[inline]
     pub const fn from_code(code: u8) -> Self {
+        // SAFETY: OpCode is repr(u8), so we can safely transmute u8 to OpCode.
         unsafe { std::mem::transmute(code) }
     }
 }
 
 impl From<u8> for OpCode {
+    #[inline]
     fn from(value: u8) -> Self {
         Self::from_code(value)
     }
 }
 
 impl From<OpCode> for u8 {
+    #[inline]
     fn from(value: OpCode) -> Self {
         value.to_code()
     }

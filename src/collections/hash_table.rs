@@ -48,6 +48,7 @@ where
     /// Return iterator over the entries in the hash table.
     pub fn entries(&self) -> impl Iterator<Item = &Entry<K, V>> {
         // Return entries that are Some and not tombstones
+        // SAFETY: memory_iter() is guaranteed to be a valid iterator over initialized memory.
         self.data
             .memory_iter()
             .map(|x| unsafe { x.assume_init_ref() })
@@ -59,6 +60,7 @@ where
     /// Be careful (please)
     pub fn entries_mut(&mut self) -> impl Iterator<Item = &mut Entry<K, V>> {
         // Return entries that are Some and not tombstones
+        // SAFETY: memory_iter() is guaranteed to be a valid iterator over initialized memory.
         self.data
             .memory_iter_mut()
             .map(|x| unsafe { x.assume_init_mut() })
@@ -67,10 +69,12 @@ where
     }
 
     fn get_bucket_ref_at(&self, index: usize) -> &Bucket<K, V> {
+        // SAFETY: as long as the index is valid (asserted in method) then the data is guaranteed to be initialized.
         unsafe { self.data.get_memory_unchecked(index) }
     }
 
     fn get_bucket_mut_at(&mut self, index: usize) -> &mut Bucket<K, V> {
+        // SAFETY: as long as the index is valid (asserted in method) then the data is guaranteed to be initialized.
         unsafe { self.data.get_memory_mut_unchecked(index) }
     }
 
@@ -120,7 +124,7 @@ where
             },
         );
 
-        // We need to count every entry from the beginning, since we are not copying over tombstones
+        // We need to count every entry from the beginning, since we are not copying over tombstones.
         let mut count = 0;
         for bucket in old_buckets {
             if let Some(entry) = bucket.entry {
@@ -130,6 +134,7 @@ where
             }
         }
 
+        // SAFETY: the count is guaranteed to be valid, since we just counted all the valid entries.
         unsafe { self.data.set_count(count) };
     }
 
@@ -151,6 +156,7 @@ where
         // Only increase the count if we are inserting a new key (not replacing an existing one or tombstone)
         let new_key = was_none && !was_tombstone;
         if new_key {
+            // SAFETY: since we are adding a new element, we are increasing the count.
             unsafe { self.data.set_count(self.data.get_count() + 1) };
         }
 
@@ -220,6 +226,7 @@ where
     V: Clone + std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        //SAFETY: memory_iter() is guaranteed to be an iterator over initialized values.
         f.debug_struct("HashTable")
             .field("count", &self.data.get_count())
             .field("capacity", &self.data.get_capacity())
@@ -265,17 +272,17 @@ where
         // Since the buckets are not guaranteed to be in a contiguous order, we can not rely on the normal DynArray drop for the elements.
         for entry in self.entries_mut() {
             // SAFETY: It's safe to call drop here, since entries_mut() is guaranteed to be an iterator over valid entries.
-            if std::mem::needs_drop::<K>() {
-                unsafe {
+            unsafe {
+                if std::mem::needs_drop::<K>() {
                     std::ptr::drop_in_place(&mut entry.key);
                 }
-            }
-            if std::mem::needs_drop::<V>() {
-                unsafe {
+                if std::mem::needs_drop::<V>() {
                     std::ptr::drop_in_place(&mut entry.value);
                 }
             }
         }
+
+        // SAFETY: Since we just dropped all elements, we need to set the count to 0.
         unsafe {
             self.data.set_count(0);
         }

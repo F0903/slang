@@ -12,10 +12,12 @@ fn error<'t>(message: impl ToString) -> ScannerResult<'t> {
     Err(ScannerError::new(message))
 }
 
+#[inline]
 const fn is_digit(ch: u8) -> bool {
     ch >= b'0' && ch <= b'9'
 }
 
+#[inline]
 const fn is_alpha(ch: u8) -> bool {
     (ch >= b'a' && ch <= b'z') || (ch >= b'A' && ch <= b'Z') || ch == b'_'
 }
@@ -34,11 +36,13 @@ pub struct Scanner<'src> {
 
 impl<'src> Scanner<'src> {
     pub fn new(source: &'src [u8]) -> Self {
-        // SAFETY: For some reason NonNull only takes a *mut, but the Scanner will never mutatate the source buffer.
         let src_ptr = source.as_ptr() as *mut u8;
+
+        // SAFETY: For some reason NonNull only takes a *mut, but the Scanner will never mutatate the source buffer.
         let start = unsafe { NonNull::new_unchecked(src_ptr) };
         let current_start = start;
         let current_end = current_start;
+        // SAFETY: This is guaranteed to be in-bounds, since we are getting the length from source, where we are also pointing to.
         let end = unsafe { NonNull::new_unchecked(src_ptr.add(source.len())) };
 
         Self {
@@ -53,26 +57,33 @@ impl<'src> Scanner<'src> {
         }
     }
 
+    #[inline]
     pub const fn get_current_line(&self) -> u32 {
         self.line
     }
 
+    #[inline]
     pub fn get_current_token(&self) -> Option<&Token> {
         self.current_token.as_ref()
     }
 
+    #[inline]
     pub fn get_previous_token(&self) -> Option<&Token> {
         self.previous_token.as_ref()
     }
 
+    #[inline]
     fn is_at_end(&self) -> bool {
         self.current_end >= self.end
     }
 
     fn make_token(&mut self, typ: TokenType) -> &Token {
-        let start = unsafe { self.current_start.offset_from(self.start) as usize };
-        let len = unsafe { self.current_end.offset_from(self.current_start) as usize };
-        let end = start + len;
+        // SAFETY: make_token is only called from places where we are guaranteed to be in-bounds.
+        let (start, len, end) = unsafe {
+            let start = self.current_start.offset_from(self.start) as usize;
+            let len = self.current_end.offset_from(self.current_start) as usize;
+            (start, len, start + len)
+        };
 
         // If we are bulding with debug mode, include the hash to double check the source.
         #[cfg(debug_assertions)]
@@ -98,7 +109,9 @@ impl<'src> Scanner<'src> {
     }
 
     // Gets the current character and advances to the next
+    #[inline]
     fn get_and_advance(&mut self) -> u8 {
+        // SAFETY: this method is only called from places where we are guaranteed to be in-bounds.
         unsafe {
             let ch = self.current_end.read();
             self.current_end = self.current_end.add(1);
@@ -106,10 +119,13 @@ impl<'src> Scanner<'src> {
         }
     }
 
+    #[inline]
     fn match_current(&mut self, expected: u8) -> bool {
         if self.is_at_end() {
             return false;
         }
+
+        // SAFETY: self.current_end is always guaranteed to be valid here due to the check above.
         unsafe {
             if self.current_end.read() != expected {
                 return false;
@@ -119,14 +135,19 @@ impl<'src> Scanner<'src> {
         }
     }
 
+    #[inline]
     fn peek(&self) -> u8 {
+        // SAFETY: this function is only called from places where self.curent_end is guaranteed to be valid.
         unsafe { self.current_end.read() }
     }
 
+    #[inline]
     fn peek_next(&self) -> Option<u8> {
         if self.is_at_end() {
             return None;
         }
+
+        // SAFETY: self.current_end is always guaranteed to be valid here due to the check above.
         unsafe { Some(self.current_end.add(1).read()) }
     }
 
@@ -193,6 +214,7 @@ impl<'src> Scanner<'src> {
             let name = name.as_ptr();
             let token_type = keyword.1;
 
+            // SAFETY: we are always in-bounds here
             unsafe {
                 if self.current_end.offset_from(self.current_start) == (start + length) as isize
                     && std::slice::from_raw_parts(
@@ -208,6 +230,7 @@ impl<'src> Scanner<'src> {
     }
 
     fn identifier_type(&self) -> TokenType {
+        // SAFETY: self.current_start is always guaranteed to be in-bounds when this is called.
         unsafe {
             match self.current_start.read() {
                 b'a' => self.check_keywords(1, &[("nd", TokenType::And)]),

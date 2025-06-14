@@ -60,7 +60,7 @@ where
     }
 
     /// BE CAREFUL
-    pub(super) const unsafe fn set_count(&mut self, new_count: usize) {
+    pub(crate) const unsafe fn set_count(&mut self, new_count: usize) {
         self.count = new_count;
     }
 
@@ -93,6 +93,7 @@ where
         // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
         let data = unsafe { self.data.unwrap_unchecked() };
 
+        // SAFETY: index is guaranteed to be less than self.count, and we already grew the arroy is it was out of bounds.
         unsafe {
             let value = data.add(index);
 
@@ -113,6 +114,7 @@ where
         // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
         let data = unsafe { self.data.unwrap_unchecked() };
 
+        // SAFETY: since we check for capacity at the top, we are not going out of bounds here.
         unsafe {
             data.add(self.count).write(val);
             self.count += 1;
@@ -126,6 +128,7 @@ where
         // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
         let data = unsafe { self.data.unwrap_unchecked() };
 
+        // SAFETY: since we check for capacity at the top, we are not going out of bounds here.
         unsafe {
             let mut base = data.add(self.count);
             val.copy_to_nonoverlapping(base.as_mut(), count);
@@ -140,9 +143,13 @@ where
     }
 
     pub fn copy_read(&self, index: usize) -> T {
+        debug_assert!(index < self.count, "Index out of bounds: {}", index);
         debug_assert!(self.data.is_some(), "Tried to read from empty array!");
+
         // SAFETY: In debug mode we are guaranteed to have data here, in release mode this isn't supposed to happen (lol)
         let data = unsafe { self.data.unwrap_unchecked() };
+
+        // SAFETY: we already checked that index < self.count
         unsafe { data.add(index).read() }
     }
 
@@ -150,6 +157,7 @@ where
         debug_assert!(index < self.count, "Index out of bounds: {}", index);
         // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
         let data = unsafe { self.data.unwrap_unchecked() };
+        // SAFETY: we already checked that index < self.count, so we are guaranteed to be in-bounds and initialized.
         unsafe {
             let value = data.add(index);
             // Drop the old value at index
@@ -159,6 +167,7 @@ where
     }
 
     /// Gets a reference to the value at the given offset within the capacity of the array.
+    /// SAFETY: this lets you get a value out of self.count bounds, but inside self.capacity. You are responsible for making sure the value is initialized
     pub unsafe fn get_memory_unchecked(&self, offset: usize) -> &T {
         debug_assert!(
             offset < self.capacity,
@@ -168,10 +177,12 @@ where
         );
         // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
         let data = unsafe { self.data.unwrap_unchecked() };
+        // SAFETY: we already checked that index < self.capacity
         unsafe { data.add(offset).as_ref() }
     }
 
     /// Gets a mutable reference to the value at the given offset within the capacity of the array.
+    /// SAFETY: this lets you get a value out of self.count bounds, but inside self.capacity. You are responsible for making sure the value is initialized
     pub unsafe fn get_memory_mut_unchecked(&self, offset: usize) -> &mut T {
         debug_assert!(
             offset < self.capacity,
@@ -181,6 +192,7 @@ where
         );
         // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
         let data = unsafe { self.data.unwrap_unchecked() };
+        // SAFETY: we already checked that index < self.capacity
         unsafe { data.add(offset).as_mut() }
     }
 
@@ -194,6 +206,7 @@ where
         );
         // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
         let data = unsafe { self.data.unwrap_unchecked() };
+        // SAFETY: we already checked that index < self.count
         unsafe { data.add(index).as_ref() }
     }
 
@@ -207,11 +220,13 @@ where
         );
         // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
         let data = unsafe { self.data.unwrap_unchecked() };
+        // SAFETY: we already checked that index < self.count
         unsafe { data.add(index).as_mut() }
     }
 
     pub const fn as_slice(&self) -> &[T] {
         if let Some(data) = self.data {
+            // SAFETY: we just checked that data is valid
             unsafe { std::slice::from_raw_parts(data.as_ptr(), self.count) }
         } else {
             &[]
@@ -220,6 +235,7 @@ where
 
     pub const fn as_mut_slice(&mut self) -> &mut [T] {
         if let Some(data) = self.data {
+            // SAFETY: we just checked that data is valid
             unsafe { std::slice::from_raw_parts_mut(data.as_ptr(), self.count) }
         } else {
             &mut []
@@ -245,6 +261,7 @@ where
     /// An iterator over the memory of the array (the whole capacity), which may contain uninitialized values.
     pub fn memory_iter<'a>(&'a self) -> std::slice::Iter<'a, MaybeUninit<T>> {
         if let Some(data) = self.data {
+            // SAFETY: we just checked that data is valid
             unsafe { std::slice::from_raw_parts(data.as_ptr().cast(), self.capacity) }.iter()
         } else {
             [].iter()
@@ -255,6 +272,7 @@ where
     /// This aditionally is a mutable iterator, so be careful.
     pub fn memory_iter_mut<'a>(&'a self) -> std::slice::IterMut<'a, MaybeUninit<T>> {
         if let Some(data) = self.data {
+            // SAFETY: we just checked that data is valid
             unsafe {
                 std::slice::from_raw_parts_mut(data.as_ptr().cast(), self.capacity).iter_mut()
             }
@@ -273,6 +291,7 @@ where
         );
 
         if to > 0 {
+            // SAFETY: we know data is valid here, since we just reallocated it.
             let nn: NonNull<T> = unsafe { NonNull::new_unchecked(data.cast()) };
             self.data = Some(nn);
         } else {
@@ -282,11 +301,12 @@ where
 
         // Copy init value to each new slot
         if let Some(init) = &self.init_value {
-            // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+            // SAFETY: in the block above, we either set self.data to the just allocated block, or return. So this is guranteed to be valid.
             let data = unsafe { self.data.unwrap_unchecked() };
             let copy_start = old_cap;
             let copy_end = self.capacity;
             for i in copy_start..copy_end {
+                // SAFETY: data is guaranteed to be valid, and we are iterating up to self.capacity, so we are in bounds.
                 unsafe {
                     (init as *const T).copy_to_nonoverlapping(data.as_ptr().add(i), 1);
                 }
@@ -295,13 +315,15 @@ where
     }
 
     pub fn remove_at(&mut self, index: usize) -> T {
+        debug_assert!(self.data.is_some(), "Cannot remove data from empty array!");
         debug_assert!(
             index < self.count,
             "Index out of bounds: {} (count: {})",
             index,
             self.count
         );
-        // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
+
+        // SAFETY: we can unwrap here, since the asserts above guarantees that we have data at this point.
         let data = unsafe { self.data.unwrap_unchecked() };
         unsafe {
             let val_pointer = data.add(index);
@@ -391,9 +413,9 @@ where
         if let None = self.data {
             return new_array;
         } else if let Some(data) = self.data {
-            // SAFETY: We can unwrap here, as the new array is guaranteed to be in the same state as this.
-            let new_data = unsafe { new_array.data.unwrap_unchecked() };
+            // SAFETY: we just checked that data is valid, and freshly allocated new_array.
             unsafe {
+                let new_data = new_array.data.unwrap_unchecked();
                 data.copy_to_nonoverlapping(new_data, self.count);
             }
         }
@@ -415,7 +437,7 @@ impl DynArray<u8> {
         // SAFETY: we can unwrap here, since the above statement guarantees that we have data at this point.
         let data = unsafe { self.data.unwrap_unchecked() };
 
-        // First offset by n-bytes and then cast
+        // SAFETY: we are guaranteed to be in bounds here.
         unsafe { data.add(byte_offset).cast::<A>().read() }
     }
 
@@ -427,6 +449,7 @@ impl DynArray<u8> {
 
     pub const fn as_str(&self) -> &str {
         if let Some(data) = self.data {
+            // SAFETY: we just checked that data is valid
             unsafe { std::str::from_raw_parts(data.as_ptr(), self.count) }
         } else {
             ""
@@ -437,6 +460,7 @@ impl DynArray<u8> {
 impl Hashable for DynArray<u8> {
     fn get_hash(&self) -> u32 {
         if let Some(data) = self.data {
+            // SAFETY: we just checked that data is valid
             unsafe {
                 GlobalHashMethod::hash(std::slice::from_raw_parts_mut(data.as_ptr(), self.count))
             }
@@ -462,12 +486,16 @@ impl<T: std::fmt::Debug> Drop for DynArray<T> {
 
         dbg_println!("DEBUG DYNARRAY DROP: {:?}", self.data);
 
-        unsafe {
-            if self.init_value.is_some() {
+        if self.init_value.is_some() {
+            // SAFETY: self.as_mut_slice() will return an empty slice if data is none or count is 0, so this is guaranteed to be safe.
+            unsafe {
                 std::ptr::drop_in_place(self.as_mut_slice());
-            } else {
-                // If we don't have an init value, we only drop up until self.count which is guaranteed to be initialized.
+            }
+        } else {
+            // If we don't have an init value, we only drop up until self.count which is guaranteed to be initialized.
 
+            // SAFETY: we only drop up to self.count, so no uninitialized memory will be dropped.
+            unsafe {
                 let values = std::slice::from_raw_parts_mut(data.as_ptr(), self.count);
                 std::ptr::drop_in_place(values);
             }

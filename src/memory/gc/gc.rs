@@ -35,6 +35,7 @@ macro_rules! object_ctor {
     ($vis:vis, $name:ident, $variant:ident, $ty:ty, $tag:expr, $cast_method:ident) => {
         #[inline]
         $vis fn $name(&self, val: $ty) -> GcScopedRoot<ObjectRef<$ty>> {
+            // SAFETY: We are guaranteed to be in a single-threaded context, so we can safely access the state.
             let state = unsafe { self.state.get().as_mut_unchecked() };
             let new_head = Object::alloc(
                 $tag,
@@ -84,9 +85,21 @@ impl Gc {
     }
 
     #[inline]
+    fn get_state(&self) -> &GcState {
+        // SAFETY: We are guaranteed to be in a single-threaded context, so we can safely access the state.
+        unsafe { self.state.get().as_ref_unchecked() }
+    }
+
+    #[inline]
+    fn get_state_mut(&self) -> &mut GcState {
+        // SAFETY: We are guaranteed to be in a single-threaded context, so we can safely access the state.
+        unsafe { self.state.get().as_mut_unchecked() }
+    }
+
+    #[inline]
     #[cfg(not(feature = "debug_stress_gc"))]
     pub fn should_collect(&self) -> bool {
-        let state = unsafe { self.state.get().as_ref_unchecked() };
+        let state = self.get_state();
 
         // If we are already running we just return.
         // We can land in this path if the GC itself allocates enough memory,
@@ -96,12 +109,12 @@ impl Gc {
 
     /// SAFETY: Remember to unregister pointer manually!
     pub fn register_temp_root(&self, root: GcPtr<Object>) {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
         state.temp_roots.push(root);
     }
 
     pub fn unregister_temp_root(&self, root: GcPtr<Object>) {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
         state
             .temp_roots
             .remove_value(root)
@@ -110,12 +123,12 @@ impl Gc {
 
     /// SAFETY: Remember to unregister pointer manually!
     pub fn add_root_marker(&self, marker: RootMarker) {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
         state.root_markers.push(marker);
     }
 
     pub fn remove_root_marker_by_address(&self, address: usize) {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
         state
             .root_markers
             .remove_predicate(|x| x.get_marker_address() == address)
@@ -123,7 +136,7 @@ impl Gc {
     }
 
     pub fn mark_object(&self, mut object: GcPtr<Object>) {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
 
         // We don't want to mark object that are already marked.
         if object.is_marked() {
@@ -183,7 +196,7 @@ impl Gc {
     }
 
     fn trace_gray_objects(&self) {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
         while state.gray_stack.get_count() > 0 {
             let object = state.gray_stack.pop();
             self.blacken_object(object);
@@ -191,7 +204,7 @@ impl Gc {
     }
 
     fn sweep(&self) {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
 
         let mut previous = None;
         let mut object = state.objects_head;
@@ -220,7 +233,7 @@ impl Gc {
     }
 
     fn sweep_unreachable_strings(&self) {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
 
         let mut strings_to_remove =
             DynArray::new_with_cap(state.strings.get_interned_strings_count() / 2);
@@ -243,7 +256,7 @@ impl Gc {
     }
 
     pub fn collect(&self) {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
 
         #[cfg(feature = "debug_stress_gc")]
         if state.running {
@@ -280,7 +293,7 @@ impl Gc {
     }
 
     pub fn make_string(&self, str: &str) -> GcScopedRoot<ObjectRef<InternedString>> {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
         state.strings.make_string(str)
     }
 
@@ -289,7 +302,7 @@ impl Gc {
         lhs: ObjectRef<InternedString>,
         rhs: ObjectRef<InternedString>,
     ) -> GcScopedRoot<ObjectRef<InternedString>> {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
         state.strings.concat_strings(lhs, rhs)
     }
 
@@ -340,6 +353,7 @@ impl Gc {
 
         if new_cap == 0 {
             if !ptr.is_null() {
+                // SAFETY: we just checked that ptr is not null, so we can safely deallocate it.
                 unsafe {
                     self.deallocate(NonNull::new_unchecked(ptr), old_layout);
                 }
@@ -353,12 +367,14 @@ impl Gc {
         }
 
         if new_cap > old_cap {
+            // SAFETY: we just checked that ptr is not null, so we can safely grow it.
             let nn = unsafe {
                 self.grow(NonNull::new_unchecked(ptr), old_layout, new_layout)
                     .unwrap()
             };
             nn.as_ptr() as *mut u8
         } else {
+            // SAFETY: we just checked that ptr is not null, so we can safely shrink it.
             let nn = unsafe {
                 self.shrink(NonNull::new_unchecked(ptr), old_layout, new_layout)
                     .unwrap()
@@ -380,7 +396,7 @@ unsafe impl Allocator for Gc {
             self.collect();
         }
 
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
         state.bytes_allocated += layout.size();
 
         // Use System allocator for actual memory
@@ -389,8 +405,10 @@ unsafe impl Allocator for Gc {
     }
 
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
         state.bytes_allocated -= layout.size();
+
+        // SAFETY: it is up to the caller to ensure that ptr and layout is valid and was allocated by this allocator.
         unsafe {
             System.deallocate(ptr, layout);
         }
@@ -404,7 +422,7 @@ unsafe impl Allocator for Gc {
             self.collect();
         }
 
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
         state.bytes_allocated += layout.size();
 
         let ptr = System.allocate_zeroed(layout)?;
@@ -424,12 +442,14 @@ unsafe impl Allocator for Gc {
             self.collect();
         }
 
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
         if new_layout.size() > old_layout.size() {
             state.bytes_allocated += new_layout.size() - old_layout.size();
         } else {
             state.bytes_allocated -= old_layout.size() - new_layout.size();
         }
+
+        // SAFETY: it is up to the caller to ensure that ptr and layout is valid and was allocated by this allocator.
         unsafe { System.grow(ptr, old_layout, new_layout) }
     }
 
@@ -446,12 +466,14 @@ unsafe impl Allocator for Gc {
             self.collect();
         }
 
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
         if new_layout.size() > old_layout.size() {
             state.bytes_allocated += new_layout.size() - old_layout.size();
         } else {
             state.bytes_allocated -= old_layout.size() - new_layout.size();
         }
+
+        // SAFETY: it is up to the caller to ensure that ptr and layout is valid and was allocated by this allocator.
         unsafe { System.grow_zeroed(ptr, old_layout, new_layout) }
     }
 
@@ -461,8 +483,10 @@ unsafe impl Allocator for Gc {
         old_layout: Layout,
         new_layout: Layout,
     ) -> Result<NonNull<[u8]>, std::alloc::AllocError> {
-        let state = unsafe { self.state.get().as_mut_unchecked() };
+        let state = self.get_state_mut();
         state.bytes_allocated -= old_layout.size() - new_layout.size();
+
+        // SAFETY: it is up to the caller to ensure that ptr and layout is valid and was allocated by this allocator.
         unsafe { System.shrink(ptr, old_layout, new_layout) }
     }
 }
